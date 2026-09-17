@@ -1,5 +1,7 @@
 # 專案簡介
 
+> 最後更新：2026-09-17
+
 「工作進度」列管系統。取代目前手動維護的 Google Sheet 表單，改用前端頁面輸入/檢視資料，資料實際存放位置仍是 Google Sheet。
 
 - 專案類型：**純前端專案**，沒有自建後端主機。Google Apps Script Web App 扮演「後端 API」的角色，前端（Vue 3 + TS）部署在 GitHub Pages 為靜態站
@@ -94,6 +96,15 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **ESLint**（flat config，`eslint.config.js`）：`eslint-plugin-vue` + `@vue/eslint-config-typescript`，`npm run lint` 檢查程式碼品質（未使用變數、type 錯誤等）
 - **Prettier**（`.prettierrc.json`）：無分號、單引號、printWidth 100，`npm run format` 格式化；透過 `@vue/eslint-config-prettier` 關掉與 ESLint 衝突的樣式規則，兩者分工不重疊
 - **`.editorconfig`**：管編輯器層級的基本排版（縮排、換行符、結尾換行等）
+- **路徑別名**：`@/` 對應 `src/`（`vite.config.ts` 的 `resolve.alias` + `tsconfig.app.json` 的 `paths` 都要同步設定），避免元件一多之後出現 `../../../components/xxx` 這種難維護的相對路徑
+- **Node 版本**：鎖定 `>=24.1.0`（`.nvmrc`、`package.json` 的 `engines`），並用 `.npmrc` 的 `engine-strict=true` 讓版本不符時直接擋下 `npm install`，避免換機器開發版本不一致
+- **套件管理工具**：僅使用 npm（`package.json` 的 `packageManager` 欄位已鎖定），不要混用 yarn/pnpm，避免 lockfile 衝突
+
+## 命名慣例
+
+- 元件檔名：PascalCase（例如 `WorkItemTable.vue`）
+- 資料夾／非元件檔名：kebab-case
+- Composables：`use` 前綴（例如 `useGoogleAuth.ts`）
 
 # UI/UX 定案
 
@@ -162,7 +173,30 @@ chore: 新增 ESLint、Prettier 與 .editorconfig
 
 **執行規則**：每次 commit 前先列出要提交的內容（`git status`/`git diff` 摘要）與訊息，等使用者明確確認後才實際執行 `git commit`，不主動搶先提交。
 
+# 常用指令
+
+```bash
+npm run dev        # 本地開發伺服器
+npm run build      # 型別檢查（vue-tsc）+ 正式建置
+npm run preview    # 預覽 build 產物
+npm run lint       # ESLint 檢查並自動修復
+npm run format     # Prettier 格式化 src/
+```
+
 # 需要使用者事先準備的東西
 
 - 在 GCP 建立 OAuth 用戶端 ID（給 Google 登入按鈕用）
 - 確認 Google Sheet 已依上述結構調整（新增工作日期／ID／已刪除欄位、選項清單分頁）
+
+---
+
+## Claude 協作指引
+
+當協助此專案開發時，請注意：
+
+1. **保持現有架構**：本文件記錄的技術選型、資料模型、分支策略都是已定案的決策，異動前先跟使用者確認，不要自行更換方案
+2. **commit 前先確認**：實作完成後先列出要提交的內容與訊息，等使用者明確同意才執行 `git commit`
+3. **型別安全**：所有新增程式碼需有完整 TypeScript 型別，`shared/validation-schema.json` 是前後端共用驗證規則的唯一事實來源
+4. **錯誤處理**：所有呼叫 Apps Script API 的地方都要處理 loading／成功／失敗狀態，不能假設網路請求一定成功
+5. **語言**：介面文字與程式碼註解使用繁體中文（台灣用語），回覆使用者也一律用繁體中文
+6. **色彩管理**：樣式一律吃 `src/styles/tokens.css` 的 CSS 變數，不要在元件裡寫死 hex 色碼
