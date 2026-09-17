@@ -90,6 +90,11 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 
 **共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端直接 import；另有一支 build script（`npm run build:gs`）在建置階段把這份 JSON 轉成 Apps Script 可讀的 `schema.gs`，避免手動維護兩份規則。
 
+**開發工具鏈**：
+- **ESLint**（flat config，`eslint.config.js`）：`eslint-plugin-vue` + `@vue/eslint-config-typescript`，`npm run lint` 檢查程式碼品質（未使用變數、type 錯誤等）
+- **Prettier**（`.prettierrc.json`）：無分號、單引號、printWidth 100，`npm run format` 格式化；透過 `@vue/eslint-config-prettier` 關掉與 ESLint 衝突的樣式規則，兩者分工不重疊
+- **`.editorconfig`**：管編輯器層級的基本排版（縮排、換行符、結尾換行等）
+
 # UI/UX 定案
 
 - 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
@@ -105,7 +110,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 
 1. Google Sheet 準備：建立「選項清單」分頁、確認分頁欄位含工作日期／ID／已刪除、Apps Script 專案初始化
 2. Apps Script 後端：doGet／doPost、自動建分頁邏輯、ID Token 驗證、共用 schema 驗證、選項清單讀寫
-3. 前端基礎建設：Vite + Vue 3 + TS 專案、CSS token 架構、GIS 登入串接
+3. 前端基礎建設：Vite + Vue 3 + TS 專案、ESLint/Prettier/.editorconfig、CSS token 架構、GIS 登入串接
 4. 管理頁：表格（A 版排版）、新增/編輯 Drawer、單日切換、自動完成/下拉選單、刪除確認
 5. 檢視頁：唯讀表格、單日切換
 6. 部署：GitHub Actions 建置流程 → GitHub Pages
@@ -138,8 +143,10 @@ Trunk-based，單人開發，不開 `release`/長期分支：
 - `style`：純樣式調整，不影響邏輯
 - `refactor`：重構，不新增功能也不修 bug
 - `test`：測試相關
-- `chore`：建置流程、依賴套件、雜項
+- `chore`：建置流程、依賴套件、雜項——**包含專案骨架建立、ESLint/Prettier 等工具鏈設定**這類沒有直接產生使用者可見功能的基礎建設
 - `ci`：CI/CD 設定（GitHub Actions 等）
+
+判斷 `feat` vs `chore` 的原則：這筆改動是「使用者用得到的新功能/畫面/行為」用 `feat`；是「讓開發更順、跟使用者功能無關」的工具鏈/建置/依賴，用 `chore`。
 
 **scope**：對應改動範圍，例如 `manage-view`、`public-view`、`apps-script`、`sheet`、`auth`、`deploy`
 
@@ -149,7 +156,11 @@ feat(manage-view): 新增新增/編輯用的 Drawer 表單
 fix(apps-script): 今日工時欄位禁止輸入負數
 docs: 補充 CLAUDE.md 分支策略與部署規劃
 ci(deploy): 新增 dev 分支部署到 /developer/ 子路徑的 workflow
+chore: 建立專案骨架（Vite + Vue 3 + TS）
+chore: 新增 ESLint、Prettier 與 .editorconfig
 ```
+
+**執行規則**：每次 commit 前先列出要提交的內容（`git status`/`git diff` 摘要）與訊息，等使用者明確確認後才實際執行 `git commit`，不主動搶先提交。
 
 # 需要使用者事先準備的東西
 
