@@ -1,0 +1,157 @@
+# 專案簡介
+
+「工作進度」列管系統。取代目前手動維護的 Google Sheet 表單，改用前端頁面輸入/檢視資料，資料實際存放位置仍是 Google Sheet。
+
+- 專案類型：**純前端專案**，沒有自建後端主機。Google Apps Script Web App 扮演「後端 API」的角色，前端（Vue 3 + TS）部署在 GitHub Pages 為靜態站
+- 原始資料來源：[Google Sheet](https://docs.google.com/spreadsheets/d/1hGZx7uESs-aT0ldZdfOEr9tfZ11HbOcWmP1LM81FEDg/edit?gid=1095228578#gid=1095228578)
+- GitHub repo：https://github.com/swzx00/Progress（目前為 private，上線前暫時隱藏，正式部署 GitHub Pages 時需切回 public）
+- 擁有者／唯一寫入者：swzx00@gmail.com
+
+# 系統架構總覽
+
+```
+【身份驗證】使用者 → Google 帳號登入（Google Identity Services）→ 取得 ID Token
+【寫入】前端管理頁 → Apps Script doPost（驗證 ID Token 的 email 是否為擁有者本人）→ Google Sheet
+【讀取】前端（管理頁／檢視頁皆同）→ Apps Script doGet → Google Sheet
+【部署】GitHub Pages（public repo，純靜態）＋ Google Apps Script Web App
+```
+
+沒有自建後端主機。之所以排除「自建後端 + Service Account」方案，是因為 GitHub Pages 無法安全存放 Service Account 金鑰；改以 Google 帳號登入 + Apps Script 驗證 ID Token 的方式確保只有本人能寫入，即使原始碼公開也不會外洩任何帳密。
+
+# Google Sheet 結構設計
+
+**資料分頁**：命名規則 `YYYY-MM`（例如 `2026-09`）。Apps Script 依「工作日期」判斷要寫入哪個月份分頁，該分頁不存在時自動建立並複製表頭格式。
+
+原始 11 個業務欄位 + 新增「工作日期」+ 系統欄位：
+
+| 欄位 | 說明 |
+|---|---|
+| 項次 | 系統自動編號（依當月新增順序），非必要不手動輸入 |
+| 單位 | 選單（來自「選項清單」分頁） |
+| 專案名稱 | 自動完成輸入框（來自「選項清單」分頁，可自訂新增） |
+| 工作內容 | 文字 |
+| 交辦人員 | 選單（來自「選項清單」分頁） |
+| 預計完成期限 | 日期 |
+| **工作日期**（新增） | 這筆紀錄所屬的那一天，預設今天可手動改（補登用）。前台以此欄位做「單日檢視」 |
+| 今日處理情形 | 文字（語意＝工作日期當天的處理情形） |
+| 今日工時 | 數字（語意＝工作日期當天的工時），需為非負數 |
+| 完成% | 數字，限制 0–100 |
+| 完成回報 | 文字 |
+| 列管內容 | 文字 |
+| **ID**（系統） | UUID，寫入時自動產生，編輯/刪除用來精準定位列 |
+| **已刪除**（系統） | TRUE/FALSE，軟刪除標記，不做真刪除 |
+
+**附件欄位**：已從系統範圍移除（圖片需經 Google Drive 中轉才能顯示，複雜度高，暫不做上傳功能）。Sheet 上保留原欄位，有需要時使用者自行手動貼連結。
+
+**選項清單分頁**（新增，命名「選項清單」）：存放「單位」「交辦人員」「專案名稱」的可選值，供前端下拉/自動完成選單讀取；使用者新增自訂選項時同步寫回此分頁。
+
+**資料模式**：情境 A（日誌式）——同一專案每天新增一列新紀錄，不覆寫舊資料，歷史紀錄自然依時間往下疊。
+
+# Apps Script Web App 設計
+
+**doGet(e)**
+- 接受 `date` 參數（例如 `2026-09-17`），後端自動換算對應月份分頁，只回傳當天且「已刪除≠TRUE」的列
+- 額外支援 `type=options` 讀取「選項清單」分頁
+- 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
+
+**doPost(e)**
+- body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性，取出 email 並比對是否為 swzx00@gmail.com，不符合直接拒絕
+- 依 `action` 分派：
+  - `create`：判斷/建立當月分頁，產生 UUID 當 ID，寫入新列；若帶了新的單位/交辦人員/專案名稱，同步寫回「選項清單」分頁
+  - `update`：依 `month`（由工作日期換算）+ `ID` 定位列並覆寫內容
+  - `delete`：依 `month` + `ID` 定位列，將「已刪除」設為 TRUE
+- 後端必須重複驗證前端已做過的規則（完成% 限制 0–100、今日工時非負數、必填欄位不可為空等），因為 API 網址公開，理論上可被繞過前端直接呼叫
+
+**可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 建議存在 Apps Script 的 `PropertiesService`（指令碼屬性），不寫死在程式碼裡。
+
+# 前端架構（Vue 3 + TypeScript，部署於 GitHub Pages）
+
+```
+src/
+  pages/
+    ManageView.vue        # 管理頁：需 Google 登入，含新增/編輯/刪除，單日切換
+    PublicView.vue        # 檢視頁：唯讀，任何人可看，單日切換
+  components/
+    WorkItemTable.vue     # 表格排版（複用於管理頁／檢視頁）
+    WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
+    DateNav.vue           # ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 回到今天
+    ProjectAutocomplete.vue
+  composables/
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理
+    useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
+  styles/
+    tokens.css             # 色彩變數（--color-bg / --color-accent...），預留深色模式擴充，元件一律吃變數不寫死 hex
+shared/
+  validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
+apps-script/                # clasp 專案（Apps Script 原始碼版控）
+  Code.gs
+  build/schema.gs           # 由 shared/validation-schema.json 產生，build 時自動同步
+```
+
+**共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端直接 import；另有一支 build script（`npm run build:gs`）在建置階段把這份 JSON 轉成 Apps Script 可讀的 `schema.gs`，避免手動維護兩份規則。
+
+# UI/UX 定案
+
+- 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
+- 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
+- 管理頁／檢視頁共用同一套表格元件，差別只在是否顯示編輯/刪除操作與登入資訊
+- 前台改成**以日期為單位**呈現（非月份）：「◀ 上一天 / 日期選擇器 / 下一天 ▶」＋「回到今天」做單日切換，跨月切換對使用者無感，由 Apps Script 依日期自動換算月份分頁
+- 完成% 用進度條呈現；預計完成期限已過但完成% < 100 的列，用顏色標示逾期，並排在前面
+- 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
+- 逾期只做視覺標示，不做主動通知（Email 提醒等）
+- 管理頁的 Google 登入狀態存在登入 session 內，不用每次操作重新登入
+
+# 開發階段拆分
+
+1. Google Sheet 準備：建立「選項清單」分頁、確認分頁欄位含工作日期／ID／已刪除、Apps Script 專案初始化
+2. Apps Script 後端：doGet／doPost、自動建分頁邏輯、ID Token 驗證、共用 schema 驗證、選項清單讀寫
+3. 前端基礎建設：Vite + Vue 3 + TS 專案、CSS token 架構、GIS 登入串接
+4. 管理頁：表格（A 版排版）、新增/編輯 Drawer、單日切換、自動完成/下拉選單、刪除確認
+5. 檢視頁：唯讀表格、單日切換
+6. 部署：GitHub Actions 建置流程 → GitHub Pages
+
+# 分支策略與部署
+
+Trunk-based，單人開發，不開 `release`/長期分支：
+
+- `main`：穩定分支，唯一的正式部署來源，對應正式站 GitHub Pages 網址（repo 根路徑）
+- `dev`：日常開發測試分支，功能開發完先進這裡驗證
+- `feat/xxx`：個別功能開發用，完成後合併回 `dev`，穩定後再合併回 `main`
+
+**dev 分支的測試方式**：
+- 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5173` 這個來源，這樣才能在本機測登入流程
+- 合併進 `main` 前，想驗證「接近正式環境」的行為（GitHub Pages 的 base path、路由 history 模式重新整理是否 404、HTTPS 環境下 Google 登入行為），用 GitHub Actions 把 `dev` 分支的 build 產物部署到一個獨立子路徑 **`/developer/`**（例如 `https://swzx00.github.io/Progress/developer/`），跟 `main` 部署的正式站分開，避免測試中的版本影響正式站
+  - 實作方式：`dev` push 觸發的 workflow 用 `vite build --base=/Progress/developer/`，再用 `peaceiris/actions-gh-pages` 搭配 `destination_dir: developer` 部署到 `gh-pages` 分支下的 `developer/` 資料夾；`main` push 觸發的 workflow 照常部署到 `gh-pages` 分支根目錄
+
+# Commit 規範
+
+採用 **Conventional Commits**，格式與型別（type）維持英文（方便未來接 changelog 工具／commitlint），但 `subject` 說明用中文：
+
+```
+<type>(<scope>): <subject>
+```
+
+**type**：
+- `feat`：新增功能
+- `fix`：修正錯誤
+- `docs`：文件異動（含 CLAUDE.md）
+- `style`：純樣式調整，不影響邏輯
+- `refactor`：重構，不新增功能也不修 bug
+- `test`：測試相關
+- `chore`：建置流程、依賴套件、雜項
+- `ci`：CI/CD 設定（GitHub Actions 等）
+
+**scope**：對應改動範圍，例如 `manage-view`、`public-view`、`apps-script`、`sheet`、`auth`、`deploy`
+
+**範例**：
+```
+feat(manage-view): 新增新增/編輯用的 Drawer 表單
+fix(apps-script): 今日工時欄位禁止輸入負數
+docs: 補充 CLAUDE.md 分支策略與部署規劃
+ci(deploy): 新增 dev 分支部署到 /developer/ 子路徑的 workflow
+```
+
+# 需要使用者事先準備的東西
+
+- 在 GCP 建立 OAuth 用戶端 ID（給 Google 登入按鈕用）
+- 確認 Google Sheet 已依上述結構調整（新增工作日期／ID／已刪除欄位、選項清單分頁）
