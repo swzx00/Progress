@@ -9,11 +9,11 @@ interface DoGetResponse {
 type CreateInput = Omit<WorkItem, 'id' | '項次' | '已刪除'>
 type UpdateInput = Partial<Omit<WorkItem, 'id'>>
 
-const postAction = async (payload: unknown): Promise<void> => {
+const postAction = async (idToken: string, payload: object): Promise<void> => {
   const res = await fetch(import.meta.env.VITE_APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ idToken, ...payload }),
   })
   if (!res.ok) {
     throw new Error(`API 回應錯誤（${res.status}）`)
@@ -45,12 +45,14 @@ export function useWorkItems() {
     }
   }
 
-  const createItem = (item: CreateInput): Promise<void> => postAction({ action: 'create', item })
+  const createItem = (idToken: string, item: CreateInput): Promise<void> =>
+    postAction(idToken, { action: 'create', item })
 
-  const updateItem = (id: string, item: UpdateInput): Promise<void> =>
-    postAction({ action: 'update', id, item })
+  const updateItem = (idToken: string, id: string, item: UpdateInput): Promise<void> =>
+    postAction(idToken, { action: 'update', id, item })
 
-  const deleteItem = (id: string): Promise<void> => postAction({ action: 'delete', id })
+  const deleteItem = (idToken: string, id: string): Promise<void> =>
+    postAction(idToken, { action: 'delete', id })
 
   return { items, loading, error, fetchByDate, createItem, updateItem, deleteItem }
 }

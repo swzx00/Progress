@@ -96,17 +96,20 @@ const addOptionIfNew = (category: keyof WorkItemOptions, value: string): void =>
 
 interface CreatePayload {
   action: 'create'
+  idToken: string
   item: Omit<WorkItem, 'id' | '項次' | '已刪除'>
 }
 
 interface UpdatePayload {
   action: 'update'
+  idToken: string
   id: string
   item: Partial<Omit<WorkItem, 'id'>>
 }
 
 interface DeletePayload {
   action: 'delete'
+  idToken: string
   id: string
 }
 
@@ -127,6 +130,10 @@ export const handlers = [
 
   http.post('*/exec', async ({ request }) => {
     const body = (await request.json()) as DoPostPayload
+
+    if (!body.idToken) {
+      return HttpResponse.json({ error: '未登入或登入已過期' }, { status: 401 })
+    }
 
     if (body.action === 'create') {
       const sameDayCount = items.filter((item) => item.工作日期 === body.item.工作日期).length

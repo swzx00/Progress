@@ -11,7 +11,13 @@ import type { WorkItem } from '@/types/work-item'
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
 
-const { userEmail } = useGoogleAuth()
+const { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOut } =
+  useGoogleAuth()
+
+const signInButtonEl = ref<HTMLElement | null>(null)
+watch(signInButtonEl, (el) => {
+  if (el) renderSignInButton(el)
+})
 
 const selectedDate = ref(toDateString(new Date()))
 const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems()
@@ -44,13 +50,17 @@ const closeForm = (): void => {
 }
 
 const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): Promise<void> => {
+  if (!idToken.value) {
+    saveError.value = '尚未登入，無法儲存'
+    return
+  }
   saving.value = true
   saveError.value = null
   try {
     if (editingItem.value) {
-      await updateItem(editingItem.value.id, payload)
+      await updateItem(idToken.value, editingItem.value.id, payload)
     } else {
-      await createItem(payload)
+      await createItem(idToken.value, payload)
     }
     await fetchByDate(selectedDate.value)
     formOpen.value = false
@@ -73,10 +83,10 @@ const closeDeleteConfirm = (): void => {
 }
 
 const confirmDelete = async (): Promise<void> => {
-  if (!deleteTarget.value) return
+  if (!deleteTarget.value || !idToken.value) return
   deleting.value = true
   try {
-    await deleteItem(deleteTarget.value.id)
+    await deleteItem(idToken.value, deleteTarget.value.id)
     await fetchByDate(selectedDate.value)
   } finally {
     deleting.value = false
@@ -98,14 +108,20 @@ const confirmDelete = async (): Promise<void> => {
       >
         ☾
       </button>
-      <div class="manage-view__account">
-        <span class="manage-view__avatar">{{ userEmail.charAt(0).toUpperCase() }}</span>
+      <div v-if="isAuthorized" class="manage-view__account">
+        <span class="manage-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
         <span class="manage-view__email">已登入・{{ userEmail }}</span>
+        <button type="button" class="manage-view__signout-btn" @click="signOut">登出</button>
       </div>
+      <div v-else-if="isLoggedIn" class="manage-view__unauthorized">
+        <span>{{ userEmail }} 沒有管理權限</span>
+        <button type="button" class="manage-view__signout-btn" @click="signOut">登出</button>
+      </div>
+      <div v-else ref="signInButtonEl" class="manage-view__signin"></div>
     </header>
 
     <DateNav v-model="selectedDate" :total-hours="totalHours">
-      <template #actions>
+      <template v-if="isAuthorized" #actions>
         <button type="button" class="manage-view__add-btn" @click="openCreateForm">＋ 新增</button>
       </template>
     </DateNav>
@@ -116,14 +132,14 @@ const confirmDelete = async (): Promise<void> => {
       v-else
       :items="items"
       :today="toDateString(new Date())"
-      editable
+      :editable="isAuthorized"
       @edit="openEditForm"
       @delete="openDeleteConfirm"
     />
 
     <Transition name="work-item-form">
       <WorkItemForm
-        v-if="formOpen"
+        v-if="formOpen && isAuthorized"
         :item="editingItem"
         :saving="saving"
         @save="onSave"
@@ -133,7 +149,7 @@ const confirmDelete = async (): Promise<void> => {
     <p v-if="saveError" class="manage-view__save-error">{{ saveError }}</p>
 
     <ConfirmDialog
-      v-if="deleteTarget"
+      v-if="deleteTarget && isAuthorized"
       title="確定要刪除這筆紀錄嗎？"
       :message="`「${deleteTarget.專案名稱}」・${deleteTarget.工作目標}，${deleteTarget.工作日期}。刪除後不會馬上從 Google Sheet 消失（軟刪除），但列表會立刻看不到這筆。`"
       confirm-label="刪除"
@@ -186,11 +202,31 @@ const confirmDelete = async (): Promise<void> => {
   padding: 0;
 }
 
-.manage-view__account {
+.manage-view__account,
+.manage-view__unauthorized {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.manage-view__unauthorized {
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.manage-view__signin {
+  margin-left: auto;
+}
+
+.manage-view__signout-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-ink-muted);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .manage-view__avatar {
