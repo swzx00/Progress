@@ -77,9 +77,7 @@ const onSubmit = (): void => {
     <div class="work-item-form__backdrop" @click="emit('cancel')" />
     <div class="work-item-form__panel" role="dialog" aria-modal="true">
       <div class="work-item-form__mobile-header">
-        <button type="button" class="work-item-form__text-btn" @click="emit('cancel')">
-          取消
-        </button>
+        <button type="button" class="work-item-form__text-btn" @click="emit('cancel')">取消</button>
         <h2 class="work-item-form__mobile-title">{{ title }}</h2>
         <button
           type="submit"
@@ -122,11 +120,7 @@ const onSubmit = (): void => {
 
         <label class="work-item-form__field">
           Repo（選填，可多個）
-          <input
-            v-model="form.repoInput"
-            type="text"
-            placeholder="以逗號分隔，例如 AAA,BBBB"
-          />
+          <input v-model="form.repoInput" type="text" placeholder="以逗號分隔，例如 AAA,BBBB" />
           <div v-if="repoPreview.length > 0" class="work-item-form__repo-preview">
             <span v-for="repo in repoPreview" :key="repo" class="work-item-form__repo-tag"
               >#{{ repo }}</span

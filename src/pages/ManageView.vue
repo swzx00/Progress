@@ -106,9 +106,7 @@ const confirmDelete = async (): Promise<void> => {
 
     <DateNav v-model="selectedDate" :total-hours="totalHours">
       <template #actions>
-        <button type="button" class="manage-view__add-btn" @click="openCreateForm">
-          ＋ 新增
-        </button>
+        <button type="button" class="manage-view__add-btn" @click="openCreateForm">＋ 新增</button>
       </template>
     </DateNav>
 
