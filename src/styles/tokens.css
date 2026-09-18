@@ -1,0 +1,11 @@
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f7f8fa;
+  --color-border: #e4e7ec;
+  --color-ink: #1b1f27;
+  --color-ink-muted: #6b7280;
+  --color-accent: #0f6fa3;
+  --color-danger: #c0392b;
+}
+
+/* 深色模式預留位置，目前只做白色系，尚未提供 [data-theme="dark"] 對應值 */
