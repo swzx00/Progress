@@ -1,11 +1,11 @@
 # 專案簡介
 
-> 最後更新：2026-09-17
+> 最後更新：2026-09-18
 
 「工作進度」列管系統。取代目前手動維護的 Google Sheet 表單，改用前端頁面輸入/檢視資料，資料實際存放位置仍是 Google Sheet。
 
 - 專案類型：**純前端專案**，沒有自建後端主機。Google Apps Script Web App 扮演「後端 API」的角色，前端（Vue 3 + TS）部署在 GitHub Pages 為靜態站
-- 原始資料來源：[Google Sheet](https://docs.google.com/spreadsheets/d/1hGZx7uESs-aT0ldZdfOEr9tfZ11HbOcWmP1LM81FEDg/edit?gid=1095228578#gid=1095228578)
+- 資料來源：[Google Sheet](https://docs.google.com/spreadsheets/d/1_1MxTiuMg9ALdr-6o77-c2qCWqYuktSFPM6lGYVg8n0/edit?gid=0#gid=0)（全新建立的工作用試算表，跟最初參考欄位命名的舊表是不同份；實際欄位結構以本文件「Google Sheet 結構設計」章節為準）
 - GitHub repo：https://github.com/swzx00/Progress（目前為 private，上線前暫時隱藏，正式部署 GitHub Pages 時需切回 public）
 - 擁有者／唯一寫入者：swzx00@gmail.com
 
@@ -67,6 +67,10 @@
   - `update`：依 `month`（由工作日期換算）+ `ID` 定位列並覆寫內容
   - `delete`：依 `month` + `ID` 定位列，將「已刪除」設為 TRUE
 - 後端必須重複驗證前端已做過的規則（完成度限制 0–100、今日工時非負數、必填欄位不可為空等），因為 API 網址公開，理論上可被繞過前端直接呼叫
+
+**月份分頁建立機制**：雙保險，兩個都要做，不互斥
+- **主要：每月 1 號定時觸發器**——`ScriptApp` 的 installable time-driven trigger，`onMonthDay(1)`，跑 `ensureMonthlySheet()` 主動建立當月分頁＋複製表頭格式。程式碼裡寫了 trigger 設定不會自動生效，需要**手動執行一次安裝函式**（或在 Apps Script 編輯器的「觸發條件」頁面手動加），這是一次性設定，之後照排程自動跑
+- **備援：`doPost` 的 `create` 動作懶惰建立**——寫入當下若當月分頁不存在就順手建立，當觸發器萬一沒跑成功時的保險，確保只要有人真的寫入資料，分頁一定會被建出來
 
 **可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 建議存在 Apps Script 的 `PropertiesService`（指令碼屬性），不寫死在程式碼裡。
 
