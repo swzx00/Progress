@@ -17,3 +17,12 @@ export interface WorkItem {
 
 export const isOverdue = (item: WorkItem, today: string): boolean =>
   item['完成%'] < 100 && item.預計完成期限 < today
+
+export interface WorkItemOptions {
+  交辦單位: string[]
+  交辦人員: string[]
+  專案名稱: string[]
+  專案Repo: string[]
+}
+
+export const STATUS_OPTIONS = ['進行中', '前端完成', '返修', '待辦', '確認上線', '暫緩'] as const
