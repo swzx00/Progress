@@ -3,6 +3,7 @@ export interface WorkItem {
   項次: number
   單位: string
   專案名稱: string
+  repo: string[]
   工作內容: string
   交辦人員: string
   預計完成期限: string
@@ -17,3 +18,9 @@ export interface WorkItem {
 
 export const isOverdue = (item: WorkItem, today: string): boolean =>
   item['完成%'] < 100 && item.預計完成期限 < today
+
+export const parseRepoInput = (input: string): string[] =>
+  input
+    .split(',')
+    .map((repo) => repo.trim())
+    .filter((repo) => repo.length > 0)

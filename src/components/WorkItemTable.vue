@@ -3,9 +3,20 @@ import { computed } from 'vue'
 
 import { isOverdue, type WorkItem } from '@/types/work-item'
 
-const props = defineProps<{
-  items: WorkItem[]
-  today: string
+const props = withDefaults(
+  defineProps<{
+    items: WorkItem[]
+    today: string
+    editable?: boolean
+  }>(),
+  {
+    editable: false,
+  },
+)
+
+const emit = defineEmits<{
+  edit: [item: WorkItem]
+  delete: [item: WorkItem]
 }>()
 
 const sortedItems = computed(() =>
@@ -33,6 +44,11 @@ const sortedItems = computed(() =>
           <span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
         </div>
         <div class="work-item-cards__meta">{{ item.單位 }}・{{ item.交辦人員 }}</div>
+        <div v-if="item.repo.length > 0" class="work-item-cards__repo">
+          <span v-for="repo in item.repo" :key="repo" class="work-item-table__repo-tag"
+            >#{{ repo }}</span
+          >
+        </div>
         <div class="work-item-cards__content">{{ item.工作內容 }}</div>
         <div class="work-item-cards__status">今日處理情形：{{ item.今日處理情形 }}</div>
         <div class="work-item-cards__progress-row">
@@ -45,6 +61,18 @@ const sortedItems = computed(() =>
           <span>工時 {{ item.今日工時 }}hr</span>
           <span>期限 {{ item.預計完成期限 }}</span>
         </div>
+        <div v-if="editable" class="work-item-cards__actions">
+          <button type="button" class="work-item-cards__action-btn" @click="emit('edit', item)">
+            編輯
+          </button>
+          <button
+            type="button"
+            class="work-item-cards__action-btn work-item-cards__action-btn--danger"
+            @click="emit('delete', item)"
+          >
+            刪除
+          </button>
+        </div>
       </li>
       <li v-if="sortedItems.length === 0" class="work-item-cards__empty">這天沒有紀錄</li>
     </ul>
@@ -56,6 +84,7 @@ const sortedItems = computed(() =>
           <th class="work-item-table__col--index">項次</th>
           <th class="work-item-table__col--unit work-item-table__col--secondary">單位</th>
           <th>專案名稱</th>
+          <th class="work-item-table__col--repo work-item-table__col--secondary">Repo</th>
           <th>工作內容</th>
           <th class="work-item-table__col--unit work-item-table__col--secondary">交辦人員</th>
           <th class="work-item-table__col--date">預計完成期限</th>
@@ -64,6 +93,7 @@ const sortedItems = computed(() =>
           <th class="work-item-table__col--progress">完成度</th>
           <th class="work-item-table__col--secondary">完成回報</th>
           <th class="work-item-table__col--secondary">列管內容</th>
+          <th v-if="editable" class="work-item-table__col--actions">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -75,6 +105,11 @@ const sortedItems = computed(() =>
           <td>{{ item.項次 }}</td>
           <td class="work-item-table__col--secondary">{{ item.單位 }}</td>
           <td>{{ item.專案名稱 }}</td>
+          <td class="work-item-table__col--secondary">
+            <span v-for="repo in item.repo" :key="repo" class="work-item-table__repo-tag"
+              >#{{ repo }}</span
+            >
+          </td>
           <td>{{ item.工作內容 }}</td>
           <td class="work-item-table__col--secondary">{{ item.交辦人員 }}</td>
           <td>
@@ -94,9 +129,21 @@ const sortedItems = computed(() =>
           </td>
           <td class="work-item-table__col--secondary">{{ item.完成回報 }}</td>
           <td class="work-item-table__col--secondary">{{ item.列管內容 }}</td>
+          <td v-if="editable" class="work-item-table__col--actions">
+            <button type="button" class="work-item-table__action-btn" @click="emit('edit', item)">
+              編輯
+            </button>
+            <button
+              type="button"
+              class="work-item-table__action-btn work-item-table__action-btn--danger"
+              @click="emit('delete', item)"
+            >
+              刪除
+            </button>
+          </td>
         </tr>
         <tr v-if="sortedItems.length === 0">
-          <td colspan="11" class="work-item-table__empty">這天沒有紀錄</td>
+          <td colspan="20" class="work-item-table__empty">這天沒有紀錄</td>
         </tr>
       </tbody>
     </table>
@@ -149,6 +196,10 @@ const sortedItems = computed(() =>
   margin-top: 3px;
 }
 
+.work-item-cards__repo {
+  margin-top: 6px;
+}
+
 .work-item-cards__content {
   font-size: 13px;
   color: var(--color-ink);
@@ -174,6 +225,27 @@ const sortedItems = computed(() =>
   margin-top: 10px;
   font-size: 11px;
   color: var(--color-ink-muted);
+}
+
+.work-item-cards__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.work-item-cards__action-btn {
+  flex-grow: 1;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  border-radius: 6px;
+  padding: 7px;
+  font-size: 13px;
+  cursor: pointer;
+
+  &--danger {
+    color: var(--color-danger);
+  }
 }
 
 .work-item-cards__empty {
@@ -207,6 +279,10 @@ const sortedItems = computed(() =>
   width: 90px;
 }
 
+.work-item-table__col--repo {
+  width: 160px;
+}
+
 .work-item-table__col--date {
   width: 140px;
 }
@@ -217,6 +293,10 @@ const sortedItems = computed(() =>
 
 .work-item-table__col--progress {
   width: 150px;
+}
+
+.work-item-table__col--actions {
+  width: 130px;
 }
 
 /* 768–1023px（平板）先隱藏次要欄位，避免橫向擠爆；≥1024px（桌面）恢復顯示 */
@@ -254,6 +334,18 @@ const sortedItems = computed(() =>
   font-size: 11px;
 }
 
+.work-item-table__repo-tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-ink-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .work-item-table__progress {
   width: 90px;
   height: 6px;
@@ -273,6 +365,21 @@ const sortedItems = computed(() =>
   margin-left: 6px;
   font-size: 12px;
   color: var(--color-ink-muted);
+}
+
+.work-item-table__action-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  margin-right: 6px;
+  cursor: pointer;
+
+  &--danger {
+    color: var(--color-danger);
+  }
 }
 
 .work-item-table__empty {
