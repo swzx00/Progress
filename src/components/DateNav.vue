@@ -37,6 +37,7 @@ const onDateInput = (event: Event): void => {
         今日工時合計：{{ totalHours }}hr
       </span>
       <button type="button" class="date-nav__today" @click="goToday">回到今天</button>
+      <slot name="actions" />
     </div>
   </div>
 </template>

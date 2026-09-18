@@ -6,6 +6,20 @@ interface DoGetResponse {
   items: WorkItem[]
 }
 
+type CreateInput = Omit<WorkItem, 'id' | '項次' | '已刪除'>
+type UpdateInput = Partial<Omit<WorkItem, 'id'>>
+
+const postAction = async (payload: unknown): Promise<void> => {
+  const res = await fetch(import.meta.env.VITE_APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    throw new Error(`API 回應錯誤（${res.status}）`)
+  }
+}
+
 export function useWorkItems() {
   const items = ref<WorkItem[]>([])
   const loading = ref(false)
@@ -31,5 +45,12 @@ export function useWorkItems() {
     }
   }
 
-  return { items, loading, error, fetchByDate }
+  const createItem = (item: CreateInput): Promise<void> => postAction({ action: 'create', item })
+
+  const updateItem = (id: string, item: UpdateInput): Promise<void> =>
+    postAction({ action: 'update', id, item })
+
+  const deleteItem = (id: string): Promise<void> => postAction({ action: 'delete', id })
+
+  return { items, loading, error, fetchByDate, createItem, updateItem, deleteItem }
 }
