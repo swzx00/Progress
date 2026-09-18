@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { NSelect, type SelectOption } from 'naive-ui'
+import { computed, onMounted, reactive, watch } from 'vue'
 
-import { parseRepoInput, type WorkItem } from '@/types/work-item'
+import { useOptions } from '@/composables/useOptions'
+import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item'
 
 const props = withDefaults(
   defineProps<{
     item?: WorkItem | null
-    defaultDate: string
     saving?: boolean
   }>(),
   {
@@ -19,55 +20,65 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+
+const { options, fetchOptions } = useOptions()
+onMounted(fetchOptions)
+
+const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
+  (values ?? []).map((value) => ({ label: value, value }))
+
+const unitOptions = computed(() => toSelectOptions(options.value?.交辦單位))
+const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人員))
+const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱))
+const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo))
+const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]))
+
 const form = reactive({
-  單位: '',
-  專案名稱: '',
-  repoInput: '',
-  工作內容: '',
+  工作日期: toDateString(new Date()),
+  交辦單位: '',
   交辦人員: '',
-  預計完成期限: '',
-  工作日期: props.defaultDate,
-  今日處理情形: '',
+  專案名稱: '',
+  專案Repo: [] as string[],
+  工作目標: '',
+  預計期限: '',
+  處理內容: '',
   今日工時: 0,
-  '完成%': 0,
-  完成回報: '',
-  列管內容: '',
+  完成度: 0,
+  狀態: '',
 })
 
 const resetForm = (item: WorkItem | null | undefined): void => {
-  form.單位 = item?.單位 ?? ''
-  form.專案名稱 = item?.專案名稱 ?? ''
-  form.repoInput = item ? item.repo.join(', ') : ''
-  form.工作內容 = item?.工作內容 ?? ''
+  form.工作日期 = item?.工作日期 ?? toDateString(new Date())
+  form.交辦單位 = item?.交辦單位 ?? ''
   form.交辦人員 = item?.交辦人員 ?? ''
-  form.預計完成期限 = item?.預計完成期限 ?? ''
-  form.工作日期 = item?.工作日期 ?? props.defaultDate
-  form.今日處理情形 = item?.今日處理情形 ?? ''
+  form.專案名稱 = item?.專案名稱 ?? ''
+  form.專案Repo = item ? [...item.專案Repo] : []
+  form.工作目標 = item?.工作目標 ?? ''
+  form.預計期限 = item?.預計期限 ?? ''
+  form.處理內容 = item?.處理內容 ?? ''
   form.今日工時 = item?.今日工時 ?? 0
-  form['完成%'] = item?.['完成%'] ?? 0
-  form.完成回報 = item?.完成回報 ?? ''
-  form.列管內容 = item?.列管內容 ?? ''
+  form.完成度 = item?.完成度 ?? 0
+  form.狀態 = item?.狀態 ?? ''
 }
 
 watch(() => props.item, resetForm, { immediate: true })
 
 const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'))
-const repoPreview = computed(() => parseRepoInput(form.repoInput))
 
 const onSubmit = (): void => {
   emit('save', {
-    單位: form.單位,
-    專案名稱: form.專案名稱,
-    repo: parseRepoInput(form.repoInput),
-    工作內容: form.工作內容,
-    交辦人員: form.交辦人員,
-    預計完成期限: form.預計完成期限,
     工作日期: form.工作日期,
-    今日處理情形: form.今日處理情形,
+    交辦單位: form.交辦單位,
+    交辦人員: form.交辦人員,
+    專案名稱: form.專案名稱,
+    專案Repo: form.專案Repo,
+    工作目標: form.工作目標,
+    預計期限: form.預計期限,
+    處理內容: form.處理內容,
     今日工時: Number(form.今日工時),
-    '完成%': Number(form['完成%']),
-    完成回報: form.完成回報,
-    列管內容: form.列管內容,
+    完成度: Number(form.完成度),
+    狀態: form.狀態,
   })
 }
 </script>
@@ -102,72 +113,90 @@ const onSubmit = (): void => {
       </div>
 
       <form id="work-item-form-body" class="work-item-form__body" @submit.prevent="onSubmit">
+        <label class="work-item-form__field work-item-form__field--highlight">
+          工作日期
+          <input v-model="form.工作日期" type="date" required />
+        </label>
+
         <div class="work-item-form__row">
           <label class="work-item-form__field">
-            單位
-            <input v-model="form.單位" type="text" required />
+            交辦單位
+            <NSelect
+              v-model:value="form.交辦單位"
+              filterable
+              tag
+              :options="unitOptions"
+              placeholder="搜尋或輸入新單位"
+            />
           </label>
           <label class="work-item-form__field">
             交辦人員
-            <input v-model="form.交辦人員" type="text" required />
+            <NSelect
+              v-model:value="form.交辦人員"
+              filterable
+              tag
+              :options="assigneeOptions"
+              placeholder="搜尋或輸入新人員"
+            />
           </label>
         </div>
 
         <label class="work-item-form__field">
           專案名稱
-          <input v-model="form.專案名稱" type="text" required />
+          <NSelect
+            v-model:value="form.專案名稱"
+            filterable
+            tag
+            :options="projectOptions"
+            placeholder="搜尋或輸入新專案名稱"
+          />
         </label>
 
         <label class="work-item-form__field">
-          Repo（選填，可多個）
-          <input v-model="form.repoInput" type="text" placeholder="以逗號分隔，例如 AAA,BBBB" />
-          <div v-if="repoPreview.length > 0" class="work-item-form__repo-preview">
-            <span v-for="repo in repoPreview" :key="repo" class="work-item-form__repo-tag"
-              >#{{ repo }}</span
-            >
-          </div>
+          專案 Repo（選填，可多個）
+          <NSelect
+            v-model:value="form.專案Repo"
+            filterable
+            multiple
+            tag
+            :options="repoOptions"
+            placeholder="搜尋或輸入 repo 名稱"
+          />
         </label>
 
         <label class="work-item-form__field">
-          工作內容
-          <textarea v-model="form.工作內容" rows="2" required />
-        </label>
-
-        <div class="work-item-form__row">
-          <label class="work-item-form__field">
-            工作日期
-            <input v-model="form.工作日期" type="date" required />
-          </label>
-          <label class="work-item-form__field">
-            預計完成期限
-            <input v-model="form.預計完成期限" type="date" required />
-          </label>
-        </div>
-
-        <label class="work-item-form__field">
-          今日處理情形
-          <textarea v-model="form.今日處理情形" rows="2" required />
-        </label>
-
-        <div class="work-item-form__row">
-          <label class="work-item-form__field">
-            今日工時
-            <input v-model.number="form.今日工時" type="number" min="0" required />
-          </label>
-          <label class="work-item-form__field">
-            完成% (0–100)
-            <input v-model.number="form['完成%']" type="number" min="0" max="100" required />
-          </label>
-        </div>
-
-        <label class="work-item-form__field">
-          完成回報
-          <input v-model="form.完成回報" type="text" placeholder="（選填）" />
+          工作目標
+          <textarea v-model="form.工作目標" rows="2" required />
         </label>
 
         <label class="work-item-form__field">
-          列管內容
-          <textarea v-model="form.列管內容" rows="2" placeholder="（選填）" />
+          處理內容
+          <textarea v-model="form.處理內容" rows="2" required />
+        </label>
+
+        <label class="work-item-form__field">
+          今日工時
+          <input v-model.number="form.今日工時" type="number" min="0" required />
+        </label>
+
+        <label class="work-item-form__field">
+          預計期限
+          <input v-model="form.預計期限" type="date" required />
+        </label>
+
+        <label class="work-item-form__field">
+          完成度 (0–100)
+          <input v-model.number="form.完成度" type="number" min="0" max="100" required />
+        </label>
+
+        <label class="work-item-form__field">
+          狀態
+          <NSelect
+            v-model:value="form.狀態"
+            clearable
+            :options="statusOptions"
+            placeholder="請選擇狀態（選填）"
+          />
         </label>
       </form>
 
@@ -295,21 +324,22 @@ const onSubmit = (): void => {
   textarea {
     resize: vertical;
   }
-}
 
-.work-item-form__repo-preview {
-  margin-top: 2px;
-}
+  &--highlight {
+    background: var(--color-surface);
+    border: 1px solid var(--color-accent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-accent);
 
-.work-item-form__repo-tag {
-  display: inline-block;
-  margin-right: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-ink-muted);
-  font-size: 11px;
+    input {
+      border-color: var(--color-accent);
+      font-weight: 700;
+      font-size: 15px;
+    }
+  }
 }
 
 .work-item-form__desktop-footer {

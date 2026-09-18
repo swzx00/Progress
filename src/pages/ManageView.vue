@@ -125,7 +125,6 @@ const confirmDelete = async (): Promise<void> => {
       <WorkItemForm
         v-if="formOpen"
         :item="editingItem"
-        :default-date="selectedDate"
         :saving="saving"
         @save="onSave"
         @cancel="closeForm"
@@ -136,7 +135,7 @@ const confirmDelete = async (): Promise<void> => {
     <ConfirmDialog
       v-if="deleteTarget"
       title="確定要刪除這筆紀錄嗎？"
-      :message="`「${deleteTarget.專案名稱}」・${deleteTarget.工作內容}，${deleteTarget.工作日期}。刪除後不會馬上從 Google Sheet 消失（軟刪除），但列表會立刻看不到這筆。`"
+      :message="`「${deleteTarget.專案名稱}」・${deleteTarget.工作目標}，${deleteTarget.工作日期}。刪除後不會馬上從 Google Sheet 消失（軟刪除），但列表會立刻看不到這筆。`"
       confirm-label="刪除"
       danger
       :busy="deleting"
@@ -147,19 +146,22 @@ const confirmDelete = async (): Promise<void> => {
 </template>
 
 <style scoped lang="scss">
-.manage-view {
-  padding: 16px;
+// .manage-view {
+//   padding: 16px;
 
-  @media (min-width: 768px) {
-    padding: 24px 32px;
-  }
-}
+//   @media (min-width: 768px) {
+//     padding: 24px 32px;
+//   }
+// }
 
 .manage-view__header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  padding: 16px;
+  @media (min-width: 768px) {
+    padding: 24px 32px;
+  }
 }
 
 .manage-view__title {

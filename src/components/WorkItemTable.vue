@@ -39,37 +39,25 @@ const sortedItems = computed(() =>
         項次
       </div>
       <div
-        class="work-item-table__cell work-item-table__cell--unit work-item-table__cell--secondary"
-        role="columnheader"
-      >
-        單位
-      </div>
-      <div class="work-item-table__cell work-item-table__cell--title" role="columnheader">
-        專案名稱
-      </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--repo work-item-table__cell--secondary"
-        role="columnheader"
-      >
-        Repo
-      </div>
-      <div class="work-item-table__cell work-item-table__cell--content" role="columnheader">
-        工作內容
-      </div>
-      <div
         class="work-item-table__cell work-item-table__cell--assignee work-item-table__cell--secondary"
         role="columnheader"
       >
-        交辦人員
+        交辦單位/人員
       </div>
-      <div class="work-item-table__cell work-item-table__cell--due" role="columnheader">
-        預計完成期限
+      <div class="work-item-table__cell work-item-table__cell--title" role="columnheader">
+        專案名稱/Repo
+      </div>
+      <div class="work-item-table__cell work-item-table__cell--content" role="columnheader">
+        工作目標
       </div>
       <div class="work-item-table__cell work-item-table__cell--status" role="columnheader">
-        今日處理情形
+        處理內容
       </div>
       <div class="work-item-table__cell work-item-table__cell--hours" role="columnheader">
         今日工時
+      </div>
+      <div class="work-item-table__cell work-item-table__cell--due" role="columnheader">
+        預計期限
       </div>
       <div class="work-item-table__cell work-item-table__cell--progress" role="columnheader">
         完成度
@@ -78,13 +66,7 @@ const sortedItems = computed(() =>
         class="work-item-table__cell work-item-table__cell--report work-item-table__cell--mobile-hide work-item-table__cell--secondary"
         role="columnheader"
       >
-        完成回報
-      </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--control work-item-table__cell--mobile-hide work-item-table__cell--secondary"
-        role="columnheader"
-      >
-        列管內容
+        狀態
       </div>
       <div
         v-if="editable"
@@ -108,61 +90,61 @@ const sortedItems = computed(() =>
       >
         {{ item.項次 }}
       </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--unit work-item-table__cell--secondary"
-        role="cell"
-      >
-        {{ item.單位 }}
-      </div>
-      <div class="work-item-table__cell work-item-table__cell--title" role="cell">
-        {{ item.專案名稱 }}
-      </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--repo work-item-table__cell--secondary"
-        role="cell"
-      >
-        <span v-for="repo in item.repo" :key="repo" class="work-item-table__repo-tag"
-          >#{{ repo }}</span
-        >
-      </div>
-      <div class="work-item-table__cell work-item-table__cell--content" role="cell">
-        {{ item.工作內容 }}
-      </div>
+
       <div
         class="work-item-table__cell work-item-table__cell--assignee work-item-table__cell--secondary"
         role="cell"
       >
-        {{ item.交辦人員 }}
+        <span class="work-item-table__assignee-stacked">
+          <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
+          <span class="work-item-table__assignee-person">{{ item.交辦人員 }}</span>
+        </span>
+        <span class="work-item-table__assignee-inline"
+          >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
+        >
       </div>
-      <div class="work-item-table__cell work-item-table__cell--due" role="cell">
-        <span class="work-item-table__mobile-label">期限 </span>{{ item.預計完成期限
-        }}<span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
+
+      <div class="work-item-table__cell work-item-table__cell--title" role="cell">
+        <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
+        <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
+          <span v-for="repo in item.專案Repo" :key="repo" class="work-item-table__repo-tag"
+            >#{{ repo }}</span
+          >
+        </div>
       </div>
+
+      <div class="work-item-table__cell work-item-table__cell--content" role="cell">
+        {{ item.工作目標 }}
+      </div>
+
       <div class="work-item-table__cell work-item-table__cell--status" role="cell">
-        <span class="work-item-table__mobile-label">今日處理情形：</span>{{ item.今日處理情形 }}
+        <span class="work-item-table__mobile-label">處理內容：</span>{{ item.處理內容 }}
       </div>
+
       <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
         <span class="work-item-table__mobile-label">工時 </span>{{ item.今日工時
         }}<span class="work-item-table__mobile-label">hr</span>
       </div>
+
+      <div class="work-item-table__cell work-item-table__cell--due" role="cell">
+        <span class="work-item-table__mobile-label">期限 </span>{{ item.預計期限
+        }}<span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
+      </div>
+
       <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
         <div class="work-item-table__progress">
-          <div class="work-item-table__progress-bar" :style="{ width: item['完成%'] + '%' }" />
+          <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
         </div>
-        <span class="work-item-table__progress-text">{{ item['完成%'] }}%</span>
+        <span class="work-item-table__progress-text">{{ item.完成度 }}%</span>
       </div>
+
       <div
         class="work-item-table__cell work-item-table__cell--report work-item-table__cell--mobile-hide work-item-table__cell--secondary"
         role="cell"
       >
-        {{ item.完成回報 }}
+        {{ item.狀態 }}
       </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--control work-item-table__cell--mobile-hide work-item-table__cell--secondary"
-        role="cell"
-      >
-        {{ item.列管內容 }}
-      </div>
+
       <div v-if="editable" class="work-item-table__cell work-item-table__cell--actions" role="cell">
         <div class="work-item-table__actions">
           <button type="button" class="work-item-table__action-btn" @click="emit('edit', item)">
@@ -223,49 +205,35 @@ const sortedItems = computed(() =>
 
   &--title {
     order: 1;
-    font-size: 15px;
-    font-weight: 700;
-  }
-
-  &--unit {
-    order: 2;
-    font-size: 12px;
-    color: var(--color-ink-muted);
   }
 
   &--assignee {
-    order: 3;
-    font-size: 12px;
-    color: var(--color-ink-muted);
-  }
-
-  &--repo {
-    order: 4;
+    order: 2;
   }
 
   &--content {
-    order: 5;
+    order: 3;
   }
 
   &--status {
-    order: 6;
+    order: 4;
     font-size: 12px;
     color: var(--color-ink-muted);
   }
 
   &--progress {
-    order: 7;
+    order: 5;
   }
 
   &--hours {
-    order: 8;
+    order: 6;
     flex-basis: 50%;
     font-size: 11px;
     color: var(--color-ink-muted);
   }
 
   &--due {
-    order: 9;
+    order: 7;
     flex-basis: 50%;
     text-align: right;
     font-size: 11px;
@@ -273,8 +241,28 @@ const sortedItems = computed(() =>
   }
 
   &--actions {
-    order: 10;
+    order: 8;
   }
+}
+
+.work-item-table__title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.work-item-table__title-repo {
+  margin-top: 4px;
+}
+
+.work-item-table__assignee-stacked {
+  display: none;
+}
+
+.work-item-table__assignee-inline {
+  display: inline;
+  font-size: 12px;
+  color: var(--color-ink-muted);
 }
 
 .work-item-table__mobile-label {
@@ -355,7 +343,7 @@ const sortedItems = computed(() =>
 @media (min-width: 768px) {
   .work-item-table__row {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) 140px minmax(0, 1fr) 64px 150px;
+    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 64px 140px 150px;
     align-items: center;
     gap: 0;
     border: none;
@@ -381,7 +369,7 @@ const sortedItems = computed(() =>
   }
 
   .work-item-table--editable .work-item-table__row {
-    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) 140px minmax(0, 1fr) 64px 150px 130px;
+    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 64px 140px 150px 130px;
   }
 
   .work-item-table__cell {
@@ -402,13 +390,6 @@ const sortedItems = computed(() =>
 
     &--title {
       font-size: 13px;
-      font-weight: 400;
-    }
-
-    &--unit,
-    &--assignee {
-      font-size: 13px;
-      color: var(--color-ink);
     }
 
     &--status {
@@ -423,6 +404,11 @@ const sortedItems = computed(() =>
       color: var(--color-ink);
       white-space: nowrap;
     }
+  }
+
+  .work-item-table__title-text {
+    font-size: 13px;
+    font-weight: 400;
   }
 
   .work-item-table__mobile-label {
@@ -440,22 +426,33 @@ const sortedItems = computed(() =>
   }
 }
 
-/* ≥ 1024px：恢復次要欄位，套完整欄寬（固定寬窄欄 + 彈性寬文字欄） */
+/* ≥ 1024px：恢復次要欄位（交辦人員／狀態），套完整欄寬 */
 @media (min-width: 1024px) {
   .work-item-table__row {
-    grid-template-columns:
-      48px 90px minmax(0, 1fr) 160px minmax(0, 1fr) 90px 140px minmax(0, 1fr) 64px 150px
-      minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: 48px 110px minmax(0, 1fr) minmax(0, 1fr) minmax(
+        0,
+        1fr
+      ) 64px 140px 150px minmax(0, 1fr);
   }
 
   .work-item-table--editable .work-item-table__row {
-    grid-template-columns:
-      48px 90px minmax(0, 1fr) 160px minmax(0, 1fr) 90px 140px minmax(0, 1fr) 64px 150px
-      minmax(0, 1fr) minmax(0, 1fr) 130px;
+    grid-template-columns: 48px 110px minmax(0, 1fr) minmax(0, 1fr) minmax(
+        0,
+        1fr
+      ) 64px 140px 150px minmax(0, 1fr) 130px;
   }
 
   .work-item-table__cell--secondary {
     display: block;
+  }
+
+  .work-item-table__assignee-stacked {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .work-item-table__assignee-inline {
+    display: none;
   }
 }
 </style>
