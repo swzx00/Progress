@@ -24,3 +24,12 @@ export const parseRepoInput = (input: string): string[] =>
     .split(',')
     .map((repo) => repo.trim())
     .filter((repo) => repo.length > 0)
+
+export interface WorkItemOptions {
+  交辦單位: string[]
+  交辦人員: string[]
+  專案名稱: string[]
+  專案Repo: string[]
+}
+
+export const STATUS_OPTIONS = ['進行中', '前端完成', '返修', '待辦', '確認上線', '暫緩'] as const
