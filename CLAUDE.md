@@ -85,9 +85,9 @@ src/
   pages/
     HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
-    WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄）
+    WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式）
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
-    DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天，顯示星期，放假日顯示徽章，按鈕沒用途時 disabled
+    DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時文字變「今天」且 disabled），顯示星期，放假日顯示徽章，日期選擇器今天時加 outline，按鈕沒用途時 disabled
     ProjectAutocomplete.vue
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理
@@ -128,6 +128,11 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 管理頁／檢視頁合併成單一元件（`HomeView.vue`）、單一路由（`/`），不再區分 `/manage`：`isAuthorized` 為 true 顯示新增/編輯/刪除操作與登入資訊，否則顯示唯讀畫面（含「唯讀模式」標籤），未登入時仍保留登入按鈕入口
 - 前台改成**以日期為單位**呈現（非月份）：「⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭」＋「回到今天」做單日切換，跨月切換對使用者無感，由 Apps Script 依日期自動換算月份分頁；「上一個工作日／下一個工作日」會跳過連續的假日／週末（含補班日例外），細節見下方「台灣國定假日顯示」
 - 按鈕沒有實際用途時要 disabled，不能點了沒反應卻看起來可以點：「上一個工作日／下一個工作日」若緊鄰那一天本來就是工作日（按下去效果等同「上一天／下一天」，沒有額外用途）就停用
+- **「回到今天」與「今天」合併成同一顆按鈕**，不分開放兩個元素：不是今天時顯示「回到今天」（可點擊，`--color-border` 一般樣式）；已經是今天時，同一顆按鈕文字換成「今天」、disabled、改成 `--color-accent` 填色樣式，兼當狀態指示用，不需要額外的徽章
+- **今天／非今天要有視覺區別，涵蓋三處**：
+  1. `DateNav` 的日期選擇器：選到今天時外層加一圈 `--color-accent` 的 `outline`（不是改 Naive UI 內部 input 的 border 顏色——那個要 `:deep()` 扣內部 class 名稱，容易因套件升級失效；`outline` 直接套在元件自己的根節點上，跟平常自訂元件的 CSS 選擇器沒有兩樣，不用穿透子元件）
+  2. `WorkItemTable` 的表頭（桌面）：`viewing-today` prop 為 true 時，表頭背景/邊框改用 `--color-accent` 色調
+  3. `WorkItemTable` 的卡片／列：整個表格容器最上方加一條 `--color-accent` 標線，每張卡片/列背景加一層極淡的 accent 色調（`color-mix(in srgb, var(--color-accent) 6%, var(--color-bg))`），跟逾期用的紅色左側標線（`--color-danger`）刻意用不同顏色，避免兩種語意的提醒混在一起
 - 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
@@ -144,7 +149,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - `findNextWorkday(fromDate, direction)`：往前/往後找下一個工作日，`DateNav` 的「上一個工作日／下一個工作日」按鈕用這個。**這裡刻意用原始 `isHoliday` 欄位判斷（不是 `getDay()` 猜週末）**，因為 `isHoliday` 才正確涵蓋補班日的例外情形（補班的週六 `isHoliday` 會是 `false`），用星期幾去猜會在補班日誤判成放假。日期解析要跟 `DateNav.vue` 的 `shift()` 用同一套慣例（`new Date(fromDate)` 純日期字串視為 UTC 午夜，搭配 `setDate`/`getDate` 本地時間方法，再用 `toISOString()` 轉回字串）——這套組合對台灣所在的正 UTC 偏移時區剛好互相抵銷、結果正確；混用 `` `${fromDate}T00:00:00` ``（本地午夜解析）卻仍用 `toISOString()` 轉字串會兩邊時區基準不一致，換算回來的日期少一天（實際踩過這個坑：9/24 按「下一個工作日」原本因為這個 bug 完全沒反應）
   - 查不到或請求失敗就靜默不顯示假日資訊／視為工作日，不影響其他功能，也不擋頁面
 - **不在月曆彈窗格子內標色**：`NDatePicker` 沒有自訂格子樣式的介面，改用旁邊獨立的徽章表示，取捨紀錄見上方「UI 元件庫」段落
-- **色彩 token**：`tokens.scss` 新增 `--color-holiday`，跟 `--color-danger`（逾期）／`--color-accent`（一般強調）區分
+- **色彩 token**：`tokens.scss` 新增 `--color-holiday`，跟 `--color-danger`（逾期）／`--color-accent`（一般強調，也用在「今天」徽章）區分
 - 這是本專案唯一一處會在瀏覽器執行期間打「Apps Script 以外的第三方網址」的地方，記錄於此避免之後忘記這個例外
 
 ## RWD 斷點
