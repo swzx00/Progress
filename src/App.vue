@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NConfigProvider, type GlobalThemeOverrides } from 'naive-ui'
+import { NConfigProvider, dateZhTW, zhTW, type GlobalThemeOverrides } from 'naive-ui'
 
 // 對齊 src/styles/tokens.css 的色彩，讓 Naive UI 元件跟自訂樣式視覺一致
 const themeOverrides: GlobalThemeOverrides = {
@@ -17,7 +17,7 @@ const themeOverrides: GlobalThemeOverrides = {
 </script>
 
 <template>
-  <n-config-provider :theme-overrides="themeOverrides">
+  <n-config-provider :theme-overrides="themeOverrides" :locale="zhTW" :date-locale="dateZhTW">
     <router-view />
   </n-config-provider>
 </template>

@@ -6,6 +6,7 @@ import DateNav from '@/components/DateNav.vue'
 import WorkItemForm from '@/components/WorkItemForm.vue'
 import WorkItemTable from '@/components/WorkItemTable.vue'
 import { useGoogleAuth } from '@/composables/useGoogleAuth'
+import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays'
 import { useWorkItems } from '@/composables/useWorkItems'
 import type { WorkItem } from '@/types/work-item'
 
@@ -21,6 +22,8 @@ watch(signInButtonEl, (el) => {
 
 const selectedDate = ref(toDateString(new Date()))
 const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems()
+const { getHolidayName } = useTaiwanHolidays()
+const holidayName = computed(() => getHolidayName(selectedDate.value))
 
 watch(selectedDate, (date) => fetchByDate(date), { immediate: true })
 
@@ -126,6 +129,11 @@ const confirmDelete = async (): Promise<void> => {
         <button type="button" class="home-view__add-btn" @click="openCreateForm">＋ 新增</button>
       </template>
     </DateNav>
+
+    <div v-if="holidayName" class="home-view__holiday-banner">
+      <span class="home-view__holiday-icon" aria-hidden="true">🎉</span>
+      <span>{{ selectedDate }} 是國定假日「{{ holidayName }}」</span>
+    </div>
 
     <div v-if="loading" class="home-view__loading">
       <span class="home-view__spinner" aria-hidden="true"></span>
@@ -264,6 +272,28 @@ const confirmDelete = async (): Promise<void> => {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.home-view__holiday-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-holiday) 10%, var(--color-bg));
+  box-shadow: inset 3px 0 0 var(--color-holiday);
+  color: var(--color-holiday);
+  font-size: 13px;
+  font-weight: 600;
+
+  @media (min-width: 768px) {
+    margin: 0 32px 16px;
+  }
+}
+
+.home-view__holiday-icon {
+  font-size: 15px;
 }
 
 .home-view__loading {
