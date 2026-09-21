@@ -93,8 +93,8 @@ const renderSignInButton = async (el: HTMLElement): Promise<void> => {
   await ensureInitialized()
   window.google?.accounts.id.renderButton(el, {
     theme: 'outline',
-    size: 'large',
-    text: 'signin_with',
+    size: 'medium',
+    text: 'signin',
     shape: 'rectangular',
   })
 }
