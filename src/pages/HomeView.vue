@@ -96,38 +96,39 @@ const confirmDelete = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="manage-view">
-    <header class="manage-view__header">
-      <h1 class="manage-view__title">工作進度</h1>
+  <div class="home-view">
+    <header class="home-view__header">
+      <h1 class="home-view__title">工作進度</h1>
+      <span v-if="!isAuthorized" class="home-view__badge">唯讀模式</span>
       <button
         type="button"
-        class="manage-view__theme-btn"
+        class="home-view__theme-btn"
         title="深色模式（即將推出）"
         aria-label="深色模式（即將推出）"
         disabled
       >
         ☾
       </button>
-      <div v-if="isAuthorized" class="manage-view__account">
-        <span class="manage-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
-        <span class="manage-view__email">已登入・{{ userEmail }}</span>
-        <button type="button" class="manage-view__signout-btn" @click="signOut">登出</button>
+      <div v-if="isAuthorized" class="home-view__account">
+        <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
+        <span class="home-view__email">已登入・{{ userEmail }}</span>
+        <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
       </div>
-      <div v-else-if="isLoggedIn" class="manage-view__unauthorized">
+      <div v-else-if="isLoggedIn" class="home-view__unauthorized">
         <span>{{ userEmail }} 沒有管理權限</span>
-        <button type="button" class="manage-view__signout-btn" @click="signOut">登出</button>
+        <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
       </div>
-      <div v-else ref="signInButtonEl" class="manage-view__signin"></div>
+      <div v-else ref="signInButtonEl" class="home-view__signin"></div>
     </header>
 
     <DateNav v-model="selectedDate" :total-hours="totalHours">
       <template v-if="isAuthorized" #actions>
-        <button type="button" class="manage-view__add-btn" @click="openCreateForm">＋ 新增</button>
+        <button type="button" class="home-view__add-btn" @click="openCreateForm">＋ 新增</button>
       </template>
     </DateNav>
 
-    <p v-if="loading" class="manage-view__status">載入中…</p>
-    <p v-else-if="error" class="manage-view__status manage-view__status--error">{{ error }}</p>
+    <p v-if="loading" class="home-view__status">載入中…</p>
+    <p v-else-if="error" class="home-view__status home-view__status--error">{{ error }}</p>
     <WorkItemTable
       v-else
       :items="items"
@@ -146,7 +147,7 @@ const confirmDelete = async (): Promise<void> => {
         @cancel="closeForm"
       />
     </Transition>
-    <p v-if="saveError" class="manage-view__save-error">{{ saveError }}</p>
+    <p v-if="saveError" class="home-view__save-error">{{ saveError }}</p>
 
     <ConfirmDialog
       v-if="deleteTarget && isAuthorized"
@@ -162,15 +163,7 @@ const confirmDelete = async (): Promise<void> => {
 </template>
 
 <style scoped lang="scss">
-// .manage-view {
-//   padding: 16px;
-
-//   @media (min-width: 768px) {
-//     padding: 24px 32px;
-//   }
-// }
-
-.manage-view__header {
+.home-view__header {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -180,14 +173,22 @@ const confirmDelete = async (): Promise<void> => {
   }
 }
 
-.manage-view__title {
+.home-view__title {
   font-size: 20px;
   font-weight: 700;
   color: var(--color-ink);
   margin: 0;
 }
 
-.manage-view__theme-btn {
+.home-view__badge {
+  font-size: 12px;
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.home-view__theme-btn {
   width: 28px;
   height: 28px;
   border-radius: 999px;
@@ -202,24 +203,24 @@ const confirmDelete = async (): Promise<void> => {
   padding: 0;
 }
 
-.manage-view__account,
-.manage-view__unauthorized {
+.home-view__account,
+.home-view__unauthorized {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.manage-view__unauthorized {
+.home-view__unauthorized {
   font-size: 12px;
   color: var(--color-danger);
 }
 
-.manage-view__signin {
+.home-view__signin {
   margin-left: auto;
 }
 
-.manage-view__signout-btn {
+.home-view__signout-btn {
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-ink-muted);
@@ -229,7 +230,7 @@ const confirmDelete = async (): Promise<void> => {
   cursor: pointer;
 }
 
-.manage-view__avatar {
+.home-view__avatar {
   width: 24px;
   height: 24px;
   border-radius: 999px;
@@ -242,12 +243,12 @@ const confirmDelete = async (): Promise<void> => {
   justify-content: center;
 }
 
-.manage-view__email {
+.home-view__email {
   font-size: 12px;
   color: var(--color-ink-muted);
 }
 
-.manage-view__add-btn {
+.home-view__add-btn {
   border: none;
   background: var(--color-accent);
   color: #fff;
@@ -259,16 +260,16 @@ const confirmDelete = async (): Promise<void> => {
   white-space: nowrap;
 }
 
-.manage-view__status {
+.home-view__status {
   color: var(--color-ink-muted);
   padding: 24px 0;
 }
 
-.manage-view__status--error {
+.home-view__status--error {
   color: var(--color-danger);
 }
 
-.manage-view__save-error {
+.home-view__save-error {
   color: var(--color-danger);
   font-size: 13px;
   padding: 8px 16px;

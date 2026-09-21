@@ -83,10 +83,9 @@
 ```
 src/
   pages/
-    ManageView.vue        # 管理頁：需 Google 登入，含新增/編輯/刪除，單日切換
-    PublicView.vue        # 檢視頁：唯讀，任何人可看，單日切換
+    HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
-    WorkItemTable.vue     # 表格排版（複用於管理頁／檢視頁）
+    WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄）
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
     DateNav.vue           # ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 回到今天
     ProjectAutocomplete.vue
@@ -124,12 +123,12 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 
 - 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
 - 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
-- 管理頁／檢視頁共用同一套表格元件，差別只在是否顯示編輯/刪除操作與登入資訊
+- 管理頁／檢視頁合併成單一元件（`HomeView.vue`）、單一路由（`/`），不再區分 `/manage`：`isAuthorized` 為 true 顯示新增/編輯/刪除操作與登入資訊，否則顯示唯讀畫面（含「唯讀模式」標籤），未登入時仍保留登入按鈕入口
 - 前台改成**以日期為單位**呈現（非月份）：「◀ 上一天 / 日期選擇器 / 下一天 ▶」＋「回到今天」做單日切換，跨月切換對使用者無感，由 Apps Script 依日期自動換算月份分頁
 - 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
-- 管理頁的 Google 登入狀態存在登入 session 內，不用每次操作重新登入
+- Google 登入狀態存在登入 session 內，不用每次操作重新登入
 
 ## RWD 斷點
 
@@ -148,9 +147,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 1. Google Sheet 準備：建立「選項清單」分頁、確認分頁欄位含工作日期／ID／已刪除、Apps Script 專案初始化
 2. Apps Script 後端：doGet／doPost、自動建分頁邏輯、ID Token 驗證、共用 schema 驗證、選項清單讀寫
 3. 前端基礎建設：Vite + Vue 3 + TS 專案、ESLint/Prettier/.editorconfig、CSS token 架構、GIS 登入串接
-4. 管理頁：表格（A 版排版）、新增/編輯 Drawer、單日切換、自動完成/下拉選單、刪除確認
-5. 檢視頁：唯讀表格、單日切換
-6. 部署：GitHub Actions 建置流程 → GitHub Pages
+4. 管理／檢視畫面（`HomeView.vue`，單一路由依登入狀態切換）：表格（A 版排版）、新增/編輯 Drawer、單日切換、自動完成/下拉選單、刪除確認、唯讀模式
+5. 部署：GitHub Actions 建置流程 → GitHub Pages
 
 # 分支策略與部署
 
