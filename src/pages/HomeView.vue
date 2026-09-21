@@ -22,8 +22,8 @@ watch(signInButtonEl, (el) => {
 
 const selectedDate = ref(toDateString(new Date()))
 const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems()
-const { getHolidayName } = useTaiwanHolidays()
-const holidayName = computed(() => getHolidayName(selectedDate.value))
+const { getDayOffLabel } = useTaiwanHolidays()
+const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value))
 
 watch(selectedDate, (date) => fetchByDate(date), { immediate: true })
 
@@ -130,9 +130,9 @@ const confirmDelete = async (): Promise<void> => {
       </template>
     </DateNav>
 
-    <div v-if="holidayName" class="home-view__holiday-banner">
+    <div v-if="dayOffLabel" class="home-view__holiday-banner">
       <span class="home-view__holiday-icon" aria-hidden="true">🎉</span>
-      <span>{{ selectedDate }} 是國定假日「{{ holidayName }}」</span>
+      <span>{{ selectedDate }} 是「{{ dayOffLabel }}」，非工作日</span>
     </div>
 
     <div v-if="loading" class="home-view__loading">
