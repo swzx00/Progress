@@ -127,8 +127,14 @@ const confirmDelete = async (): Promise<void> => {
       </template>
     </DateNav>
 
-    <p v-if="loading" class="home-view__status">載入中…</p>
-    <p v-else-if="error" class="home-view__status home-view__status--error">{{ error }}</p>
+    <div v-if="loading" class="home-view__loading">
+      <span class="home-view__spinner" aria-hidden="true"></span>
+      <span>載入中…</span>
+    </div>
+    <div v-else-if="error" class="home-view__error">
+      <span class="home-view__error-icon" aria-hidden="true">⚠</span>
+      <span>{{ error }}</span>
+    </div>
     <WorkItemTable
       v-else
       :items="items"
@@ -260,13 +266,42 @@ const confirmDelete = async (): Promise<void> => {
   white-space: nowrap;
 }
 
-.home-view__status {
+.home-view__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   color: var(--color-ink-muted);
-  padding: 24px 0;
+  padding: 48px 0;
 }
 
-.home-view__status--error {
+.home-view__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: home-view-spin 0.7s linear infinite;
+}
+
+@keyframes home-view-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.home-view__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   color: var(--color-danger);
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.home-view__error-icon {
+  font-size: 24px;
 }
 
 .home-view__save-error {
