@@ -8,9 +8,11 @@ const props = withDefaults(
     items: WorkItem[]
     today: string
     editable?: boolean
+    viewingToday?: boolean
   }>(),
   {
     editable: false,
+    viewingToday: false,
   },
 )
 
@@ -30,7 +32,11 @@ const sortedItems = computed(() =>
 </script>
 
 <template>
-  <div class="work-item-table" :class="{ 'work-item-table--editable': editable }" role="table">
+  <div
+    class="work-item-table"
+    :class="{ 'work-item-table--editable': editable, 'work-item-table--viewing-today': viewingToday }"
+    role="table"
+  >
     <div class="work-item-table__row work-item-table__row--header" role="row">
       <div
         class="work-item-table__cell work-item-table__cell--index work-item-table__cell--mobile-hide"
@@ -171,6 +177,24 @@ const sortedItems = computed(() =>
 
   @media (min-width: 768px) {
     padding: 0 32px 16px;
+  }
+
+  /*
+   * 「正在檢視今天」跟「逾期」是兩種不同語意的提醒，顏色刻意分開：
+   * 逾期用 --color-danger（紅），這裡用 --color-accent（藍），視覺上不會混淆。
+   */
+  &--viewing-today {
+    border-top: 3px solid var(--color-accent);
+    padding-top: 12px;
+
+    .work-item-table__row {
+      background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
+    }
+
+    .work-item-table__row--header {
+      background: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg));
+      border-color: var(--color-accent);
+    }
   }
 }
 
