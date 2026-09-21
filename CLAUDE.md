@@ -87,11 +87,12 @@ src/
   components/
     WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄）
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
-    DateNav.vue           # ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 回到今天
+    DateNav.vue           # ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 回到今天，日期選擇器顯示星期，遇國定假日在旁邊顯示假日名稱徽章
     ProjectAutocomplete.vue
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
+    useTaiwanHolidays.ts   # 台灣國定假日查詢，見下方「台灣國定假日顯示」
   styles/
     tokens.css             # 色彩變數（--color-bg / --color-accent...），預留深色模式擴充，元件一律吃變數不寫死 hex
 shared/
@@ -111,7 +112,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **Node 版本**：鎖定 `>=24.1.0`（`.nvmrc`、`package.json` 的 `engines`），並用 `.npmrc` 的 `engine-strict=true` 讓版本不符時直接擋下 `npm install`，避免換機器開發版本不一致
 - **套件管理工具**：僅使用 npm（`package.json` 的 `packageManager` 欄位已鎖定），不要混用 yarn/pnpm，避免 lockfile 衝突
 - **樣式語言**：採用 **SCSS**，元件的 `<style>` 一律加 `lang="scss"`（`<style scoped lang="scss">`），需要安裝 `sass` 作為 devDependency；`src/styles/tokens.css` 與既有元件目前還是純 CSS，之後陸續遷移時一併改副檔名為 `.scss`
-- **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤」這類自己刻成本高的互動元件才用 **Naive UI**（目前只用到 `NSelect`）。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.css` 的 `--color-accent`/`--color-danger`，其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
+- **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤／日期選擇」這類自己刻成本高的互動元件才用 **Naive UI**（目前用到 `NSelect`、`NDatePicker`）。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.css` 的 `--color-accent`/`--color-danger`；同一個 `n-config-provider` 也帶入 `zhTW`/`dateZhTW` 兩個 locale（`:locale`/`:date-locale`），讓 Naive UI 元件顯示繁體中文，`zhTW` 的 `firstDayOfWeek: 0` 也讓 `NDatePicker` 的月曆以星期日為一週第一天（不用額外設定 `first-day-of-week` prop）。其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
+- **`DateNav` 的日期選擇器**：曾經改用 `NPopover` 包 `NCalendar`，換取「月曆彈窗裡每一格都能標假日顏色」（`NDatePicker` 沒有 cell slot、格子沒暴露完整日期資料，做不到這件事），但 `NCalendar` 是整月網格＋沒有年份快速跳選，手機寬度下的 popover 版面調校成本明顯偏高，實際體驗評估後改回 `NDatePicker`，放棄「月曆格子內逐格標色」，改成 `format="yyyy/MM/dd (EEEEE)"`（date-fns 格式字串，`EEEEE` 是最短星期字樣，例如「五」）搭配旁邊一個獨立的假日名稱徽章（`--color-holiday`）
 
 ## 命名慣例
 
@@ -129,6 +131,16 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
+- `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若是台灣國定假日，旁邊多顯示一個假日名稱徽章，文字與邊框標成 `--color-holiday`（琥珀色），跟「逾期」用的 `--color-danger`（紅色）做區隔，避免使用者混淆兩種不同性質的提醒；`HomeView.vue` 在 `DateNav` 與表格之間額外顯示一條獨立提示列（左側 `--color-holiday` 標線＋淡色底），寫出假日名稱。細節見下方「台灣國定假日顯示」
+
+## 台灣國定假日顯示
+
+- **資料來源**：[`ruyut/TaiwanCalendar`](https://github.com/ruyut/TaiwanCalendar)，整理自政府資料開放平台「中華民國政府行政機關辦公日曆表」，透過 jsdelivr CDN 發布 JSON（`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/{year}.json`），已實測回應帶 `access-control-allow-origin: *`，前端可直接 `fetch`，不會撞 CORS。通常每年 6 月會釋出下一年度資料
+- **即時查詢，不寫死年份清單**：`useTaiwanHolidays.ts` 提供 `getHolidayName(date)`／`ensureYearLoaded(year)`，讀取時才即時 fetch 對應年度 JSON，模組層級共用快取（同一年度只抓一次，`DateNav` 的月曆格子跟 `HomeView` 的提示列吃同一份），查不到或請求失敗就靜默不顯示假日資訊，不影響其他功能，也不擋頁面
+- **只取真正的國定假日**：原始資料每一天都有 `isHoliday` 欄位（含一般週六日），這裡只取 `isHoliday === true` 且 `description` 非空的項目，排除純週末（週末 `isHoliday` 為 true 但 `description` 是空字串）
+- **不在月曆彈窗格子內標色**：`NDatePicker` 沒有自訂格子樣式的介面，改用旁邊獨立的假日名稱徽章表示，取捨紀錄見上方「UI 元件庫」段落
+- **色彩 token**：`tokens.scss` 新增 `--color-holiday`，跟 `--color-danger`（逾期）／`--color-accent`（一般強調）區分
+- 這是本專案唯一一處會在瀏覽器執行期間打「Apps Script 以外的第三方網址」的地方，記錄於此避免之後忘記這個例外
 
 ## RWD 斷點
 
