@@ -48,6 +48,7 @@ const holidayName = computed(() => getHolidayName(props.modelValue))
       format="yyyy/MM/dd (EEEEE)"
       :clearable="false"
       :actions="['now']"
+      :first-day-of-week="6"
       @update:value="onPickerUpdate"
     />
     <span v-if="holidayName" class="date-nav__holiday-badge">🏮 {{ holidayName }}</span>
