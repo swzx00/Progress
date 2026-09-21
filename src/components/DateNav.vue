@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
+import { NDatePicker } from 'naive-ui'
+
+import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays'
+
 const props = defineProps<{
   modelValue: string
   totalHours?: number
@@ -20,16 +26,31 @@ const goToday = (): void => {
   emit('update:modelValue', toDateString(new Date()))
 }
 
-const onDateInput = (event: Event): void => {
-  const value = (event.target as HTMLInputElement).value
-  if (value) emit('update:modelValue', value)
+const pickerValue = computed(() => new Date(`${props.modelValue}T00:00:00`).getTime())
+
+const onPickerUpdate = (value: number | null): void => {
+  if (value === null) return
+  emit('update:modelValue', toDateString(new Date(value)))
 }
+
+const { getHolidayName } = useTaiwanHolidays()
+
+const holidayName = computed(() => getHolidayName(props.modelValue))
 </script>
 
 <template>
   <div class="date-nav">
     <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
-    <input type="date" class="date-nav__input" :value="modelValue" @change="onDateInput" />
+    <NDatePicker
+      class="date-nav__picker"
+      :value="pickerValue"
+      type="date"
+      format="yyyy/MM/dd (EEEEE)"
+      :clearable="false"
+      :actions="['now']"
+      @update:value="onPickerUpdate"
+    />
+    <span v-if="holidayName" class="date-nav__holiday-badge">🏮 {{ holidayName }}</span>
     <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">▶</button>
 
     <div class="date-nav__trailing">
@@ -45,10 +66,12 @@ const onDateInput = (event: Event): void => {
 <style scoped lang="scss">
 .date-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 16px;
   @media (min-width: 768px) {
+    flex-wrap: nowrap;
     padding: 16px 32px;
   }
 }
@@ -70,12 +93,18 @@ const onDateInput = (event: Event): void => {
   color: var(--color-accent);
 }
 
-.date-nav__input {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 14px;
-  color: var(--color-ink);
+.date-nav__picker {
+  width: 170px;
+}
+
+.date-nav__holiday-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-holiday);
+  border: 1px solid var(--color-holiday);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .date-nav__trailing {
