@@ -58,7 +58,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
   saveError.value = null
   try {
     if (editingItem.value) {
-      await updateItem(idToken.value, editingItem.value.id, payload)
+      await updateItem(idToken.value, editingItem.value.id, editingItem.value.工作日期, payload)
     } else {
       await createItem(idToken.value, payload)
     }
@@ -86,7 +86,7 @@ const confirmDelete = async (): Promise<void> => {
   if (!deleteTarget.value || !idToken.value) return
   deleting.value = true
   try {
-    await deleteItem(idToken.value, deleteTarget.value.id)
+    await deleteItem(idToken.value, deleteTarget.value.id, deleteTarget.value.工作日期)
     await fetchByDate(selectedDate.value)
   } finally {
     deleting.value = false

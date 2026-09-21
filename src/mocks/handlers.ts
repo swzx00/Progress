@@ -104,6 +104,7 @@ interface UpdatePayload {
   action: 'update'
   idToken: string
   id: string
+  originalDate: string
   item: Partial<Omit<WorkItem, 'id'>>
 }
 
@@ -111,6 +112,7 @@ interface DeletePayload {
   action: 'delete'
   idToken: string
   id: string
+  originalDate: string
 }
 
 type DoPostPayload = CreatePayload | UpdatePayload | DeletePayload
@@ -131,16 +133,20 @@ export const handlers = [
   http.post('*/exec', async ({ request }) => {
     const body = (await request.json()) as DoPostPayload
 
+    // Apps Script 網頁應用程式的回應一律是 HTTP 200，錯誤只能放在回應內容的
+    // error 欄位裡，這裡刻意不用 { status: 401 } 之類的寫法，貼近真實行為。
     if (!body.idToken) {
-      return HttpResponse.json({ error: '未登入或登入已過期' }, { status: 401 })
+      return HttpResponse.json({ error: '未登入或登入已過期' })
     }
 
     if (body.action === 'create') {
-      const sameDayCount = items.filter((item) => item.工作日期 === body.item.工作日期).length
+      // 項次是「當月」新增順序，不是當天，跟 Sheet 每月一個分頁的設計對齊
+      const monthKey = body.item.工作日期.slice(0, 7)
+      const sameMonthCount = items.filter((item) => item.工作日期.startsWith(monthKey)).length
       const created: WorkItem = {
         ...body.item,
         id: crypto.randomUUID(),
-        項次: sameDayCount + 1,
+        項次: sameMonthCount + 1,
         已刪除: false,
       }
       items = [...items, created]
@@ -166,6 +172,6 @@ export const handlers = [
       return HttpResponse.json({ ok: true })
     }
 
-    return HttpResponse.json({ error: 'unknown action' }, { status: 400 })
+    return HttpResponse.json({ error: 'unknown action' })
   }),
 ]
