@@ -68,9 +68,17 @@
   - `create`：判斷/建立當月分頁，產生 UUID 當 ID，項次＝該月分頁目前列數＋1（**當月**新增順序，不是當天），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
   - `update`：payload 額外帶 `originalDate`（這筆紀錄修改前的工作日期），換算出**原本**月份分頁去定位 `ID`。若 `item.工作日期` 跟 `originalDate` 換算出的月份不同（使用者把工作日期改到別的月份），先從原分頁刪除該列、在新月份分頁新增一列，維持每筆紀錄只存在一個分頁
   - `delete`：payload 帶 `originalDate`，換算月份分頁定位 `ID`，將「已刪除」設為 TRUE
+  - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」對話框用，細節見下方「選項清單管理」
 - 後端必須重複驗證前端已做過的規則（完成度限制 0–100、今日工時非負數、必填欄位不可為空等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
+
+**選項清單管理**：`OptionsManagerDialog.vue`（獨立 Modal 對話方塊，非 Drawer——這是特意的選擇，因為這是「設定」性質的操作，跟日常填寫工作紀錄的 Drawer 表單在使用情境上不同，用不同呈現方式做區隔），`HomeView.vue` 已登入區塊的「選項清單」按鈕觸發，`isAuthorized` 才看得到入口
+- **兩層式導覽，同一個 Modal 元件內切換兩種畫面**（不是兩支獨立元件）：第一層列出交辦單位／交辦人員／專案名稱／專案Repo 四個母項讓使用者先選一個（`selectedCategory` 為 `null`），選了之後同一個 Modal 換成第二層畫面只顯示該母項的內容（新增/重新命名/刪除），上方有「‹ 返回」回到第一層。這樣設計是因為一次把四個分類全部攤開會需要滾動很多次（曾經試過 2×2 網格＋每欄自己的內部捲軸，還是不夠好），改成一次只處理一個母項，畫面內容量固定、不會隨選項變多而需要一直滾動
+- 支援新增／重新命名／刪除，重新命名/刪除都會先跳 `ConfirmDialog`（重新命名走行內編輯，刪除才跳確認對話框）
+- **重要限制，UI 上有明顯提示**：重新命名/刪除只改「選項清單」分頁本身，**不會**回頭更新各月份分頁裡已經寫入的歷史紀錄——交辦單位/人員/專案名稱/專案Repo 存在每筆工作紀錄上是純文字，不是跟這份清單做關聯查詢（ID 對應）的欄位，這是既有的資料模型設計（見上方「Google Sheet 結構設計」），管理選項清單不會改變這件事
+- Apps Script 端：`handleAddOption_`／`handleRenameOption_`／`handleDeleteOption_`，重新命名/刪除都是直接對「選項清單」分頁該分類欄位的儲存格操作（`clearContent()` 清空儲存格，不整列刪除／不搬移其他列，因為同一列不同分類欄位彼此獨立、允許中間留空，`getOptions_` 讀取時本來就會略過空白儲存格）
+- 前端 `useOptions.ts` 新增 `addOption`／`renameOption`／`deleteOption`，三個 action 的回應都帶回最新完整 `options`，直接覆寫本地快取，不用再多打一次 `fetchOptions()`
 
 **月份分頁建立機制**：雙保險，兩個都要做，不互斥
 - **主要：每月 1 號定時觸發器**——`ScriptApp` 的 installable time-driven trigger，`onMonthDay(1)`，跑 `ensureMonthlySheet()` 主動建立當月分頁＋複製表頭格式。程式碼裡寫了 trigger 設定不會自動生效，需要**手動執行一次安裝函式**（或在 Apps Script 編輯器的「觸發條件」頁面手動加），這是一次性設定，之後照排程自動跑
@@ -87,6 +95,8 @@ src/
   components/
     WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式）
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
+    OptionsManagerDialog.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
+    ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值都用這個）
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時文字變「今天」且 disabled），顯示星期，放假日顯示徽章，日期選擇器今天時加 outline，按鈕沒用途時 disabled
     ProjectAutocomplete.vue
   composables/
