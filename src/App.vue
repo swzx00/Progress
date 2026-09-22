@@ -11,7 +11,8 @@ const themeOverrides: GlobalThemeOverrides = {
     errorColor: '#c0392b',
     errorColorHover: '#d1483a',
     errorColorPressed: '#a3301f',
-    borderRadius: '6px',
+    borderColor: '#E4E7EC',
+    borderRadius: '8px',
   },
 }
 </script>

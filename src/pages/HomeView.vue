@@ -114,7 +114,7 @@ const confirmDelete = async (): Promise<void> => {
       </button>
       <div v-if="isAuthorized" class="home-view__account">
         <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
-        <span class="home-view__email">已登入・{{ userEmail }}</span>
+        <span class="home-view__email">{{ userEmail }}</span>
         <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
       </div>
       <div v-else-if="isLoggedIn" class="home-view__unauthorized">
@@ -182,6 +182,7 @@ const confirmDelete = async (): Promise<void> => {
   align-items: center;
   gap: 12px;
   padding: 16px;
+  border-bottom: 1px solid var(--color-border);
   @media (min-width: 768px) {
     padding: 24px 32px;
   }
@@ -191,12 +192,14 @@ const confirmDelete = async (): Promise<void> => {
   font-size: 20px;
   font-weight: 700;
   color: var(--color-ink);
+  word-break: keep-all;
   margin: 0;
 }
 
 .home-view__badge {
   font-size: 12px;
   color: var(--color-ink-muted);
+  word-break: keep-all;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 2px 10px;
@@ -205,6 +208,7 @@ const confirmDelete = async (): Promise<void> => {
 .home-view__theme-btn {
   width: 28px;
   height: 28px;
+  aspect-ratio: 1/1;
   border-radius: 999px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
@@ -258,8 +262,12 @@ const confirmDelete = async (): Promise<void> => {
 }
 
 .home-view__email {
+  display: none;
   font-size: 12px;
   color: var(--color-ink-muted);
+  @media (min-width: 768px) {
+    display: inline;
+  }
 }
 
 .home-view__add-btn {

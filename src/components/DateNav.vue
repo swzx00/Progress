@@ -77,13 +77,25 @@ const holidayName = computed(() => getHolidayName(props.modelValue))
   }
 }
 
+.date-nav__btn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  aspect-ratio: 1/1;
+  padding: 4px;
+}
+.date-nav__today {
+  padding: 6px 12px;
+}
+
 .date-nav__btn,
 .date-nav__today {
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-ink);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
