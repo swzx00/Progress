@@ -87,7 +87,7 @@ src/
   components/
     WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄）
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
-    DateNav.vue           # ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 回到今天，日期選擇器顯示星期，遇國定假日在旁邊顯示假日名稱徽章
+    DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天，顯示星期，放假日顯示徽章，按鈕沒用途時 disabled
     ProjectAutocomplete.vue
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理
@@ -126,19 +126,24 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
 - 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
 - 管理頁／檢視頁合併成單一元件（`HomeView.vue`）、單一路由（`/`），不再區分 `/manage`：`isAuthorized` 為 true 顯示新增/編輯/刪除操作與登入資訊，否則顯示唯讀畫面（含「唯讀模式」標籤），未登入時仍保留登入按鈕入口
-- 前台改成**以日期為單位**呈現（非月份）：「◀ 上一天 / 日期選擇器 / 下一天 ▶」＋「回到今天」做單日切換，跨月切換對使用者無感，由 Apps Script 依日期自動換算月份分頁
+- 前台改成**以日期為單位**呈現（非月份）：「⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭」＋「回到今天」做單日切換，跨月切換對使用者無感，由 Apps Script 依日期自動換算月份分頁；「上一個工作日／下一個工作日」會跳過連續的假日／週末（含補班日例外），細節見下方「台灣國定假日顯示」
+- 按鈕沒有實際用途時要 disabled，不能點了沒反應卻看起來可以點：「上一個工作日／下一個工作日」若緊鄰那一天本來就是工作日（按下去效果等同「上一天／下一天」，沒有額外用途）就停用
 - 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
-- `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若是台灣國定假日，旁邊多顯示一個假日名稱徽章，文字與邊框標成 `--color-holiday`（琥珀色），跟「逾期」用的 `--color-danger`（紅色）做區隔，避免使用者混淆兩種不同性質的提醒；`HomeView.vue` 在 `DateNav` 與表格之間額外顯示一條獨立提示列（左側 `--color-holiday` 標線＋淡色底），寫出假日名稱。細節見下方「台灣國定假日顯示」
+- `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框標成 `--color-holiday`（琥珀色），跟「逾期」用的 `--color-danger`（紅色）做區隔，避免使用者混淆兩種不同性質的提醒；`HomeView.vue` 在 `DateNav` 與表格之間額外顯示一條獨立提示列（左側 `--color-holiday` 標線＋淡色底），寫出同樣的放假原因。細節見下方「台灣國定假日顯示」
 
 ## 台灣國定假日顯示
 
 - **資料來源**：[`ruyut/TaiwanCalendar`](https://github.com/ruyut/TaiwanCalendar)，整理自政府資料開放平台「中華民國政府行政機關辦公日曆表」，透過 jsdelivr CDN 發布 JSON（`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/{year}.json`），已實測回應帶 `access-control-allow-origin: *`，前端可直接 `fetch`，不會撞 CORS。通常每年 6 月會釋出下一年度資料
-- **即時查詢，不寫死年份清單**：`useTaiwanHolidays.ts` 提供 `getHolidayName(date)`／`ensureYearLoaded(year)`，讀取時才即時 fetch 對應年度 JSON，模組層級共用快取（同一年度只抓一次，`DateNav` 的月曆格子跟 `HomeView` 的提示列吃同一份），查不到或請求失敗就靜默不顯示假日資訊，不影響其他功能，也不擋頁面
-- **只取真正的國定假日**：原始資料每一天都有 `isHoliday` 欄位（含一般週六日），這裡只取 `isHoliday === true` 且 `description` 非空的項目，排除純週末（週末 `isHoliday` 為 true 但 `description` 是空字串）
-- **不在月曆彈窗格子內標色**：`NDatePicker` 沒有自訂格子樣式的介面，改用旁邊獨立的假日名稱徽章表示，取捨紀錄見上方「UI 元件庫」段落
+- **即時查詢，不寫死年份清單**：`useTaiwanHolidays.ts` 內部把「整筆原始資料」（含 `isHoliday`／`description`）存進模組層級共用快取（同一年度只抓一次），對外提供四個函式：
+  - `getDayOffLabel(date)`：回傳「這天放假的原因」——國定假日回傳假日名稱（例如「中秋節」）；純週末沒有 `description`，回傳「週六」/「週日」這種通用標籤（不是只顯示國定假日，週末也算，畫面上要看得出來是放假）；一般工作日回傳 `null`
+  - `isWorkday(date)`：是否為工作日，`DateNav` 的「上一個工作日／下一個工作日」按鈕算 disabled 狀態用
+  - `ensureYearLoaded(year)`：確保某年度資料已載入，回傳 `Promise`
+  - `findNextWorkday(fromDate, direction)`：往前/往後找下一個工作日，`DateNav` 的「上一個工作日／下一個工作日」按鈕用這個。**這裡刻意用原始 `isHoliday` 欄位判斷（不是 `getDay()` 猜週末）**，因為 `isHoliday` 才正確涵蓋補班日的例外情形（補班的週六 `isHoliday` 會是 `false`），用星期幾去猜會在補班日誤判成放假。日期解析要跟 `DateNav.vue` 的 `shift()` 用同一套慣例（`new Date(fromDate)` 純日期字串視為 UTC 午夜，搭配 `setDate`/`getDate` 本地時間方法，再用 `toISOString()` 轉回字串）——這套組合對台灣所在的正 UTC 偏移時區剛好互相抵銷、結果正確；混用 `` `${fromDate}T00:00:00` ``（本地午夜解析）卻仍用 `toISOString()` 轉字串會兩邊時區基準不一致，換算回來的日期少一天（實際踩過這個坑：9/24 按「下一個工作日」原本因為這個 bug 完全沒反應）
+  - 查不到或請求失敗就靜默不顯示假日資訊／視為工作日，不影響其他功能，也不擋頁面
+- **不在月曆彈窗格子內標色**：`NDatePicker` 沒有自訂格子樣式的介面，改用旁邊獨立的徽章表示，取捨紀錄見上方「UI 元件庫」段落
 - **色彩 token**：`tokens.scss` 新增 `--color-holiday`，跟 `--color-danger`（逾期）／`--color-accent`（一般強調）區分
 - 這是本專案唯一一處會在瀏覽器執行期間打「Apps Script 以外的第三方網址」的地方，記錄於此避免之後忘記這個例外
 

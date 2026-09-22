@@ -33,13 +33,39 @@ const onPickerUpdate = (value: number | null): void => {
   emit('update:modelValue', toDateString(new Date(value)))
 }
 
-const { getHolidayName } = useTaiwanHolidays()
+const { getDayOffLabel, isWorkday, findNextWorkday } = useTaiwanHolidays()
 
-const holidayName = computed(() => getHolidayName(props.modelValue))
+const dayOffLabel = computed(() => getDayOffLabel(props.modelValue))
+
+const adjacentDate = (days: number): string => {
+  const d = new Date(props.modelValue)
+  d.setDate(d.getDate() + days)
+  return toDateString(d)
+}
+
+// 「上一個工作日」的用途是跳過假日，如果緊鄰的那一天本來就是工作日，按下去
+// 效果跟「上一天」一樣，沒有額外用途，所以停用
+const prevWorkdayDisabled = computed(() => isWorkday(adjacentDate(-1)))
+const nextWorkdayDisabled = computed(() => isWorkday(adjacentDate(1)))
+
+const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
+  const next = await findNextWorkday(props.modelValue, direction)
+  emit('update:modelValue', next)
+}
 </script>
 
 <template>
   <div class="date-nav">
+    <button
+      type="button"
+      class="date-nav__btn"
+      aria-label="上一個工作日"
+      title="上一個工作日"
+      :disabled="prevWorkdayDisabled"
+      @click="jumpToWorkday(-1)"
+    >
+      ⏮
+    </button>
     <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
     <NDatePicker
       class="date-nav__picker"
@@ -51,8 +77,18 @@ const holidayName = computed(() => getHolidayName(props.modelValue))
       :first-day-of-week="6"
       @update:value="onPickerUpdate"
     />
-    <span v-if="holidayName" class="date-nav__holiday-badge">🏮 {{ holidayName }}</span>
     <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">▶</button>
+    <button
+      type="button"
+      class="date-nav__btn"
+      aria-label="下一個工作日"
+      title="下一個工作日"
+      :disabled="nextWorkdayDisabled"
+      @click="jumpToWorkday(1)"
+    >
+      ⏭
+    </button>
+    <span v-if="dayOffLabel" class="date-nav__holiday-badge">🏮 {{ dayOffLabel }}</span>
 
     <div class="date-nav__trailing">
       <span v-if="totalHours !== undefined" class="date-nav__total">
@@ -104,6 +140,17 @@ const holidayName = computed(() => getHolidayName(props.modelValue))
 .date-nav__today:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.date-nav__btn:disabled,
+.date-nav__today:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+
+  &:hover {
+    border-color: var(--color-border);
+    color: var(--color-ink);
+  }
 }
 
 .date-nav__picker {
