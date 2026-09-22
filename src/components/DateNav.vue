@@ -22,8 +22,11 @@ const shift = (days: number): void => {
   emit('update:modelValue', toDateString(d))
 }
 
+const todayStr = computed(() => toDateString(new Date()))
+const isToday = computed(() => props.modelValue === todayStr.value)
+
 const goToday = (): void => {
-  emit('update:modelValue', toDateString(new Date()))
+  emit('update:modelValue', todayStr.value)
 }
 
 const pickerValue = computed(() => new Date(`${props.modelValue}T00:00:00`).getTime())
@@ -69,6 +72,7 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
     <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
     <NDatePicker
       class="date-nav__picker"
+      :class="{ 'date-nav__picker--today': isToday }"
       :value="pickerValue"
       type="date"
       format="yyyy/MM/dd (EEEEE)"
@@ -94,7 +98,15 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       <span v-if="totalHours !== undefined" class="date-nav__total">
         今日工時合計：{{ totalHours }}hr
       </span>
-      <button type="button" class="date-nav__today" @click="goToday">回到今天</button>
+      <button
+        type="button"
+        class="date-nav__today"
+        :class="{ 'date-nav__today--current': isToday }"
+        :disabled="isToday"
+        @click="goToday"
+      >
+        {{ isToday ? '今天' : '回到今天' }}
+      </button>
       <slot name="actions" />
     </div>
   </div>
@@ -155,6 +167,29 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 .date-nav__picker {
   width: 170px;
+}
+
+/*
+ * :deep() 不用在這裡是因為 class 是直接寫在 <NDatePicker> 標籤上，Vue 的 scoped
+ * CSS 會把 scope 屬性直接掛在它的根節點，跟平常自己寫的元素一樣可以直接選到，
+ * 不需要穿透子元件內部。用 outline（不是改 NInput 內部的 border 顏色）是刻意選擇：
+ * 不用去扣 Naive UI 內部的 class 名稱，比較不會因為套件版本升級而失效。
+ */
+.date-nav__picker--today {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.date-nav__today--current {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: default;
+
+  &:disabled {
+    opacity: 1;
+  }
 }
 
 .date-nav__holiday-badge {

@@ -24,6 +24,7 @@ const selectedDate = ref(toDateString(new Date()))
 const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems()
 const { getDayOffLabel } = useTaiwanHolidays()
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value))
+const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()))
 
 watch(selectedDate, (date) => fetchByDate(date), { immediate: true })
 
@@ -148,6 +149,7 @@ const confirmDelete = async (): Promise<void> => {
       :items="items"
       :today="toDateString(new Date())"
       :editable="isAuthorized"
+      :viewing-today="isViewingToday"
       @edit="openEditForm"
       @delete="openDeleteConfirm"
     />
