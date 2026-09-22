@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateNav from '@/components/DateNav.vue'
+import OptionsManagerDialog from '@/components/OptionsManagerDialog.vue'
 import WorkItemForm from '@/components/WorkItemForm.vue'
 import WorkItemTable from '@/components/WorkItemTable.vue'
 import { useGoogleAuth } from '@/composables/useGoogleAuth'
@@ -31,6 +32,8 @@ watch(selectedDate, (date) => fetchByDate(date), { immediate: true })
 const totalHours = computed(() =>
   loading.value ? undefined : items.value.reduce((sum, item) => sum + item.今日工時, 0),
 )
+
+const optionsManagerOpen = ref(false)
 
 const formOpen = ref(false)
 const editingItem = ref<WorkItem | null>(null)
@@ -116,6 +119,13 @@ const confirmDelete = async (): Promise<void> => {
       <div v-if="isAuthorized" class="home-view__account">
         <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
         <span class="home-view__email">{{ userEmail }}</span>
+        <button
+          type="button"
+          class="home-view__signout-btn"
+          @click="optionsManagerOpen = true"
+        >
+          選項清單
+        </button>
         <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
       </div>
       <div v-else-if="isLoggedIn" class="home-view__unauthorized">
@@ -174,6 +184,12 @@ const confirmDelete = async (): Promise<void> => {
       :busy="deleting"
       @confirm="confirmDelete"
       @cancel="closeDeleteConfirm"
+    />
+
+    <OptionsManagerDialog
+      v-if="optionsManagerOpen && isAuthorized && idToken"
+      :id-token="idToken"
+      @close="optionsManagerOpen = false"
     />
   </div>
 </template>

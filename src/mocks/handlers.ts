@@ -115,7 +115,35 @@ interface DeletePayload {
   originalDate: string
 }
 
-type DoPostPayload = CreatePayload | UpdatePayload | DeletePayload
+interface AddOptionPayload {
+  action: 'addOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  value: string
+}
+
+interface RenameOptionPayload {
+  action: 'renameOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  oldValue: string
+  newValue: string
+}
+
+interface DeleteOptionPayload {
+  action: 'deleteOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  value: string
+}
+
+type DoPostPayload =
+  | CreatePayload
+  | UpdatePayload
+  | DeletePayload
+  | AddOptionPayload
+  | RenameOptionPayload
+  | DeleteOptionPayload
 
 export const handlers = [
   http.get('*/exec', ({ request }) => {
@@ -170,6 +198,40 @@ export const handlers = [
     if (body.action === 'delete') {
       items = items.map((item) => (item.id === body.id ? { ...item, 已刪除: true } : item))
       return HttpResponse.json({ ok: true })
+    }
+
+    if (body.action === 'addOption') {
+      const value = body.value.trim()
+      if (!value) return HttpResponse.json({ error: '新增的值不可為空' })
+      addOptionIfNew(body.category, value)
+      return HttpResponse.json({ options })
+    }
+
+    if (body.action === 'renameOption') {
+      const newValue = body.newValue.trim()
+      if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' })
+      if (!options[body.category].includes(body.oldValue)) {
+        return HttpResponse.json({ error: '找不到這個值' })
+      }
+      if (options[body.category].includes(newValue)) {
+        return HttpResponse.json({ error: '這個名稱已經存在' })
+      }
+      options = {
+        ...options,
+        [body.category]: options[body.category].map((v) => (v === body.oldValue ? newValue : v)),
+      }
+      return HttpResponse.json({ options })
+    }
+
+    if (body.action === 'deleteOption') {
+      if (!options[body.category].includes(body.value)) {
+        return HttpResponse.json({ error: '找不到這個值' })
+      }
+      options = {
+        ...options,
+        [body.category]: options[body.category].filter((v) => v !== body.value),
+      }
+      return HttpResponse.json({ options })
     }
 
     return HttpResponse.json({ error: 'unknown action' })
