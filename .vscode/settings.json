@@ -1,0 +1,13 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.stylelint": "explicit"
+  },
+  "stylelint.validate": ["css", "scss", "vue"],
+  "css.validate": false,
+  "scss.validate": false,
+  "[markdown]": {
+    "editor.formatOnSave": false
+  }
+}

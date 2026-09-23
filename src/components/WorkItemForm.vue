@@ -223,18 +223,18 @@ const onSubmit = (): void => {
 }
 
 .work-item-form__backdrop {
-  display: none;
   position: absolute;
   inset: 0;
-  background: rgba(27, 31, 39, 0.35);
+  display: none;
+  background: rgb(27 31 39 / 35%);
 }
 
 .work-item-form__panel {
   position: absolute;
   inset: 0;
-  background: var(--color-bg);
   display: flex;
   flex-direction: column;
+  background: var(--color-bg);
 }
 
 .work-item-form__mobile-header {
@@ -253,16 +253,16 @@ const onSubmit = (): void => {
 }
 
 .work-item-form__text-btn {
-  border: none;
-  background: transparent;
-  color: var(--color-ink-muted);
-  font-size: 14px;
-  cursor: pointer;
   padding: 4px;
+  font-size: 14px;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
 
   &--accent {
-    color: var(--color-accent);
     font-weight: 700;
+    color: var(--color-accent);
   }
 }
 
@@ -278,21 +278,21 @@ const onSubmit = (): void => {
 }
 
 .work-item-form__close-btn {
-  border: none;
-  background: transparent;
-  color: var(--color-ink-muted);
   font-size: 18px;
-  cursor: pointer;
   line-height: 1;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
 }
 
 .work-item-form__body {
-  flex-grow: 1;
-  overflow: auto;
-  padding: 16px;
   display: flex;
+  flex-grow: 1;
   flex-direction: column;
   gap: 14px;
+  padding: 16px;
+  overflow: auto;
 }
 
 .work-item-form__row {
@@ -313,12 +313,12 @@ const onSubmit = (): void => {
 
   input,
   textarea {
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
     padding: 8px 10px;
+    font-family: inherit;
     font-size: 13px;
     color: var(--color-ink);
-    font-family: inherit;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
   }
 
   textarea {
@@ -326,18 +326,18 @@ const onSubmit = (): void => {
   }
 
   &--highlight {
-    background: var(--color-surface);
-    border: 1px solid var(--color-accent);
-    border-radius: 8px;
     padding: 10px 12px;
     font-size: 13px;
     font-weight: 600;
     color: var(--color-accent);
+    background: var(--color-surface);
+    border: 1px solid var(--color-accent);
+    border-radius: 8px;
 
     input {
-      border-color: var(--color-accent);
-      font-weight: 700;
       font-size: 15px;
+      font-weight: 700;
+      border-color: var(--color-accent);
     }
   }
 }
@@ -348,19 +348,19 @@ const onSubmit = (): void => {
 
 .work-item-form__btn {
   flex: 1;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink);
-  border-radius: 6px;
   padding: 9px;
   font-size: 14px;
+  color: var(--color-ink);
   cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
 
   &--primary {
-    border: none;
-    background: var(--color-accent);
-    color: #fff;
     font-weight: 600;
+    color: #fff;
+    background: var(--color-accent);
+    border: none;
   }
 }
 
@@ -372,7 +372,7 @@ const onSubmit = (): void => {
   .work-item-form__panel {
     inset: 0 0 0 auto;
     width: min(440px, 100%);
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
   }
 
   .work-item-form__mobile-header {
