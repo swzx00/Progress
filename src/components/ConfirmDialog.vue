@@ -60,17 +60,17 @@ const emit = defineEmits<{
 .confirm-dialog__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(27, 31, 39, 0.4);
+  background: rgb(27 31 39 / 40%);
 }
 
 .confirm-dialog__panel {
   position: relative;
   width: 100%;
   max-width: 340px;
+  padding: 24px;
   background: var(--color-bg);
   border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
 }
 
 .confirm-dialog__title {
@@ -83,8 +83,8 @@ const emit = defineEmits<{
 .confirm-dialog__message {
   margin: 0;
   font-size: 13px;
-  color: var(--color-ink-muted);
   line-height: 1.6;
+  color: var(--color-ink-muted);
 }
 
 .confirm-dialog__actions {
@@ -95,19 +95,19 @@ const emit = defineEmits<{
 
 .confirm-dialog__btn {
   flex: 1;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink);
-  border-radius: 6px;
   padding: 9px;
   font-size: 14px;
+  color: var(--color-ink);
   cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
 
   &--primary {
-    border: none;
-    background: var(--color-accent);
-    color: #fff;
     font-weight: 600;
+    color: #fff;
+    background: var(--color-accent);
+    border: none;
   }
 
   &--danger {

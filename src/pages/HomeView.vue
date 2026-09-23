@@ -181,54 +181,55 @@ const confirmDelete = async (): Promise<void> => {
 <style scoped lang="scss">
 .home-view__header {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   padding: 16px;
   border-bottom: 1px solid var(--color-border);
+
   @media (min-width: 768px) {
     padding: 24px 32px;
   }
 }
 
 .home-view__title {
+  margin: 0;
   font-size: 20px;
   font-weight: 700;
   color: var(--color-ink);
   word-break: keep-all;
-  margin: 0;
 }
 
 .home-view__badge {
+  padding: 2px 10px;
   font-size: 12px;
   color: var(--color-ink-muted);
   word-break: keep-all;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 2px 10px;
 }
 
 .home-view__theme-btn {
-  width: 28px;
-  height: 28px;
-  aspect-ratio: 1/1;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink-muted);
-  font-size: 13px;
-  cursor: not-allowed;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  aspect-ratio: 1/1;
   padding: 0;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  cursor: not-allowed;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
 }
 
 .home-view__account,
 .home-view__unauthorized {
-  margin-left: auto;
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
+  margin-left: auto;
 }
 
 .home-view__unauthorized {
@@ -241,61 +242,62 @@ const confirmDelete = async (): Promise<void> => {
 }
 
 .home-view__signout-btn {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink-muted);
-  border-radius: 6px;
   padding: 3px 8px;
   font-size: 12px;
+  color: var(--color-ink-muted);
   cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
 }
 
 .home-view__avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--color-accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-accent);
+  border-radius: 999px;
 }
 
 .home-view__email {
   display: none;
   font-size: 12px;
   color: var(--color-ink-muted);
+
   @media (min-width: 768px) {
     display: inline;
   }
 }
 
 .home-view__add-btn {
-  border: none;
-  background: var(--color-accent);
-  color: #fff;
-  border-radius: 6px;
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
+  color: #fff;
   white-space: nowrap;
+  cursor: pointer;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 6px;
 }
 
 .home-view__holiday-banner {
   display: flex;
-  align-items: center;
   gap: 8px;
-  margin: 0 16px 16px;
+  align-items: center;
   padding: 10px 14px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-holiday) 10%, var(--color-bg));
-  box-shadow: inset 3px 0 0 var(--color-holiday);
-  color: var(--color-holiday);
+  margin: 0 16px 16px;
   font-size: 13px;
   font-weight: 600;
+  color: var(--color-holiday);
+  background: color-mix(in srgb, var(--color-holiday) 10%, var(--color-bg));
+  border-radius: 8px;
+  box-shadow: inset 3px 0 0 var(--color-holiday);
 
   @media (min-width: 768px) {
     margin: 0 32px 16px;
@@ -309,10 +311,10 @@ const confirmDelete = async (): Promise<void> => {
 .home-view__loading {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 12px;
-  color: var(--color-ink-muted);
+  align-items: center;
   padding: 48px 0;
+  color: var(--color-ink-muted);
 }
 
 .home-view__spinner {
@@ -333,10 +335,10 @@ const confirmDelete = async (): Promise<void> => {
 .home-view__error {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 8px;
-  color: var(--color-danger);
+  align-items: center;
   padding: 48px 16px;
+  color: var(--color-danger);
   text-align: center;
 }
 
@@ -345,9 +347,9 @@ const confirmDelete = async (): Promise<void> => {
 }
 
 .home-view__save-error {
-  color: var(--color-danger);
-  font-size: 13px;
   padding: 8px 16px;
+  font-size: 13px;
+  color: var(--color-danger);
 
   @media (min-width: 768px) {
     padding: 8px 32px;

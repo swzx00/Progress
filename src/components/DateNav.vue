@@ -116,9 +116,10 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 .date-nav {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 16px;
+
   @media (min-width: 768px) {
     flex-wrap: nowrap;
     padding: 16px 32px;
@@ -127,31 +128,32 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 .date-nav__btn {
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
   aspect-ratio: 1/1;
   padding: 4px;
 }
+
 .date-nav__today {
   padding: 6px 12px;
 }
 
 .date-nav__btn,
 .date-nav__today {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink);
-  border-radius: 8px;
-  cursor: pointer;
   font-size: 14px;
+  color: var(--color-ink);
+  cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
 .date-nav__btn:hover,
 .date-nav__today:hover {
-  border-color: var(--color-accent);
   color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .date-nav__btn:disabled,
@@ -160,8 +162,8 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   opacity: 0.4;
 
   &:hover {
-    border-color: var(--color-border);
     color: var(--color-ink);
+    border-color: var(--color-border);
   }
 }
 
@@ -182,10 +184,10 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 }
 
 .date-nav__today--current {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
   color: #fff;
   cursor: default;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 
   &:disabled {
     opacity: 1;
@@ -193,20 +195,20 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 }
 
 .date-nav__holiday-badge {
+  padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-holiday);
+  white-space: nowrap;
   border: 1px solid var(--color-holiday);
   border-radius: 999px;
-  padding: 2px 8px;
-  white-space: nowrap;
 }
 
 .date-nav__trailing {
-  margin-left: auto;
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
+  margin-left: auto;
 }
 
 .date-nav__total {
