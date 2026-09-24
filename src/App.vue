@@ -13,6 +13,9 @@ const themeOverrides: GlobalThemeOverrides = {
     errorColorPressed: '#a3301f',
     borderColor: '#E4E7EC',
     borderRadius: '8px',
+    // 跟 src/style.scss 的 body font-family 保持一致
+    fontFamily:
+      "Roboto, 'Noto Sans TC', 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', Arial, sans-serif",
   },
 }
 </script>

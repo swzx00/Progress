@@ -173,7 +173,7 @@ const sortedItems = computed(() =>
 
 <style scoped lang="scss">
 .work-item-table {
-  padding: 0 16px 0;
+  padding: 0 16px;
 
   @media (min-width: 768px) {
     padding: 0 32px 16px;
@@ -184,8 +184,8 @@ const sortedItems = computed(() =>
    * 逾期用 --color-danger（紅），這裡用 --color-accent（藍），視覺上不會混淆。
    */
   &--viewing-today {
-    border-top: 3px solid var(--color-accent);
     padding-top: 12px;
+    border-top: 3px solid var(--color-accent);
 
     .work-item-table__row {
       background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
@@ -201,13 +201,12 @@ const sortedItems = computed(() =>
 .work-item-table__row {
   display: flex;
   flex-flow: row wrap;
-  row-gap: 4px;
-  column-gap: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  gap: 4px 12px;
   padding: 14px;
   margin-bottom: 12px;
   background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
 
   &--header {
     display: none;
@@ -250,18 +249,18 @@ const sortedItems = computed(() =>
   }
 
   &--hours {
-    order: 6;
     flex-basis: 50%;
+    order: 6;
     font-size: 11px;
     color: var(--color-ink-muted);
   }
 
   &--due {
-    order: 7;
     flex-basis: 50%;
-    text-align: right;
+    order: 7;
     font-size: 11px;
     color: var(--color-ink-muted);
+    text-align: right;
   }
 
   &--actions {
@@ -295,33 +294,33 @@ const sortedItems = computed(() =>
 
 .work-item-table__repo-tag {
   display: inline-block;
-  margin-right: 4px;
   padding: 1px 8px;
-  border-radius: 999px;
+  margin-right: 4px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  color: var(--color-ink-muted);
-  font-size: 11px;
+  border-radius: 999px;
 }
 
 .work-item-table__badge {
   display: inline-block;
-  margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--color-danger);
-  color: #fff;
+  margin-left: 6px;
   font-size: 11px;
+  color: #fff;
+  background: var(--color-danger);
+  border-radius: 999px;
 }
 
 .work-item-table__progress {
+  display: inline-block;
   width: 90px;
   height: 6px;
-  border-radius: 999px;
-  background: var(--color-surface);
   overflow: hidden;
-  display: inline-block;
   vertical-align: middle;
+  background: var(--color-surface);
+  border-radius: 999px;
 }
 
 .work-item-table__progress-bar {
@@ -342,13 +341,13 @@ const sortedItems = computed(() =>
 
 .work-item-table__action-btn {
   flex: 1;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-ink);
-  border-radius: 6px;
   padding: 7px;
   font-size: 13px;
+  color: var(--color-ink);
   cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
 
   &--danger {
     color: var(--color-danger);
@@ -356,9 +355,9 @@ const sortedItems = computed(() =>
 }
 
 .work-item-table__empty {
-  text-align: center;
   padding: 32px 12px;
   color: var(--color-ink-muted);
+  text-align: center;
   border: 1px solid var(--color-border);
   border-radius: 10px;
 }
@@ -368,22 +367,22 @@ const sortedItems = computed(() =>
   .work-item-table__row {
     display: grid;
     grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 64px 140px 150px;
-    align-items: center;
     gap: 0;
-    border: none;
-    border-radius: 0;
+    align-items: center;
     padding: 0;
     margin-bottom: 0;
+    border: none;
     border-bottom: 1px solid var(--color-border);
+    border-radius: 0;
 
     &--header {
       display: grid;
       border-bottom: 2px solid var(--color-border);
 
       .work-item-table__cell {
-        color: var(--color-ink-muted);
-        font-weight: 600;
         font-size: 13px;
+        font-weight: 600;
+        color: var(--color-ink-muted);
       }
     }
 
@@ -397,12 +396,12 @@ const sortedItems = computed(() =>
   }
 
   .work-item-table__cell {
-    padding: 10px 10px;
-    order: 0;
     flex-basis: auto;
-    text-align: left;
+    order: 0;
+    padding: 10px;
     font-size: 13px;
     color: var(--color-ink);
+    text-align: left;
 
     &--mobile-hide {
       display: block;
@@ -423,9 +422,9 @@ const sortedItems = computed(() =>
 
     &--hours,
     &--due {
-      text-align: left;
       font-size: 13px;
       color: var(--color-ink);
+      text-align: left;
       white-space: nowrap;
     }
   }

@@ -4,7 +4,20 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', 'Noto Sans TC', Roboto, sans-serif;
-  background: var(--color-bg);
+
+  // 英數 Roboto、中文 Noto Sans TC（Google Fonts，由 index.html 載入）；載入失敗時
+  // 蘋果用 PingFang TC／Heiti TC、Windows 用 Microsoft JhengHei，都沒有才用 Arial／sans-serif
+  // App.vue 的 Naive UI fontFamily 要保持一致
+  font-family: Roboto, 'Noto Sans TC', 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', Arial,
+    sans-serif;
   color: var(--color-ink);
+  background: var(--color-bg);
+}
+
+// 瀏覽器預設不讓表單元件繼承字體，不加的話按鈕／輸入框仍是系統字
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
 }
