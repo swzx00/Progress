@@ -48,8 +48,21 @@ function getSpreadsheet_() {
   return SpreadsheetApp.openById(getSheetId_());
 }
 
+// 分頁命名慣例固定是 dash 的 YYYY-MM（跟日期欄位對前端的 YYYY/MM/DD 格式無關），
+// 這裡先把斜線正規化成 dash 再切，才能正確從 YYYY/MM/DD 的工作日期字串換算出分頁名稱。
 function getMonthKey_(dateStr) {
-  return String(dateStr).slice(0, 7); // YYYY-MM
+  return String(dateStr).replace(/\//g, '-').slice(0, 7); // YYYY-MM
+}
+
+// 「工作日期」「預計期限」欄位套用 yyyy/mm/dd 儲存格顯示格式，讓 Sheet 打開來看
+// 跟 API 回傳的 YYYY/MM/DD 字串格式一致。套到整欄（含尚未寫入資料的列），
+// 之後新增的列不用另外補設定。
+function applyDateColumnFormat_(sheet, colMap) {
+  DATE_FIELDS.forEach(function (field) {
+    var col = colMap[field];
+    if (!col) return;
+    sheet.getRange(2, col, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy/mm/dd');
+  });
 }
 
 function getOrCreateMonthSheet_(monthKey) {
@@ -59,8 +72,20 @@ function getOrCreateMonthSheet_(monthKey) {
     sheet = ss.insertSheet(monthKey);
     sheet.getRange(1, 1, 1, MONTH_SHEET_HEADERS.length).setValues([MONTH_SHEET_HEADERS]);
     sheet.setFrozenRows(1);
+    applyDateColumnFormat_(sheet, getColumnMap_(sheet));
   }
   return sheet;
+}
+
+// 一次性遷移用：把已經存在的各月份分頁補上 applyDateColumnFormat_（新分頁走
+// getOrCreateMonthSheet_ 會自動套用，但這支改動之前就已建立的分頁不會自動補上）。
+// 用法同 installTrigger()：在 Apps Script 編輯器手動執行一次即可，之後不用再跑。
+function fixExistingMonthSheetDateFormats_() {
+  var ss = getSpreadsheet_();
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    applyDateColumnFormat_(sheet, getColumnMap_(sheet));
+  });
 }
 
 // 讀表頭列，回傳 {欄位名稱: 1-based 欄位編號}，讀寫都靠這個對應表查位置，
@@ -77,7 +102,7 @@ function getColumnMap_(sheet) {
 
 function formatDateCell_(raw) {
   if (raw instanceof Date) {
-    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy/MM/dd');
   }
   return raw ? String(raw) : '';
 }
@@ -286,6 +311,11 @@ function doPost(e) {
     if (body.action === 'create') return handleCreate_(body.item);
     if (body.action === 'update') return handleUpdate_(body.id, body.originalDate, body.item);
     if (body.action === 'delete') return handleDelete_(body.id, body.originalDate);
+    if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
+    if (body.action === 'renameOption') {
+      return handleRenameOption_(body.category, body.oldValue, body.newValue);
+    }
+    if (body.action === 'deleteOption') return handleDeleteOption_(body.category, body.value);
 
     return jsonOutput_({ error: '未知的 action' });
   } catch (err) {
@@ -396,6 +426,108 @@ function handleDelete_(id, originalDate) {
 
   sheet.getRange(rowIndex, colMap.已刪除).setValue('TRUE');
   return jsonOutput_({ ok: true });
+}
+
+// ===== 選項清單管理（新增/重新命名/刪除，前端「管理選項清單」對話框用） =====
+//
+// 重新命名/刪除只改「選項清單」分頁本身，不會回頭更新各月份分頁裡已經寫入的
+// 歷史紀錄——交辦單位/人員/專案名稱/專案Repo 存在每筆工作紀錄上是純文字，
+// 不是靠這份清單做關聯查詢，前端 UI 上也要明顯提示這件事，避免使用者誤會。
+
+function isValidOptionCategory_(category) {
+  return OPTION_CATEGORIES.indexOf(category) !== -1;
+}
+
+function findOptionRowIndex_(values, value) {
+  for (var i = 0; i < values.length; i++) {
+    if (values[i][0] === value) return i;
+  }
+  return -1;
+}
+
+function handleAddOption_(category, value) {
+  if (!isValidOptionCategory_(category)) {
+    return jsonOutput_({ error: '未知的選項分類' });
+  }
+  value = value ? String(value).trim() : '';
+  if (!value) {
+    return jsonOutput_({ error: '新增的值不可為空' });
+  }
+  addOptionIfNew_(category, value);
+  return jsonOutput_({ options: getOptions_() });
+}
+
+function handleRenameOption_(category, oldValue, newValue) {
+  if (!isValidOptionCategory_(category)) {
+    return jsonOutput_({ error: '未知的選項分類' });
+  }
+  newValue = newValue ? String(newValue).trim() : '';
+  if (!newValue) {
+    return jsonOutput_({ error: '新名稱不可為空' });
+  }
+
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) {
+    return jsonOutput_({ error: '選項清單尚未建立' });
+  }
+
+  var colMap = getColumnMap_(sheet);
+  var col = colMap[category];
+  if (!col) {
+    return jsonOutput_({ error: '選項清單缺少這個分類欄位' });
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return jsonOutput_({ error: '找不到這個值' });
+  }
+
+  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  var rowIndex = findOptionRowIndex_(values, oldValue);
+  if (rowIndex === -1) {
+    return jsonOutput_({ error: '找不到這個值' });
+  }
+  if (findOptionRowIndex_(values, newValue) !== -1) {
+    return jsonOutput_({ error: '這個名稱已經存在' });
+  }
+
+  sheet.getRange(2 + rowIndex, col).setValue(newValue);
+  return jsonOutput_({ options: getOptions_() });
+}
+
+function handleDeleteOption_(category, value) {
+  if (!isValidOptionCategory_(category)) {
+    return jsonOutput_({ error: '未知的選項分類' });
+  }
+
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) {
+    return jsonOutput_({ error: '選項清單尚未建立' });
+  }
+
+  var colMap = getColumnMap_(sheet);
+  var col = colMap[category];
+  if (!col) {
+    return jsonOutput_({ error: '選項清單缺少這個分類欄位' });
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return jsonOutput_({ error: '找不到這個值' });
+  }
+
+  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  var rowIndex = findOptionRowIndex_(values, value);
+  if (rowIndex === -1) {
+    return jsonOutput_({ error: '找不到這個值' });
+  }
+
+  // 只清空該格，不整列刪除：同一列其他分類欄位可能還有各自的值（每個分類欄位
+  // 各自獨立，中間留空是正常狀態，getOptions_ 讀取時本來就會略過空白）
+  sheet.getRange(2 + rowIndex, col).clearContent();
+  return jsonOutput_({ options: getOptions_() });
 }
 
 // ===== 月份分頁自動建立（定時觸發器，見檔案開頭的部署步驟） =====

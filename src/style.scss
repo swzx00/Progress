@@ -10,8 +10,15 @@ body {
   // App.vue 的 Naive UI fontFamily 要保持一致
   font-family: Roboto, 'Noto Sans TC', 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', Arial,
     sans-serif;
-  color: var(--color-ink);
-  background: var(--color-bg);
+
+  // 參考 Apple：Body 為 Regular，apple.com 內文行高 1.47；中文方塊字較擠，進位成 1.5
+  // 字級用瀏覽器預設 16px（rem 基準，也避免 iOS Safari 聚焦 < 16px 輸入框時自動放大）
+  // App.vue 的 Naive UI lineHeight 要保持一致
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-black-800);
+  background: var(--color-black-000);
 }
 
 // 瀏覽器預設不讓表單元件繼承字體，不加的話按鈕／輸入框仍是系統字

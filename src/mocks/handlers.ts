@@ -2,7 +2,8 @@ import { http, HttpResponse } from 'msw'
 
 import type { WorkItem, WorkItemOptions } from '@/types/work-item'
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+// 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/')
 
 const addDays = (base: Date, days: number): Date => {
   const d = new Date(base)
@@ -42,7 +43,7 @@ let items: WorkItem[] = [
     今日工時: 3,
     預計期限: toDateString(addDays(new Date(), 5)),
     完成度: 100,
-    狀態: '已上線',
+    狀態: '確認上線',
     工作日期: today,
     已刪除: false,
   },
@@ -115,7 +116,35 @@ interface DeletePayload {
   originalDate: string
 }
 
-type DoPostPayload = CreatePayload | UpdatePayload | DeletePayload
+interface AddOptionPayload {
+  action: 'addOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  value: string
+}
+
+interface RenameOptionPayload {
+  action: 'renameOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  oldValue: string
+  newValue: string
+}
+
+interface DeleteOptionPayload {
+  action: 'deleteOption'
+  idToken: string
+  category: keyof WorkItemOptions
+  value: string
+}
+
+type DoPostPayload =
+  | CreatePayload
+  | UpdatePayload
+  | DeletePayload
+  | AddOptionPayload
+  | RenameOptionPayload
+  | DeleteOptionPayload
 
 export const handlers = [
   http.get('*/exec', ({ request }) => {
@@ -170,6 +199,40 @@ export const handlers = [
     if (body.action === 'delete') {
       items = items.map((item) => (item.id === body.id ? { ...item, 已刪除: true } : item))
       return HttpResponse.json({ ok: true })
+    }
+
+    if (body.action === 'addOption') {
+      const value = body.value.trim()
+      if (!value) return HttpResponse.json({ error: '新增的值不可為空' })
+      addOptionIfNew(body.category, value)
+      return HttpResponse.json({ options })
+    }
+
+    if (body.action === 'renameOption') {
+      const newValue = body.newValue.trim()
+      if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' })
+      if (!options[body.category].includes(body.oldValue)) {
+        return HttpResponse.json({ error: '找不到這個值' })
+      }
+      if (options[body.category].includes(newValue)) {
+        return HttpResponse.json({ error: '這個名稱已經存在' })
+      }
+      options = {
+        ...options,
+        [body.category]: options[body.category].map((v) => (v === body.oldValue ? newValue : v)),
+      }
+      return HttpResponse.json({ options })
+    }
+
+    if (body.action === 'deleteOption') {
+      if (!options[body.category].includes(body.value)) {
+        return HttpResponse.json({ error: '找不到這個值' })
+      }
+      options = {
+        ...options,
+        [body.category]: options[body.category].filter((v) => v !== body.value),
+      }
+      return HttpResponse.json({ options })
     }
 
     return HttpResponse.json({ error: 'unknown action' })

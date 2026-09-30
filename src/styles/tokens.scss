@@ -1,12 +1,91 @@
+// 色彩 token：統一用色階命名 --color-<色系>-<階>，元件裡文字／背景／邊框都直接挑色階使用
+// 色值來自公司共用設計系統的 primitive 色階
+// D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss
+// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow → 同名
 :root {
-  --color-bg: #fff;
-  --color-surface: #f7f8fa;
-  --color-border: #e4e7ec;
-  --color-ink: #1b1f27;
-  --color-ink-muted: #6b7280;
-  --color-accent: #0f6fa3;
-  --color-danger: #c0392b;
-  --color-holiday: #b45309;
+  // Blue（Candidate-Blue）
+  --color-blue-000: #f5f8ff;
+  --color-blue-050: #e3ecfc;
+  --color-blue-100: #b8d2ff;
+  --color-blue-200: #9bf;
+  --color-blue-300: #69f;
+  --color-blue-400: #4d88ff;
+  --color-blue-500: #1a66ff;
+  --color-blue-600: #1259e5;
+  --color-blue-700: #0f47b8;
+  --color-blue-800: #0b378f;
+  --color-blue-900: #09296b;
+  --color-blue-1000: #030a18;
+
+  // Black（1111-Black，中性灰階）
+  --color-black-000: #fff;
+  --color-black-050: #f8f9fa;
+  --color-black-100: #e9ecef;
+  --color-black-200: #ced4da;
+  --color-black-300: #adb5bd;
+  --color-black-400: #939da7;
+  --color-black-500: #636e78;
+  --color-black-600: #495057;
+  --color-black-700: #343a40;
+  --color-black-800: #212529;
+  --color-black-900: #141618;
+  --color-black-1000: #000;
+
+  // Red（1111-Rose，危險／錯誤）
+  --color-red-000: #fdedf0;
+  --color-red-050: #fbdbe0;
+  --color-red-100: #f9c9d1;
+  --color-red-200: #f7b7c1;
+  --color-red-300: #f293a3;
+  --color-red-400: #ee6f84;
+  --color-red-500: #ea4b65;
+  --color-red-600: #cd2742;
+  --color-red-700: #a51028;
+  --color-red-800: #820f21;
+  --color-red-900: #590b17;
+  --color-red-1000: #36040d;
+
+  // Teal（1111-Teal）
+  --color-teal-000: #f0fcff;
+  --color-teal-050: #dcf5fa;
+  --color-teal-100: #abe2ed;
+  --color-teal-200: #75cee0;
+  --color-teal-300: #3cbcd6;
+  --color-teal-400: #29b0cf;
+  --color-teal-500: #00a3c4;
+  --color-teal-600: #008ead;
+  --color-teal-700: #03738f;
+  --color-teal-800: #005c75;
+  --color-teal-900: #004959;
+  --color-teal-1000: #00323d;
+
+  // Green（1111-Green）
+  --color-green-000: #f9fff5;
+  --color-green-050: #f0f9e9;
+  --color-green-100: #d1edbb;
+  --color-green-200: #bae49a;
+  --color-green-300: #9bd76c;
+  --color-green-400: #87d050;
+  --color-green-500: #69c424;
+  --color-green-600: #60b221;
+  --color-green-700: #4b8b1a;
+  --color-green-800: #3a6c14;
+  --color-green-900: #2c520f;
+  --color-green-1000: #1b3309;
+
+  // Yellow（1111-Yellow）
+  --color-yellow-000: #fffdf5;
+  --color-yellow-050: #fffae0;
+  --color-yellow-100: #ffefa3;
+  --color-yellow-200: #ffe461;
+  --color-yellow-300: #ffda4d;
+  --color-yellow-400: #ffce00;
+  --color-yellow-500: #ffc300;
+  --color-yellow-600: #faaf0a;
+  --color-yellow-700: #d48c0a;
+  --color-yellow-800: #8f590d;
+  --color-yellow-900: #6b3d00;
+  --color-yellow-1000: #4d2b00;
 }
 
 /* 深色模式預留位置，目前只做白色系，尚未提供 [data-theme="dark"] 對應值 */

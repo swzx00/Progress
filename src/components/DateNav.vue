@@ -93,20 +93,13 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       ⏭
     </button>
     <span v-if="dayOffLabel" class="date-nav__holiday-badge">🏮 {{ dayOffLabel }}</span>
-
     <div class="date-nav__trailing">
       <span v-if="totalHours !== undefined" class="date-nav__total">
         今日工時合計：{{ totalHours }}hr
       </span>
-      <button
-        type="button"
-        class="date-nav__today"
-        :class="{ 'date-nav__today--current': isToday }"
-        :disabled="isToday"
-        @click="goToday"
-      >
-        {{ isToday ? '今天' : '回到今天' }}
-      </button>
+      <!-- 今天時只是狀態標示（不可操作），用 span 而不是 disabled 按鈕 -->
+      <span v-if="isToday" class="date-nav__today date-nav__today--current">今天</span>
+      <button v-else type="button" class="date-nav__today" @click="goToday">回到今天</button>
       <slot name="actions" />
     </div>
   </div>
@@ -138,74 +131,88 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 .date-nav__today {
   padding: 6px 12px;
+  word-break: keep-all;
 }
 
 .date-nav__btn,
 .date-nav__today {
+  display: flex;
   font-size: 14px;
-  color: var(--color-ink);
+  color: var(--color-black-800);
   cursor: pointer;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-black-000);
+  border: 1px solid var(--color-black-100);
   border-radius: 8px;
 }
 
 .date-nav__btn:hover,
-.date-nav__today:hover {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
+.date-nav__today:not(.date-nav__today--current):hover {
+  color: var(--color-blue-500);
+  border-color: var(--color-blue-500);
 }
 
-.date-nav__btn:disabled,
-.date-nav__today:disabled {
+.date-nav__btn:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 
   &:hover {
-    color: var(--color-ink);
-    border-color: var(--color-border);
+    color: var(--color-black-800);
+    border-color: var(--color-black-100);
   }
 }
 
 .date-nav__picker {
   width: 170px;
+  max-width: calc(100% - (32px * 4) - (8px * 4));
 }
 
 /*
- * :deep() 不用在這裡是因為 class 是直接寫在 <NDatePicker> 標籤上，Vue 的 scoped
- * CSS 會把 scope 屬性直接掛在它的根節點，跟平常自己寫的元素一樣可以直接選到，
- * 不需要穿透子元件內部。用 outline（不是改 NInput 內部的 border 顏色）是刻意選擇：
- * 不用去扣 Naive UI 內部的 class 名稱，比較不會因為套件版本升級而失效。
+ * 這裡整段都要用 :deep()：NDatePicker／NInput 實際顯示文字跟畫邊框的都是內部
+ * 元素，不是我們拿到 class 的這個外層根節點，Naive UI 直接在那些內部元素自己
+ * 身上設定顏色（不是繼承外層），單寫在外層 class 上不會生效：
+ * - 邊框：NInput 用兩個疊在一起的空 div 畫邊框（<div class="n-input__border">
+ *   是預設常駐的邊框，<div class="n-input__state-border"> 是 hover/focus 時才
+ *   淡入的狀態邊框），要蓋掉平常看到的顏色要改前者
+ * - 文字：實際輸入框是 <input class="n-input__input-el">
+ * 這是目前唯一會對 NDatePicker／NInput 內部 class 用 :deep() 的地方，套件升級
+ * 如果改了這幾個內部 class 名稱，這段「今天」標色會失效，但不影響日期選擇功能。
  */
 .date-nav__picker--today {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
   border-radius: 6px;
+
+  :deep(.n-input__border) {
+    border-color: var(--color-blue-700);
+  }
+
+  :deep(.n-input__input-el) {
+    color: var(--color-blue-700);
+  }
 }
 
 .date-nav__today--current {
-  color: #fff;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-weight: 500;
+  color: var(--color-blue-500);
   cursor: default;
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-
-  &:disabled {
-    opacity: 1;
-  }
+  background: transparent;
+  border: 1px solid var(--color-blue-500);
+  border-radius: 999px;
 }
 
 .date-nav__holiday-badge {
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-holiday);
+  color: var(--color-yellow-800);
   white-space: nowrap;
-  border: 1px solid var(--color-holiday);
+  border: 1px solid var(--color-yellow-800);
   border-radius: 999px;
 }
 
 .date-nav__trailing {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   margin-left: auto;
@@ -213,7 +220,7 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 .date-nav__total {
   font-size: 13px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   white-space: nowrap;
 }
 </style>

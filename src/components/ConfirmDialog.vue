@@ -68,7 +68,7 @@ const emit = defineEmits<{
   width: 100%;
   max-width: 340px;
   padding: 24px;
-  background: var(--color-bg);
+  background: var(--color-black-000);
   border-radius: 12px;
   box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
 }
@@ -77,14 +77,14 @@ const emit = defineEmits<{
   margin: 0 0 8px;
   font-size: 16px;
   font-weight: 700;
-  color: var(--color-ink);
+  color: var(--color-black-800);
 }
 
 .confirm-dialog__message {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
 }
 
 .confirm-dialog__actions {
@@ -97,21 +97,21 @@ const emit = defineEmits<{
   flex: 1;
   padding: 9px;
   font-size: 14px;
-  color: var(--color-ink);
+  color: var(--color-black-800);
   cursor: pointer;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-black-000);
+  border: 1px solid var(--color-black-100);
   border-radius: 6px;
 
   &--primary {
     font-weight: 600;
-    color: #fff;
-    background: var(--color-accent);
+    color: var(--color-black-000);
+    background: var(--color-blue-500);
     border: none;
   }
 
   &--danger {
-    background: var(--color-danger);
+    background: var(--color-red-600);
   }
 }
 </style>
