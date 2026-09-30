@@ -2,7 +2,8 @@ import { http, HttpResponse } from 'msw'
 
 import type { WorkItem, WorkItemOptions } from '@/types/work-item'
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+// 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/')
 
 const addDays = (base: Date, days: number): Date => {
   const d = new Date(base)
@@ -42,7 +43,7 @@ let items: WorkItem[] = [
     今日工時: 3,
     預計期限: toDateString(addDays(new Date(), 5)),
     完成度: 100,
-    狀態: '已上線',
+    狀態: '確認上線',
     工作日期: today,
     已刪除: false,
   },
