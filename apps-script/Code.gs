@@ -48,8 +48,21 @@ function getSpreadsheet_() {
   return SpreadsheetApp.openById(getSheetId_());
 }
 
+// 分頁命名慣例固定是 dash 的 YYYY-MM（跟日期欄位對前端的 YYYY/MM/DD 格式無關），
+// 這裡先把斜線正規化成 dash 再切，才能正確從 YYYY/MM/DD 的工作日期字串換算出分頁名稱。
 function getMonthKey_(dateStr) {
-  return String(dateStr).slice(0, 7); // YYYY-MM
+  return String(dateStr).replace(/\//g, '-').slice(0, 7); // YYYY-MM
+}
+
+// 「工作日期」「預計期限」欄位套用 yyyy/mm/dd 儲存格顯示格式，讓 Sheet 打開來看
+// 跟 API 回傳的 YYYY/MM/DD 字串格式一致。套到整欄（含尚未寫入資料的列），
+// 之後新增的列不用另外補設定。
+function applyDateColumnFormat_(sheet, colMap) {
+  DATE_FIELDS.forEach(function (field) {
+    var col = colMap[field];
+    if (!col) return;
+    sheet.getRange(2, col, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy/mm/dd');
+  });
 }
 
 function getOrCreateMonthSheet_(monthKey) {
@@ -59,8 +72,20 @@ function getOrCreateMonthSheet_(monthKey) {
     sheet = ss.insertSheet(monthKey);
     sheet.getRange(1, 1, 1, MONTH_SHEET_HEADERS.length).setValues([MONTH_SHEET_HEADERS]);
     sheet.setFrozenRows(1);
+    applyDateColumnFormat_(sheet, getColumnMap_(sheet));
   }
   return sheet;
+}
+
+// 一次性遷移用：把已經存在的各月份分頁補上 applyDateColumnFormat_（新分頁走
+// getOrCreateMonthSheet_ 會自動套用，但這支改動之前就已建立的分頁不會自動補上）。
+// 用法同 installTrigger()：在 Apps Script 編輯器手動執行一次即可，之後不用再跑。
+function fixExistingMonthSheetDateFormats_() {
+  var ss = getSpreadsheet_();
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    applyDateColumnFormat_(sheet, getColumnMap_(sheet));
+  });
 }
 
 // 讀表頭列，回傳 {欄位名稱: 1-based 欄位編號}，讀寫都靠這個對應表查位置，
@@ -77,7 +102,7 @@ function getColumnMap_(sheet) {
 
 function formatDateCell_(raw) {
   if (raw instanceof Date) {
-    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy/MM/dd');
   }
   return raw ? String(raw) : '';
 }
