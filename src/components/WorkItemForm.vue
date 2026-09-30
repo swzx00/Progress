@@ -227,6 +227,10 @@ const onSubmit = (): void => {
   inset: 0;
   display: none;
   background: rgb(27 31 39 / 35%);
+
+  @media (min-width: 768px) {
+    display: block;
+  }
 }
 
 .work-item-form__panel {
@@ -234,7 +238,13 @@ const onSubmit = (): void => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
+  background: var(--color-black-000);
+
+  @media (min-width: 768px) {
+    inset: 0 0 0 auto;
+    width: min(440px, 100%);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
+  }
 }
 
 .work-item-form__mobile-header {
@@ -242,45 +252,57 @@ const onSubmit = (): void => {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-black-100);
+
+  @media (min-width: 768px) {
+    display: none;
+  }
 }
 
 .work-item-form__mobile-title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: var(--color-ink);
+  color: var(--color-black-800);
 }
 
 .work-item-form__text-btn {
   padding: 4px;
   font-size: 14px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   cursor: pointer;
   background: transparent;
   border: none;
 
   &--accent {
     font-weight: 700;
-    color: var(--color-accent);
+    color: var(--color-blue-500);
   }
 }
 
 .work-item-form__desktop-header {
   display: none;
+
+  @media (min-width: 768px) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--color-black-100);
+  }
 }
 
 .work-item-form__desktop-title {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: var(--color-ink);
+  color: var(--color-black-800);
 }
 
 .work-item-form__close-btn {
   font-size: 18px;
   line-height: 1;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   cursor: pointer;
   background: transparent;
   border: none;
@@ -293,6 +315,10 @@ const onSubmit = (): void => {
   gap: 14px;
   padding: 16px;
   overflow: auto;
+
+  @media (min-width: 768px) {
+    padding: 20px 24px;
+  }
 }
 
 .work-item-form__row {
@@ -309,15 +335,15 @@ const onSubmit = (): void => {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
 
   input,
   textarea {
     padding: 8px 10px;
     font-family: inherit;
     font-size: 13px;
-    color: var(--color-ink);
-    border: 1px solid var(--color-border);
+    color: var(--color-black-800);
+    border: 1px solid var(--color-black-100);
     border-radius: 6px;
   }
 
@@ -329,73 +355,45 @@ const onSubmit = (): void => {
     padding: 10px 12px;
     font-size: 13px;
     font-weight: 600;
-    color: var(--color-accent);
-    background: var(--color-surface);
-    border: 1px solid var(--color-accent);
+    color: var(--color-blue-500);
+    background: var(--color-black-050);
+    border: 1px solid var(--color-blue-500);
     border-radius: 8px;
 
     input {
       font-size: 15px;
       font-weight: 700;
-      border-color: var(--color-accent);
+      border-color: var(--color-blue-500);
     }
   }
 }
 
 .work-item-form__desktop-footer {
   display: none;
+
+  @media (min-width: 768px) {
+    display: flex;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--color-black-100);
+  }
 }
 
 .work-item-form__btn {
   flex: 1;
   padding: 9px;
   font-size: 14px;
-  color: var(--color-ink);
+  color: var(--color-black-800);
   cursor: pointer;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-black-000);
+  border: 1px solid var(--color-black-100);
   border-radius: 6px;
 
   &--primary {
     font-weight: 600;
-    color: #fff;
-    background: var(--color-accent);
+    color: var(--color-black-000);
+    background: var(--color-blue-500);
     border: none;
-  }
-}
-
-@media (min-width: 768px) {
-  .work-item-form__backdrop {
-    display: block;
-  }
-
-  .work-item-form__panel {
-    inset: 0 0 0 auto;
-    width: min(440px, 100%);
-    box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
-  }
-
-  .work-item-form__mobile-header {
-    display: none;
-  }
-
-  .work-item-form__desktop-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .work-item-form__body {
-    padding: 20px 24px;
-  }
-
-  .work-item-form__desktop-footer {
-    display: flex;
-    gap: 10px;
-    padding: 16px 24px;
-    border-top: 1px solid var(--color-border);
   }
 }
 
@@ -428,17 +426,14 @@ const onSubmit = (): void => {
 .work-item-form-enter-from .work-item-form__panel,
 .work-item-form-leave-to .work-item-form__panel {
   transform: translateY(100%);
+
+  @media (min-width: 768px) {
+    transform: translateX(100%);
+  }
 }
 
 .work-item-form-enter-from .work-item-form__backdrop,
 .work-item-form-leave-to .work-item-form__backdrop {
   opacity: 0;
-}
-
-@media (min-width: 768px) {
-  .work-item-form-enter-from .work-item-form__panel,
-  .work-item-form-leave-to .work-item-form__panel {
-    transform: translateX(100%);
-  }
 }
 </style>

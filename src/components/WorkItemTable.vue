@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { isOverdue, type WorkItem } from '@/types/work-item'
+import { getStatusKey, isOverdue, type WorkItem } from '@/types/work-item'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +21,13 @@ const emit = defineEmits<{
   delete: [item: WorkItem]
 }>()
 
+const formatDate = (date: string): string => date.replaceAll('-', '/')
+
+const statusClass = (status: string): string | undefined => {
+  const key = getStatusKey(status)
+  return key ? `work-item-table__status--${key}` : undefined
+}
+
 const sortedItems = computed(() =>
   [...props.items].sort((a, b) => {
     const aOverdue = isOverdue(a, props.today)
@@ -34,29 +41,24 @@ const sortedItems = computed(() =>
 <template>
   <div
     class="work-item-table"
-    :class="{ 'work-item-table--editable': editable, 'work-item-table--viewing-today': viewingToday }"
+    :class="{
+      'work-item-table--editable': editable,
+      'work-item-table--viewing-today': viewingToday,
+    }"
     role="table"
   >
     <div class="work-item-table__row work-item-table__row--header" role="row">
-      <div
-        class="work-item-table__cell work-item-table__cell--index work-item-table__cell--mobile-hide"
-        role="columnheader"
-      >
-        項次
-      </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--assignee work-item-table__cell--secondary"
-        role="columnheader"
-      >
+      <div class="work-item-table__cell work-item-table__cell--index" role="columnheader">項次</div>
+      <div class="work-item-table__cell work-item-table__cell--assignee" role="columnheader">
         交辦單位/人員
       </div>
       <div class="work-item-table__cell work-item-table__cell--title" role="columnheader">
         專案名稱/Repo
       </div>
-      <div class="work-item-table__cell work-item-table__cell--content" role="columnheader">
+      <div class="work-item-table__cell work-item-table__cell--target" role="columnheader">
         工作目標
       </div>
-      <div class="work-item-table__cell work-item-table__cell--status" role="columnheader">
+      <div class="work-item-table__cell work-item-table__cell--detail" role="columnheader">
         處理內容
       </div>
       <div class="work-item-table__cell work-item-table__cell--hours" role="columnheader">
@@ -68,10 +70,7 @@ const sortedItems = computed(() =>
       <div class="work-item-table__cell work-item-table__cell--progress" role="columnheader">
         完成度
       </div>
-      <div
-        class="work-item-table__cell work-item-table__cell--report work-item-table__cell--mobile-hide work-item-table__cell--secondary"
-        role="columnheader"
-      >
+      <div class="work-item-table__cell work-item-table__cell--status" role="columnheader">
         狀態
       </div>
       <div
@@ -90,24 +89,8 @@ const sortedItems = computed(() =>
       :class="{ 'work-item-table__row--overdue': isOverdue(item, today) }"
       role="row"
     >
-      <div
-        class="work-item-table__cell work-item-table__cell--index work-item-table__cell--mobile-hide"
-        role="cell"
-      >
+      <div class="work-item-table__cell work-item-table__cell--index" role="cell">
         {{ item.項次 }}
-      </div>
-
-      <div
-        class="work-item-table__cell work-item-table__cell--assignee work-item-table__cell--secondary"
-        role="cell"
-      >
-        <span class="work-item-table__assignee-stacked">
-          <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
-          <span class="work-item-table__assignee-person">{{ item.交辦人員 }}</span>
-        </span>
-        <span class="work-item-table__assignee-inline"
-          >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
-        >
       </div>
 
       <div class="work-item-table__cell work-item-table__cell--title" role="cell">
@@ -119,22 +102,29 @@ const sortedItems = computed(() =>
         </div>
       </div>
 
-      <div class="work-item-table__cell work-item-table__cell--content" role="cell">
+      <div class="work-item-table__cell work-item-table__cell--status" role="cell">
+        <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)">{{
+          item.狀態
+        }}</span
+        ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
+      </div>
+
+      <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
+        <span class="work-item-table__assignee-stacked">
+          <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
+          <span class="work-item-table__assignee-person">{{ item.交辦人員 }}</span>
+        </span>
+        <span class="work-item-table__assignee-inline"
+          >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
+        >
+      </div>
+
+      <div class="work-item-table__cell work-item-table__cell--target" role="cell">
         {{ item.工作目標 }}
       </div>
 
-      <div class="work-item-table__cell work-item-table__cell--status" role="cell">
+      <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
         <span class="work-item-table__mobile-label">處理內容：</span>{{ item.處理內容 }}
-      </div>
-
-      <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
-        <span class="work-item-table__mobile-label">工時 </span>{{ item.今日工時
-        }}<span class="work-item-table__mobile-label">hr</span>
-      </div>
-
-      <div class="work-item-table__cell work-item-table__cell--due" role="cell">
-        <span class="work-item-table__mobile-label">期限 </span>{{ item.預計期限
-        }}<span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
       </div>
 
       <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
@@ -144,26 +134,30 @@ const sortedItems = computed(() =>
         <span class="work-item-table__progress-text">{{ item.完成度 }}%</span>
       </div>
 
-      <div
-        class="work-item-table__cell work-item-table__cell--report work-item-table__cell--mobile-hide work-item-table__cell--secondary"
-        role="cell"
-      >
-        {{ item.狀態 }}
+      <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
+        <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
+        }}<span class="work-item-table__mobile-label">hr</span>
+      </div>
+
+      <div class="work-item-table__cell work-item-table__cell--due" role="cell">
+        <span class="work-item-table__mobile-label">期限：</span>{{ formatDate(item.預計期限) }}
       </div>
 
       <div v-if="editable" class="work-item-table__cell work-item-table__cell--actions" role="cell">
-        <div class="work-item-table__actions">
-          <button type="button" class="work-item-table__action-btn" @click="emit('edit', item)">
-            編輯
-          </button>
-          <button
-            type="button"
-            class="work-item-table__action-btn work-item-table__action-btn--danger"
-            @click="emit('delete', item)"
-          >
-            刪除
-          </button>
-        </div>
+        <button
+          type="button"
+          class="work-item-table__action-btn work-item-table__action-btn--edit"
+          @click="emit('edit', item)"
+        >
+          編輯
+        </button>
+        <button
+          type="button"
+          class="work-item-table__action-btn work-item-table__action-btn--danger"
+          @click="emit('delete', item)"
+        >
+          刪除
+        </button>
       </div>
     </div>
 
@@ -173,309 +167,589 @@ const sortedItems = computed(() =>
 
 <style scoped lang="scss">
 .work-item-table {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 0 16px;
 
   @media (min-width: 768px) {
-    padding: 0 32px 16px;
-  }
-
-  /*
-   * 「正在檢視今天」跟「逾期」是兩種不同語意的提醒，顏色刻意分開：
-   * 逾期用 --color-danger（紅），這裡用 --color-accent（藍），視覺上不會混淆。
-   */
-  &--viewing-today {
-    padding-top: 12px;
-    border-top: 3px solid var(--color-accent);
-
-    .work-item-table__row {
-      background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
-    }
-
-    .work-item-table__row--header {
-      background: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg));
-      border-color: var(--color-accent);
-    }
-  }
-}
-
-.work-item-table__row {
-  display: flex;
-  flex-flow: row wrap;
-  gap: 4px 12px;
-  padding: 14px;
-  margin-bottom: 12px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-
-  &--header {
-    display: none;
-  }
-
-  &--overdue {
-    box-shadow: inset 3px 0 0 var(--color-danger);
-  }
-}
-
-.work-item-table__cell {
-  flex-basis: 100%;
-  font-size: 13px;
-  color: var(--color-ink);
-
-  &--mobile-hide {
-    display: none;
-  }
-
-  &--title {
-    order: 1;
-  }
-
-  &--assignee {
-    order: 2;
-  }
-
-  &--content {
-    order: 3;
-  }
-
-  &--status {
-    order: 4;
-    font-size: 12px;
-    color: var(--color-ink-muted);
-  }
-
-  &--progress {
-    order: 5;
-  }
-
-  &--hours {
-    flex-basis: 50%;
-    order: 6;
-    font-size: 11px;
-    color: var(--color-ink-muted);
-  }
-
-  &--due {
-    flex-basis: 50%;
-    order: 7;
-    font-size: 11px;
-    color: var(--color-ink-muted);
-    text-align: right;
-  }
-
-  &--actions {
-    order: 8;
-  }
-}
-
-.work-item-table__title-text {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-ink);
-}
-
-.work-item-table__title-repo {
-  margin-top: 4px;
-}
-
-.work-item-table__assignee-stacked {
-  display: none;
-}
-
-.work-item-table__assignee-inline {
-  display: inline;
-  font-size: 12px;
-  color: var(--color-ink-muted);
-}
-
-.work-item-table__mobile-label {
-  color: var(--color-ink-muted);
-}
-
-.work-item-table__repo-tag {
-  display: inline-block;
-  padding: 1px 8px;
-  margin-right: 4px;
-  font-size: 11px;
-  color: var(--color-ink-muted);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-}
-
-.work-item-table__badge {
-  display: inline-block;
-  padding: 1px 6px;
-  margin-left: 6px;
-  font-size: 11px;
-  color: #fff;
-  background: var(--color-danger);
-  border-radius: 999px;
-}
-
-.work-item-table__progress {
-  display: inline-block;
-  width: 90px;
-  height: 6px;
-  overflow: hidden;
-  vertical-align: middle;
-  background: var(--color-surface);
-  border-radius: 999px;
-}
-
-.work-item-table__progress-bar {
-  height: 100%;
-  background: var(--color-accent);
-}
-
-.work-item-table__progress-text {
-  margin-left: 6px;
-  font-size: 12px;
-  color: var(--color-ink-muted);
-}
-
-.work-item-table__actions {
-  display: flex;
-  gap: 8px;
-}
-
-.work-item-table__action-btn {
-  flex: 1;
-  padding: 7px;
-  font-size: 13px;
-  color: var(--color-ink);
-  cursor: pointer;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-
-  &--danger {
-    color: var(--color-danger);
-  }
-}
-
-.work-item-table__empty {
-  padding: 32px 12px;
-  color: var(--color-ink-muted);
-  text-align: center;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-}
-
-/* ≥ 768px：由卡片堆疊改成表格式 CSS Grid，欄位靠 grid-template-columns 對齊 */
-@media (min-width: 768px) {
-  .work-item-table__row {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 64px 140px 150px;
     gap: 0;
-    align-items: center;
     padding: 0;
-    margin-bottom: 0;
-    border: none;
-    border-bottom: 1px solid var(--color-border);
-    border-radius: 0;
+  }
 
-    &--header {
+  &--viewing-today {
+    .work-item-table__row {
+      border: 1px solid var(--color-blue-200);
+
+      @media (min-width: 768px) {
+        border: none;
+        border-bottom: 1px solid var(--color-blue-200);
+      }
+
+      &--header {
+        @media (min-width: 768px) {
+          background: var(--color-blue-100);
+        }
+      }
+
+      &:not(.work-item-table__row--header):nth-child(even) {
+        background: var(--color-blue-050);
+      }
+
+      &:not(.work-item-table__row--header):nth-child(odd) {
+        background: var(--color-blue-000);
+      }
+    }
+  }
+
+  &__row {
+    display: flex;
+    flex-flow: row wrap;
+    gap: 2px 8px;
+    justify-content: space-between;
+    padding: 12px 16px;
+    font-size: 16px;
+    border: 1px solid var(--color-black-200);
+    border-radius: 8px;
+
+    @media (min-width: 768px) {
       display: grid;
-      border-bottom: 2px solid var(--color-border);
+      grid-template-columns: 32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(
+          62px,
+          1fr
+        ) 62px 48px 77px 58px;
+      gap: 8px;
+      padding: 8px 32px;
+      font-size: 14px;
+      border: none;
+      border-bottom: 1px solid var(--color-black-200);
+      border-radius: 0;
+    }
 
-      .work-item-table__cell {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--color-ink-muted);
+    .work-item-table--editable & {
+      @media (min-width: 768px) {
+        grid-template-columns: 32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(
+            62px,
+            1fr
+          ) 62px 48px 77px 58px 46px;
       }
     }
 
-    &--overdue {
-      box-shadow: inset 3px 0 0 var(--color-danger);
-    }
-  }
-
-  .work-item-table--editable .work-item-table__row {
-    grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 64px 140px 150px 130px;
-  }
-
-  .work-item-table__cell {
-    flex-basis: auto;
-    order: 0;
-    padding: 10px;
-    font-size: 13px;
-    color: var(--color-ink);
-    text-align: left;
-
-    &--mobile-hide {
-      display: block;
-    }
-
-    &--secondary {
+    &--header {
       display: none;
+
+      @media (min-width: 768px) {
+        display: grid;
+        font-size: 15px;
+        background: var(--color-black-100);
+      }
+    }
+
+    &--header {
+      display: none;
+
+      @media (min-width: 768px) {
+        display: grid;
+        font-size: 15px;
+        background: var(--color-black-100);
+      }
+    }
+
+    &:not(.work-item-table__row--header):nth-child(even) {
+      background: var(--color-black-050);
+    }
+
+    &:not(.work-item-table__row--header):nth-child(odd) {
+      background: var(--color-black-000);
+    }
+
+    &--overdue {
+      border-left: 1px solid var(--color-red-600);
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      box-shadow: inset 3px 0 0 var(--color-red-600);
+
+      @media (min-width: 768px) {
+        border: inherit;
+        border-left: inherit;
+        border-top-left-radius: inherit;
+        border-bottom-left-radius: inherit;
+        box-shadow: inset 4px 0 0 var(--color-red-600);
+      }
+    }
+  }
+
+  &__cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+
+    @media (min-width: 768px) {
+      justify-content: center;
+    }
+
+    .work-item-table__row--header & {
+      flex-flow: row nowrap;
+      gap: 0;
+      justify-content: center;
+      text-align: center;
+      word-break: keep-all;
+    }
+
+    &--index {
+      display: none;
+
+      @media (min-width: 768px) {
+        display: flex;
+        order: 0;
+      }
     }
 
     &--title {
-      font-size: 13px;
+      display: -webkit-box;
+      flex: 1 1 0;
+      flex-flow: column wrap;
+      gap: 2px;
+      align-items: flex-start;
+      align-self: center;
+      order: 0;
+      width: auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      -webkit-line-clamp: 5;
+      font-size: 18px;
+      font-weight: 500;
+      line-height: 1.6;
+      word-break: break-all;
+      -webkit-box-orient: vertical;
+
+      @media (min-width: 768px) {
+        order: 2;
+        font-size: inherit;
+        font-weight: inherit;
+        line-height: inherit;
+      }
+
+      * {
+        max-width: 100%;
+      }
     }
 
     &--status {
-      font-size: 13px;
-      color: var(--color-ink);
+      flex: 0 0 auto;
+      flex-direction: row;
+      gap: 2px;
+      align-items: flex-start;
+      order: 1;
+
+      @media (min-width: 768px) {
+        flex-direction: column;
+        align-items: center;
+        order: 8;
+      }
     }
 
-    &--hours,
+    &--assignee {
+      order: 2;
+      width: 100%;
+      margin-top: 2px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--color-black-500);
+
+      @media (min-width: 768px) {
+        order: 1;
+        margin-top: inherit;
+        margin-bottom: inherit;
+        font-size: inherit;
+        color: inherit;
+      }
+
+      .work-item-table__assignee-stacked {
+        display: none;
+
+        @media (min-width: 768px) {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          align-items: center;
+          width: 100%;
+        }
+      }
+
+      .work-item-table__assignee-inline {
+        display: inline;
+
+        @media (min-width: 768px) {
+          display: none;
+        }
+      }
+    }
+
+    &--target {
+      display: -webkit-box;
+      align-self: center;
+      justify-content: flex-start;
+      order: 3;
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      -webkit-line-clamp: 5;
+      word-break: break-all;
+      -webkit-box-orient: vertical;
+
+      @media (min-width: 768px) {
+        order: 3;
+      }
+    }
+
+    &--detail {
+      display: -webkit-box;
+      align-self: center;
+      justify-content: flex-start;
+      order: 4;
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      -webkit-line-clamp: 5;
+      font-size: 14px;
+      color: var(--color-black-500);
+      word-break: break-all;
+      -webkit-box-orient: vertical;
+
+      @media (min-width: 768px) {
+        order: 4;
+        -webkit-line-clamp: 3;
+        font-size: inherit;
+        color: inherit;
+      }
+    }
+
+    &--progress {
+      flex-direction: row;
+      gap: 8px;
+      order: 5;
+      width: 100%;
+      font-size: 14px;
+      color: var(--color-blue-800);
+
+      @media (min-width: 768px) {
+        flex-direction: column;
+        gap: 2px;
+        order: 6;
+        font-size: inherit;
+        color: inherit;
+      }
+    }
+
+    &--hours {
+      flex: 0 0 auto;
+      order: 6;
+      width: fit-content;
+      font-size: 12px;
+      color: var(--color-black-500);
+
+      @media (min-width: 768px) {
+        order: 5;
+        width: 100%;
+        font-size: inherit;
+        color: inherit;
+      }
+    }
+
     &--due {
-      font-size: 13px;
-      color: var(--color-ink);
-      text-align: left;
-      white-space: nowrap;
+      flex: 0 0 auto;
+      order: 7;
+      width: fit-content;
+      font-size: 12px;
+      color: var(--color-black-500);
+
+      @media (min-width: 768px) {
+        order: 7;
+        width: 100%;
+        font-size: inherit;
+        color: inherit;
+      }
+    }
+
+    &--actions {
+      flex-direction: row;
+      gap: 8px;
+      order: 8;
+      width: 100%;
+      padding-top: 10px;
+      margin-top: 12px;
+      border-top: 1px solid var(--color-black-200);
+
+      @media (min-width: 768px) {
+        flex-direction: column;
+        gap: 4px;
+        order: 9;
+        padding-top: unset;
+        margin-top: unset;
+        border-top: none;
+      }
     }
   }
 
-  .work-item-table__title-text {
-    font-size: 13px;
-    font-weight: 400;
+  &__mobile-label {
+    display: inline;
+
+    @media (min-width: 768px) {
+      display: none;
+    }
   }
 
-  .work-item-table__mobile-label {
-    display: none;
+  &__title {
+    &-repo {
+      display: flex;
+      flex-flow: row wrap;
+      gap: 2px;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
   }
 
-  .work-item-table__actions {
-    white-space: nowrap;
-  }
-
-  .work-item-table__action-btn {
-    flex: none;
-    padding: 4px 10px;
+  &__repo-tag {
+    display: inline-block;
+    width: fit-content;
+    min-width: 0;
+    max-width: 30%;
+    padding: 1px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 12px;
-  }
-}
+    line-height: 1.3;
+    color: var(--color-black-500);
+    white-space: nowrap;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-200);
+    border-radius: 999px;
 
-/* ≥ 1024px：恢復次要欄位（交辦人員／狀態），套完整欄寬 */
-@media (min-width: 1024px) {
-  .work-item-table__row {
-    grid-template-columns: 48px 110px minmax(0, 1fr) minmax(0, 1fr) minmax(
-        0,
-        1fr
-      ) 64px 140px 150px minmax(0, 1fr);
-  }
+    @media (min-width: 768px) {
+      max-width: 103px;
+      font-size: 10px;
+    }
 
-  .work-item-table--editable .work-item-table__row {
-    grid-template-columns: 48px 110px minmax(0, 1fr) minmax(0, 1fr) minmax(
-        0,
-        1fr
-      ) 64px 140px 150px minmax(0, 1fr) 130px;
-  }
-
-  .work-item-table__cell--secondary {
-    display: block;
+    .work-item-table--overdue & {
+      color: var(--color-red-400);
+      background: var(--color-red-000);
+      border: 1px solid var(--color-red-400);
+    }
   }
 
-  .work-item-table__assignee-stacked {
-    display: flex;
-    flex-direction: column;
+  &__assignee {
+    &-stacked {
+      display: none;
+
+      @media (min-width: 768px) {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+      }
+    }
+
+    &-inline {
+      display: inline;
+
+      @media (min-width: 768px) {
+        display: none;
+      }
+    }
   }
 
-  .work-item-table__assignee-inline {
-    display: none;
+  // 手機卡片：透明底＋邊框的膠囊；桌面表格維持原本的純文字樣式
+  &__status {
+    display: inline-flex;
+    padding: 2px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-black-600);
+    white-space: nowrap;
+    background: transparent;
+    border: 1px solid currentcolor;
+    border-radius: 999px;
+
+    @media (min-width: 768px) {
+      line-height: inherit;
+    }
+
+    &--todo {
+      color: var(--color-black-600);
+      background: var(--color-black-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    &--in-progress {
+      color: var(--color-blue-700);
+      background: var(--color-blue-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    &--frontend-done {
+      color: var(--color-teal-800);
+      background: var(--color-teal-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    &--rework {
+      color: var(--color-red-700);
+      background: var(--color-red-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    &--live {
+      color: var(--color-green-800);
+      background: var(--color-green-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    &--paused {
+      color: var(--color-yellow-800);
+      background: var(--color-yellow-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-black-600);
+        background: transparent;
+      }
+    }
+
+    // 放在所有狀態修飾符之後，color: inherit 才蓋得過各狀態的顏色
+    @media (min-width: 768px) {
+      padding: 0;
+      font-size: inherit;
+      line-height: inherit;
+      color: inherit;
+      border: none;
+      border-radius: 0;
+    }
+  }
+
+  &__badge {
+    display: inline-block;
+    width: fit-content;
+    padding: 2px 10px;
+    margin-left: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    vertical-align: middle;
+    color: var(--color-black-000);
+    text-align: center;
+    background: var(--color-red-600);
+    border: 1px solid var(--color-red-600);
+    border-radius: 999px;
+
+    @media (min-width: 768px) {
+      padding: 1px 6px;
+      margin-left: 0;
+      font-size: 10px;
+    }
+  }
+
+  &__progress {
+    display: inline-block;
+    width: 100%;
+    height: 6px;
+    overflow: hidden;
+    vertical-align: middle;
+    background: var(--color-blue-100);
+    border-radius: 999px;
+
+    &-bar {
+      height: 100%;
+      background: var(--color-blue-500);
+    }
+
+    &-text {
+      flex: 0 0 46px;
+      width: 46px;
+      text-align: end;
+
+      @media (min-width: 768px) {
+        flex: unset;
+        width: fit-content;
+        text-align: center;
+      }
+    }
+  }
+
+  &__action-btn {
+    flex: 1;
+    padding: 7px;
+    font-size: 12px;
+    word-break: keep-all;
+    cursor: pointer;
+    border-radius: 6px;
+
+    &--edit {
+      color: var(--color-blue-500);
+      background: var(--color-blue-000);
+      border: 1px solid var(--color-blue-500);
+
+      &:hover {
+        color: var(--color-black-000);
+        background: var(--color-blue-700);
+        border: 1px solid var(--color-blue-700);
+      }
+    }
+
+    &--danger {
+      color: var(--color-red-600);
+      background: var(--color-red-000);
+      border: 1px solid var(--color-red-600);
+
+      &:hover {
+        color: var(--color-black-000);
+        background: var(--color-red-700);
+        border: 1px solid var(--color-red-700);
+      }
+    }
+
+    @media (min-width: 768px) {
+      flex: none;
+      padding: 4px 10px;
+    }
+  }
+
+  &__empty {
+    padding: 32px 12px;
+    color: var(--color-black-500);
+    text-align: center;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-200);
+    border-radius: 10px;
+
+    .work-item-table--viewing-today & {
+      color: var(--color-blue-500);
+      background: var(--color-blue-000);
+      border: 1px solid var(--color-blue-200);
+    }
   }
 }
 </style>

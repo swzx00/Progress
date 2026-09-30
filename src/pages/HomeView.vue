@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateNav from '@/components/DateNav.vue'
-import OptionsManagerDialog from '@/components/OptionsManagerDialog.vue'
+import OptionsManagerModal from '@/components/OptionsManagerModal.vue'
 import WorkItemForm from '@/components/WorkItemForm.vue'
 import WorkItemTable from '@/components/WorkItemTable.vue'
 import { useGoogleAuth } from '@/composables/useGoogleAuth'
@@ -119,11 +119,7 @@ const confirmDelete = async (): Promise<void> => {
       <div v-if="isAuthorized" class="home-view__account">
         <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
         <span class="home-view__email">{{ userEmail }}</span>
-        <button
-          type="button"
-          class="home-view__signout-btn"
-          @click="optionsManagerOpen = true"
-        >
+        <button type="button" class="home-view__signout-btn" @click="optionsManagerOpen = true">
           選項清單
         </button>
         <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
@@ -186,11 +182,13 @@ const confirmDelete = async (): Promise<void> => {
       @cancel="closeDeleteConfirm"
     />
 
-    <OptionsManagerDialog
-      v-if="optionsManagerOpen && isAuthorized && idToken"
-      :id-token="idToken"
-      @close="optionsManagerOpen = false"
-    />
+    <Transition name="options-manager">
+      <OptionsManagerModal
+        v-if="optionsManagerOpen && isAuthorized && idToken"
+        :id-token="idToken"
+        @close="optionsManagerOpen = false"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -200,7 +198,8 @@ const confirmDelete = async (): Promise<void> => {
   gap: 12px;
   align-items: center;
   padding: 16px;
-  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-black-050);
+  border-bottom: 1px solid var(--color-black-100);
 
   @media (min-width: 768px) {
     padding: 24px 32px;
@@ -211,16 +210,16 @@ const confirmDelete = async (): Promise<void> => {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--color-ink);
+  color: var(--color-black-800);
   word-break: keep-all;
 }
 
 .home-view__badge {
   padding: 2px 10px;
   font-size: 12px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   word-break: keep-all;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-black-100);
   border-radius: 999px;
 }
 
@@ -233,10 +232,10 @@ const confirmDelete = async (): Promise<void> => {
   aspect-ratio: 1/1;
   padding: 0;
   font-size: 13px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   cursor: not-allowed;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-black-000);
+  border: 1px solid var(--color-black-100);
   border-radius: 999px;
 }
 
@@ -250,7 +249,7 @@ const confirmDelete = async (): Promise<void> => {
 
 .home-view__unauthorized {
   font-size: 12px;
-  color: var(--color-danger);
+  color: var(--color-red-600);
 }
 
 .home-view__signin {
@@ -260,10 +259,10 @@ const confirmDelete = async (): Promise<void> => {
 .home-view__signout-btn {
   padding: 3px 8px;
   font-size: 12px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
   cursor: pointer;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-black-000);
+  border: 1px solid var(--color-black-100);
   border-radius: 6px;
 }
 
@@ -275,15 +274,15 @@ const confirmDelete = async (): Promise<void> => {
   height: 24px;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: var(--color-accent);
+  color: var(--color-black-000);
+  background: var(--color-blue-500);
   border-radius: 999px;
 }
 
 .home-view__email {
   display: none;
   font-size: 12px;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
 
   @media (min-width: 768px) {
     display: inline;
@@ -291,13 +290,13 @@ const confirmDelete = async (): Promise<void> => {
 }
 
 .home-view__add-btn {
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 6px 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--color-black-000);
   white-space: nowrap;
   cursor: pointer;
-  background: var(--color-accent);
+  background: var(--color-blue-500);
   border: none;
   border-radius: 6px;
 }
@@ -310,10 +309,10 @@ const confirmDelete = async (): Promise<void> => {
   margin: 0 16px 16px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-holiday);
-  background: color-mix(in srgb, var(--color-holiday) 10%, var(--color-bg));
+  color: var(--color-yellow-800);
+  background: color-mix(in srgb, var(--color-yellow-800) 10%, var(--color-black-000));
   border-radius: 8px;
-  box-shadow: inset 3px 0 0 var(--color-holiday);
+  box-shadow: inset 3px 0 0 var(--color-yellow-800);
 
   @media (min-width: 768px) {
     margin: 0 32px 16px;
@@ -330,14 +329,14 @@ const confirmDelete = async (): Promise<void> => {
   gap: 12px;
   align-items: center;
   padding: 48px 0;
-  color: var(--color-ink-muted);
+  color: var(--color-black-500);
 }
 
 .home-view__spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent);
+  border: 3px solid var(--color-black-100);
+  border-top-color: var(--color-blue-500);
   border-radius: 50%;
   animation: home-view-spin 0.7s linear infinite;
 }
@@ -354,7 +353,7 @@ const confirmDelete = async (): Promise<void> => {
   gap: 8px;
   align-items: center;
   padding: 48px 16px;
-  color: var(--color-danger);
+  color: var(--color-red-600);
   text-align: center;
 }
 
@@ -365,7 +364,7 @@ const confirmDelete = async (): Promise<void> => {
 .home-view__save-error {
   padding: 8px 16px;
   font-size: 13px;
-  color: var(--color-danger);
+  color: var(--color-red-600);
 
   @media (min-width: 768px) {
     padding: 8px 32px;
