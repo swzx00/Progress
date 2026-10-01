@@ -80,11 +80,51 @@ function getOrCreateMonthSheet_(monthKey) {
 // 一次性遷移用：把已經存在的各月份分頁補上 applyDateColumnFormat_（新分頁走
 // getOrCreateMonthSheet_ 會自動套用，但這支改動之前就已建立的分頁不會自動補上）。
 // 用法同 installTrigger()：在 Apps Script 編輯器手動執行一次即可，之後不用再跑。
-function fixExistingMonthSheetDateFormats_() {
+// 名稱不加結尾底線，理由同 renumberDailyIndexes()（私有函式不會出現在「執行」選單）。
+function fixExistingMonthSheetDateFormats() {
   var ss = getSpreadsheet_();
   ss.getSheets().forEach(function (sheet) {
     if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
     applyDateColumnFormat_(sheet, getColumnMap_(sheet));
+  });
+}
+
+// 一次性遷移用：項次規則從「當月新增順序」改成「每天從 1 開始」，把既有資料重新編號。
+// 每個月份分頁依工作日期分組，未刪除的紀錄照現有項次順序（同號再照列順序）重新編成 1、2、3；
+// 已刪除的紀錄維持原號不動（畫面上看不到，新規則 getNextDailyIndex_ 也不會算進去）。
+// 在 Apps Script 編輯器手動執行一次即可。函式名稱刻意不加結尾底線：結尾底線是
+// Apps Script 的私有函式，不會出現在編輯器的「執行」選單裡，就沒辦法手動執行。
+function renumberDailyIndexes() {
+  var ss = getSpreadsheet_();
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    var colMap = getColumnMap_(sheet);
+    var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    var byDate = {};
+    values.forEach(function (row, offset) {
+      var item = rowToItem_(colMap, row);
+      if (item.已刪除) return;
+      if (!byDate[item.工作日期]) byDate[item.工作日期] = [];
+      byDate[item.工作日期].push({ offset: offset, index: item.項次 });
+    });
+
+    // 整欄讀出來改完再一次寫回，避免逐格 setValue 太慢
+    var indexColumn = values.map(function (row) {
+      return [row[colMap.項次 - 1]];
+    });
+    Object.keys(byDate).forEach(function (date) {
+      byDate[date]
+        .sort(function (a, b) {
+          return a.index - b.index || a.offset - b.offset;
+        })
+        .forEach(function (entry, n) {
+          indexColumn[entry.offset][0] = n + 1;
+        });
+    });
+    sheet.getRange(2, colMap.項次, indexColumn.length, 1).setValues(indexColumn);
   });
 }
 
@@ -161,6 +201,21 @@ function findRowById_(sheet, colMap, id) {
     if (ids[i][0] === id) return i + 2; // 實際列號，1-based，跳過表頭
   }
   return -1;
+}
+
+// 項次是「每天」從 1 開始的流水號：同一工作日期、未刪除紀錄的最大項次 + 1。
+// 用最大值不用筆數，刪掉中間某筆（例如剩 1、3）後新增才不會撞號。
+// 前端 useWorkItems.ts 的 fetchNextIndex 用同一套規則算預計項次，改這裡要一起改。
+function getNextDailyIndex_(sheet, colMap, date) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 1;
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var max = 0;
+  values.forEach(function (row) {
+    var item = rowToItem_(colMap, row);
+    if (item.工作日期 === date && !item.已刪除 && item.項次 > max) max = item.項次;
+  });
+  return max + 1;
 }
 
 // ===== ID Token 驗證 =====
@@ -334,11 +389,11 @@ function handleCreate_(item) {
   var sheet = getOrCreateMonthSheet_(monthKey);
   var colMap = getColumnMap_(sheet);
   var lastRow = sheet.getLastRow();
-  var sequence = lastRow; // 扣掉表頭後的既有資料列數 = lastRow - 1，項次 = 資料列數 + 1 = lastRow
 
+  // 項次一律由後端決定，前端就算送了也會被這裡覆蓋
   var created = Object.assign({}, item, {
     id: Utilities.getUuid(),
-    項次: sequence,
+    項次: getNextDailyIndex_(sheet, colMap, item.工作日期),
     已刪除: false,
   });
 
@@ -375,7 +430,9 @@ function handleUpdate_(id, originalDate, itemPatch) {
 
   var oldRowValues = oldSheet.getRange(rowIndex, 1, 1, oldSheet.getLastColumn()).getValues()[0];
   var existing = rowToItem_(oldColMap, oldRowValues);
-  var merged = Object.assign({}, existing, itemPatch, { id: id });
+  // 項次一律由後端決定，忽略前端送來的值：工作日期沒改沿用原本的項次，改到別天下面再重新編號
+  var merged = Object.assign({}, existing, itemPatch, { id: id, 項次: existing.項次 });
+  var dateChanged = merged.工作日期 !== existing.工作日期;
 
   var errors = validateItem_(merged);
   if (errors.length > 0) {
@@ -385,6 +442,8 @@ function handleUpdate_(id, originalDate, itemPatch) {
   var newMonthKey = getMonthKey_(merged.工作日期);
 
   if (newMonthKey === oldMonthKey) {
+    // 同月份換天：這列自己還是舊日期，不會被算進新日期的最大項次
+    if (dateChanged) merged.項次 = getNextDailyIndex_(oldSheet, oldColMap, merged.工作日期);
     var row = itemToRow_(oldColMap, oldSheet.getLastColumn(), merged);
     oldSheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
   } else {
@@ -392,6 +451,7 @@ function handleUpdate_(id, originalDate, itemPatch) {
     oldSheet.deleteRow(rowIndex);
     var newSheet = getOrCreateMonthSheet_(newMonthKey);
     var newColMap = getColumnMap_(newSheet);
+    merged.項次 = getNextDailyIndex_(newSheet, newColMap, merged.工作日期);
     var newLastRow = newSheet.getLastRow();
     var newRow = itemToRow_(newColMap, newSheet.getLastColumn(), merged);
     newSheet.getRange(newLastRow + 1, 1, 1, newRow.length).setValues([newRow]);
