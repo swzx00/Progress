@@ -265,16 +265,18 @@ const confirmDelete = async (): Promise<void> => {
       </div>
     </Transition>
 
-    <ConfirmDialog
-      v-if="deleteTarget"
-      title="確定要刪除這個選項嗎？"
-      :message="`「${deleteTarget}」會從「${selectedCategory}」清單移除，不會影響已經寫入的歷史紀錄。`"
-      confirm-label="刪除"
-      danger
-      :busy="busy"
-      @confirm="confirmDelete"
-      @cancel="deleteTarget = null"
-    />
+    <Transition name="confirm-dialog">
+      <ConfirmDialog
+        v-if="deleteTarget"
+        title="確定要刪除這個選項嗎？"
+        :message="`「${deleteTarget}」會從「${selectedCategory}」清單移除，不會影響已經寫入的歷史紀錄。`"
+        confirm-label="刪除"
+        danger
+        :busy="busy"
+        @confirm="confirmDelete"
+        @cancel="deleteTarget = null"
+      />
+    </Transition>
   </div>
 </template>
 
