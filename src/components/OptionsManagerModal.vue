@@ -1,117 +1,117 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref } from 'vue';
 
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import { useOptions } from '@/composables/useOptions'
-import type { WorkItemOptions } from '@/types/work-item'
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import { useOptions } from '@/composables/useOptions';
+import type { WorkItemOptions } from '@/types/work-item';
 
 const props = defineProps<{
-  idToken: string
-}>()
+  idToken: string;
+}>();
 
 const emit = defineEmits<{
-  close: []
-}>()
+  close: [];
+}>();
 
-const CATEGORIES: (keyof WorkItemOptions)[] = ['交辦單位', '交辦人員', '專案名稱', '專案Repo']
+const CATEGORIES: (keyof WorkItemOptions)[] = ['交辦單位', '交辦人員', '專案名稱', '專案Repo'];
 
 const { options, loading, error, fetchOptions, addOption, renameOption, deleteOption } =
-  useOptions()
-void fetchOptions()
+  useOptions();
+void fetchOptions();
 
 // 第一層：選母項；第二層：selectedCategory 有值時，改顯示該分類的內容管理畫面
-const selectedCategory = ref<keyof WorkItemOptions | null>(null)
+const selectedCategory = ref<keyof WorkItemOptions | null>(null);
 
-const busy = ref(false)
-const actionError = ref<string | null>(null)
+const busy = ref(false);
+const actionError = ref<string | null>(null);
 
 const newValueDrafts = ref<Record<keyof WorkItemOptions, string>>({
   交辦單位: '',
   交辦人員: '',
   專案名稱: '',
   專案Repo: '',
-})
+});
 
-const editingValue = ref<string | null>(null)
-const editingDraft = ref('')
+const editingValue = ref<string | null>(null);
+const editingDraft = ref('');
 
 const openCategory = (category: keyof WorkItemOptions): void => {
-  selectedCategory.value = category
-  actionError.value = null
-}
+  selectedCategory.value = category;
+  actionError.value = null;
+};
 
 const backToCategoryList = (): void => {
-  selectedCategory.value = null
-  editingValue.value = null
-  editingDraft.value = ''
-  actionError.value = null
-}
+  selectedCategory.value = null;
+  editingValue.value = null;
+  editingDraft.value = '';
+  actionError.value = null;
+};
 
 const startEdit = (value: string): void => {
-  editingValue.value = value
-  editingDraft.value = value
-}
+  editingValue.value = value;
+  editingDraft.value = value;
+};
 
 const cancelEdit = (): void => {
-  editingValue.value = null
-  editingDraft.value = ''
-}
+  editingValue.value = null;
+  editingDraft.value = '';
+};
 
 const submitEdit = async (oldValue: string): Promise<void> => {
-  if (!selectedCategory.value) return
-  const newValue = editingDraft.value.trim()
+  if (!selectedCategory.value) return;
+  const newValue = editingDraft.value.trim();
   if (!newValue || newValue === oldValue) {
-    cancelEdit()
-    return
+    cancelEdit();
+    return;
   }
-  busy.value = true
-  actionError.value = null
+  busy.value = true;
+  actionError.value = null;
   try {
-    await renameOption(props.idToken, selectedCategory.value, oldValue, newValue)
-    cancelEdit()
+    await renameOption(props.idToken, selectedCategory.value, oldValue, newValue);
+    cancelEdit();
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '重新命名失敗'
+    actionError.value = e instanceof Error ? e.message : '重新命名失敗';
   } finally {
-    busy.value = false
+    busy.value = false;
   }
-}
+};
 
 const submitAdd = async (): Promise<void> => {
-  if (!selectedCategory.value) return
-  const category = selectedCategory.value
-  const value = newValueDrafts.value[category].trim()
-  if (!value) return
-  busy.value = true
-  actionError.value = null
+  if (!selectedCategory.value) return;
+  const category = selectedCategory.value;
+  const value = newValueDrafts.value[category].trim();
+  if (!value) return;
+  busy.value = true;
+  actionError.value = null;
   try {
-    await addOption(props.idToken, category, value)
-    newValueDrafts.value[category] = ''
+    await addOption(props.idToken, category, value);
+    newValueDrafts.value[category] = '';
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '新增失敗'
+    actionError.value = e instanceof Error ? e.message : '新增失敗';
   } finally {
-    busy.value = false
+    busy.value = false;
   }
-}
+};
 
-const deleteTarget = ref<string | null>(null)
+const deleteTarget = ref<string | null>(null);
 
 const openDeleteConfirm = (value: string): void => {
-  deleteTarget.value = value
-}
+  deleteTarget.value = value;
+};
 
 const confirmDelete = async (): Promise<void> => {
-  if (!deleteTarget.value || !selectedCategory.value) return
-  busy.value = true
-  actionError.value = null
+  if (!deleteTarget.value || !selectedCategory.value) return;
+  busy.value = true;
+  actionError.value = null;
   try {
-    await deleteOption(props.idToken, selectedCategory.value, deleteTarget.value)
-    deleteTarget.value = null
+    await deleteOption(props.idToken, selectedCategory.value, deleteTarget.value);
+    deleteTarget.value = null;
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '刪除失敗'
+    actionError.value = e instanceof Error ? e.message : '刪除失敗';
   } finally {
-    busy.value = false
+    busy.value = false;
   }
-}
+};
 </script>
 
 <template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NConfigProvider, dateZhTW, zhTW, type GlobalThemeOverrides } from 'naive-ui'
+import { NConfigProvider, dateZhTW, zhTW, type GlobalThemeOverrides } from 'naive-ui';
 
 // 色值取自 src/styles/tokens.scss 的色階。Naive UI 會在 JS 裡運算顏色（例如自動推算淡色），
 // 吃不了 CSS 變數，只能寫 hex；註解標出對應的色階，改 tokens.scss 時這裡要手動同步
@@ -21,7 +21,7 @@ const themeOverrides: GlobalThemeOverrides = {
     // fontSize 刻意不同步，控制項維持 Naive UI 預設的 14px
     lineHeight: '1.5',
   },
-}
+};
 </script>
 
 <template>

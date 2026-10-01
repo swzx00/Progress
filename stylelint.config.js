@@ -15,4 +15,4 @@ export default {
     // 維持 @media (min-width: 768px) 寫法，跟 CLAUDE.md「RWD 斷點」的 mobile-first 慣例一致
     'media-feature-range-notation': 'prefix',
   },
-}
+};
