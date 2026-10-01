@@ -165,7 +165,7 @@ export const handlers = [
     // Apps Script 網頁應用程式的回應一律是 HTTP 200，錯誤只能放在回應內容的
     // error 欄位裡，這裡刻意不用 { status: 401 } 之類的寫法，貼近真實行為。
     if (!body.idToken) {
-      return HttpResponse.json({ error: '未登入或登入已過期' });
+      return HttpResponse.json({ error: '未登入或無權限', code: 'UNAUTHORIZED' });
     }
 
     if (body.action === 'create') {

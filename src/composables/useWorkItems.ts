@@ -9,6 +9,21 @@ interface DoGetResponse {
 
 interface DoPostResponse {
   error?: string;
+  code?: ApiErrorCode;
+}
+
+/** 後端錯誤代碼，目前只有登入驗證失敗會帶，其他錯誤沒有 code */
+export type ApiErrorCode = 'UNAUTHORIZED';
+
+/** 帶後端錯誤代碼的錯誤，呼叫端用 code 判斷錯誤類型，不要比對 message 文字 */
+export class ApiError extends Error {
+  readonly code?: ApiErrorCode;
+
+  constructor(message: string, code?: ApiErrorCode) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+  }
 }
 
 type CreateInput = Omit<WorkItem, 'id' | '項次' | '已刪除'>;
@@ -50,7 +65,7 @@ const postAction = async (idToken: string, payload: object): Promise<void> => {
   });
   const data = (await res.json()) as DoPostResponse;
   if (data.error) {
-    throw new Error(data.error);
+    throw new ApiError(data.error, data.code);
   }
 };
 

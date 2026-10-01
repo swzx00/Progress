@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
+import AppToast from '@/components/AppToast.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DateNav from '@/components/DateNav.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
@@ -8,7 +9,8 @@ import WorkItemForm from '@/components/WorkItemForm.vue';
 import WorkItemTable from '@/components/WorkItemTable.vue';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
-import { useWorkItems } from '@/composables/useWorkItems';
+import { useToast } from '@/composables/useToast';
+import { ApiError, useWorkItems } from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
@@ -38,17 +40,16 @@ const optionsManagerOpen = ref(false);
 const formOpen = ref(false);
 const editingItem = ref<WorkItem | null>(null);
 const saving = ref(false);
-const saveError = ref<string | null>(null);
+
+const { showToast } = useToast();
 
 const openCreateForm = (): void => {
   editingItem.value = null;
-  saveError.value = null;
   formOpen.value = true;
 };
 
 const openEditForm = (item: WorkItem): void => {
   editingItem.value = item;
-  saveError.value = null;
   formOpen.value = true;
 };
 
@@ -56,13 +57,25 @@ const closeForm = (): void => {
   formOpen.value = false;
 };
 
+/**
+ * 儲存失敗一律用 Toast 提示：
+ * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED，例如 token 過期）：關閉表單並強制登出，回到唯讀模式
+ * - 其他錯誤（欄位驗證、找不到紀錄、網路錯誤等）：表單維持開啟、保留已填內容，讓使用者修正後重送
+ */
+const handleSaveError = (message: string, unauthorized: boolean): void => {
+  showToast(message);
+  if (unauthorized) {
+    formOpen.value = false;
+    signOut();
+  }
+};
+
 const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): Promise<void> => {
   if (!idToken.value) {
-    saveError.value = '尚未登入，無法儲存';
+    handleSaveError('尚未登入，無法儲存', true);
     return;
   }
   saving.value = true;
-  saveError.value = null;
   try {
     if (editingItem.value) {
       await updateItem(idToken.value, editingItem.value.id, editingItem.value.工作日期, payload);
@@ -72,7 +85,10 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
     await fetchByDate(selectedDate.value);
     formOpen.value = false;
   } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '儲存時發生未知錯誤';
+    handleSaveError(
+      e instanceof Error ? e.message : '儲存時發生未知錯誤',
+      e instanceof ApiError && e.code === 'UNAUTHORIZED',
+    );
   } finally {
     saving.value = false;
   }
@@ -165,7 +181,6 @@ const confirmDelete = async (): Promise<void> => {
         @cancel="closeForm"
       />
     </Transition>
-    <p v-if="saveError" class="home-view__save-error">{{ saveError }}</p>
 
     <ConfirmDialog
       v-if="deleteTarget && isAuthorized"
@@ -185,6 +200,8 @@ const confirmDelete = async (): Promise<void> => {
         @close="optionsManagerOpen = false"
       />
     </Transition>
+
+    <AppToast />
   </div>
 </template>
 
@@ -343,16 +360,6 @@ const confirmDelete = async (): Promise<void> => {
 
   &__error-icon {
     font-size: 24px;
-  }
-
-  &__save-error {
-    padding: 8px 16px;
-    font-size: 13px;
-    color: var(--color-red-600);
-
-    @media (min-width: 768px) {
-      padding: 8px 32px;
-    }
   }
 }
 </style>
