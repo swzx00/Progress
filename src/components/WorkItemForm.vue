@@ -87,21 +87,8 @@ const onSubmit = (): void => {
   <div class="work-item-form">
     <div class="work-item-form__backdrop" @click="emit('cancel')" />
     <div class="work-item-form__panel" role="dialog" aria-modal="true">
-      <div class="work-item-form__mobile-header">
-        <button type="button" class="work-item-form__text-btn" @click="emit('cancel')">取消</button>
-        <h2 class="work-item-form__mobile-title">{{ title }}</h2>
-        <button
-          type="submit"
-          form="work-item-form-body"
-          class="work-item-form__text-btn work-item-form__text-btn--accent"
-          :disabled="saving"
-        >
-          {{ saving ? '儲存中…' : '儲存' }}
-        </button>
-      </div>
-
-      <div class="work-item-form__desktop-header">
-        <h2 class="work-item-form__desktop-title">{{ title }}</h2>
+      <div class="work-item-form__header">
+        <h2 class="work-item-form__title">{{ title }}</h2>
         <button
           type="button"
           aria-label="關閉"
@@ -200,7 +187,7 @@ const onSubmit = (): void => {
         </label>
       </form>
 
-      <div class="work-item-form__desktop-footer">
+      <div class="work-item-form__footer">
         <button type="button" class="work-item-form__btn" @click="emit('cancel')">取消</button>
         <button
           type="submit"
@@ -247,52 +234,19 @@ const onSubmit = (): void => {
   }
 }
 
-.work-item-form__mobile-header {
+.work-item-form__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 16px;
   border-bottom: 1px solid var(--color-black-100);
 
   @media (min-width: 768px) {
-    display: none;
-  }
-}
-
-.work-item-form__mobile-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-black-800);
-}
-
-.work-item-form__text-btn {
-  padding: 4px;
-  font-size: 14px;
-  color: var(--color-black-500);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-
-  &--accent {
-    font-weight: 700;
-    color: var(--color-blue-500);
-  }
-}
-
-.work-item-form__desktop-header {
-  display: none;
-
-  @media (min-width: 768px) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     padding: 20px 24px;
-    border-bottom: 1px solid var(--color-black-100);
   }
 }
 
-.work-item-form__desktop-title {
+.work-item-form__title {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
@@ -368,14 +322,14 @@ const onSubmit = (): void => {
   }
 }
 
-.work-item-form__desktop-footer {
-  display: none;
+.work-item-form__footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px;
+  border-top: 1px solid var(--color-black-100);
 
   @media (min-width: 768px) {
-    display: flex;
-    gap: 10px;
     padding: 16px 24px;
-    border-top: 1px solid var(--color-black-100);
   }
 }
 
