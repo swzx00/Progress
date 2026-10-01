@@ -135,7 +135,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **套件管理工具**：僅使用 npm（`package.json` 的 `packageManager` 欄位已鎖定），不要混用 yarn/pnpm，避免 lockfile 衝突
 - **樣式語言**：採用 **SCSS**，元件的 `<style>` 一律加 `lang="scss"`（`<style scoped lang="scss">`），需要安裝 `sass` 作為 devDependency
 - **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤／日期選擇」這類自己刻成本高的互動元件才用 **Naive UI**（目前用到 `NSelect`、`NDatePicker`）。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.scss` 的色階（見下方「色彩 token：統一用色階，不分用途」）；同一個 `n-config-provider` 也帶入 `zhTW`/`dateZhTW` 兩個 locale（`:locale`/`:date-locale`），讓 Naive UI 元件顯示繁體中文。`NDatePicker` 的 `:first-day-of-week="6"` 讓月曆以星期日為一週第一天——這個 prop 的數值語意不直觀，**不是** date-fns 的 `getDay()`（星期日＝0）對應值：實測 naive-ui 內部排陣列的演算法後，`firstDayOfWeek=6` 才會排出「日一二三四五六」，`zhTW` locale 預設的 `firstDayOfWeek: 0` 反而是「一二三四五六日」（星期一開頭），所以這裡要明確覆寫、不能依賴 locale 預設值。其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
-- **`DateNav` 的日期選擇器**：曾經改用 `NPopover` 包 `NCalendar`，換取「月曆彈窗裡每一格都能標假日顏色」（`NDatePicker` 沒有 cell slot、格子沒暴露完整日期資料，做不到這件事），但 `NCalendar` 是整月網格＋沒有年份快速跳選，手機寬度下的 popover 版面調校成本明顯偏高，實際體驗評估後改回 `NDatePicker`，放棄「月曆格子內逐格標色」，改成 `format="yyyy/MM/dd (EEEEE)"`（date-fns 格式字串，`EEEEE` 是最短星期字樣，例如「五」）搭配旁邊一個獨立的假日名稱徽章（`--color-yellow-800`）
+- **`DateNav` 的日期選擇器**：曾經改用 `NPopover` 包 `NCalendar`，換取「月曆彈窗裡每一格都能標假日顏色」（`NDatePicker` 沒有 cell slot、格子沒暴露完整日期資料，做不到這件事），但 `NCalendar` 是整月網格＋沒有年份快速跳選，手機寬度下的 popover 版面調校成本明顯偏高，實際體驗評估後改回 `NDatePicker`，放棄「月曆格子內逐格標色」，改成 `format="yyyy/MM/dd (EEEEE)"`（date-fns 格式字串，`EEEEE` 是最短星期字樣，例如「五」）搭配旁邊一個獨立的假日名稱徽章（顏色見下方「UI/UX 定案」的「放假色」）
   - **`.date-nav__picker--today` 直接用 `:deep()` 改內部邊框/文字顏色**：原本刻意只用 `outline` 避免碰 Naive UI 內部 class，但後來確認「今天」狀態需要連文字顏色都變色，而 `NInput` 實際顯示文字/畫邊框的都是內部元素（不是我們拿到 class 的外層根節點），Naive UI 直接在那些內部元素自己身上設顏色（不是繼承外層），外層 class 單寫 `color`/`border-color` 沒有用，只能穿透進去改。既然文字非改內部不可，邊框也一併改成 `:deep()` 直接改 `border-color`，不再用 outline 這個「不用碰內部但視覺上是外圈另一條線」的折衷做法，兩者統一：
     - 邊框：`:deep(.n-input__border)`（`NInput` 用兩個疊在一起的空 div 畫邊框，`.n-input__border` 是預設常駐的那個，`.n-input__state-border` 是 hover/focus 才淡入的狀態邊框，要蓋掉平常看到的顏色要改前者，不是後者）
     - 文字：`:deep(.n-input__input-el)`（實際的 `<input>` 元素）
@@ -152,14 +152,18 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
 - 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
 - **色彩 token：統一用色階，不分用途**：`src/styles/tokens.scss` 只有一種 token，命名一律是 `--color-<色系>-<階>`（例如 `--color-blue-000`、`--color-black-100`、`--color-red-050`）。元件裡的文字、背景、邊框都直接挑色階使用，**不另外定義 text／surface／border 這類依用途命名的 token**（使用者決定：同一套色階好記、好挑，不想維護兩層命名）
-  - **色值來源**：公司共用設計系統的 primitive 色階，完整檔案在 `D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss`（另一個專案的檔案，不在本 repo 內）。色系名稱對應：`Candidate-Blue` → `blue`、`1111-Black` → `black`（中性灰階）、`1111-Rose` → `red`（危險／錯誤）、`1111-Teal`／`1111-Green`／`1111-Yellow` → `teal`／`green`／`yellow`。不自己配色，需要新顏色時先從這份檔案的色階挑
+  - **色值來源**：公司共用設計系統的 primitive 色階，完整檔案在 `D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss`（另一個專案的檔案，不在本 repo 內）。色系名稱對應：`Candidate-Blue` → `blue`、`1111-Black` → `black`（中性灰階）、`1111-Rose` → `red`（危險／錯誤）、`1111-Teal`／`1111-Green`／`1111-Yellow`／`1111-Orange` → `teal`／`green`／`yellow`／`orange`。不自己配色，需要新顏色時先從這份檔案的色階挑
   - 設計系統另有一組品牌紅 `Candidate-Red`（`#cf2323` 系列），跟上面對應成 `red` 的 `1111-Rose` 是不同色階；專案目前沒用到，之後真的需要時不能也叫 `red`，要另外取名（例如 `--color-brand-red-*`）
   - `tokens.scss` 放的是用到的色系的**完整色階**（`000`／`050`／`100`～`1000`），換深淺直接改階數，不用回來加 token；用到新色系（例如 Orange、Purple）時，整組色階從設計系統檔複製進來
   - 常用對照：主文字 `--color-black-800`、次要文字 `--color-black-500`、白底 `--color-black-000`、淺灰底 `--color-black-050`、細邊框 `--color-black-100`、主色 `--color-blue-500`、深藍文字 `--color-blue-700`、危險色 `--color-red-600`
   - 選色考量（沿用早期參考 Figma Design Token 時的判斷）：
     - 細邊框用 `black-100` `#e9ecef`，不用 `black-200` `#ced4da`：後者是設計系統裡「大部分元件邊框的預設狀態」，套進來會比目前的細邊框風格明顯深/顯眼
     - 放在淺底上的藍色小字用 `blue-700` `#0f47b8`（對比 8.03:1），不用 `blue-400` `#4d88ff`（對比只有 3.34:1，不符合 WCAG AA 4.5:1）
-  - 放假色原本是自訂的 `#b45309`，已改成 `--color-yellow-800` `#8f590d`，跟「暫緩」狀態同色，是使用者選擇的結果
+  - **放假色：預設 orange，今天剛好放假時改 yellow**（使用者決定）。選到的日期是非工作日時，`DateNav` 的放假徽章與 `WorkItemTable`（資料列、表頭、邊框、空狀態）都換成放假色：
+    - 預設（非今天）：徽章 `--color-orange-800`；表格表頭 `orange-100`、資料列斑馬紋 `orange-050`／`orange-000`、邊框 `orange-200`、文字 `orange-1000`
+    - 今天剛好放假：同樣的階數換成 yellow（徽章 `--color-yellow-800`，表格 `yellow-100`／`050`／`000`／`200`／`1000`）
+    - 判斷條件：`DateNav` 用 `isToday` 切 `date-nav__holiday-badge--today` 修飾符；`WorkItemTable` 用 `--holiday` + `--viewing-today` 兩個修飾符的組合。**兩處邏輯要一致**，改其中一處時另一處要跟著改
+    - 演變紀錄：最早是自訂的 `#b45309`，後來統一成 `--color-yellow-800`（跟「暫緩」同色），現在再拆成 orange／yellow 兩種
   - Naive UI（`App.vue` 的 `themeOverrides`）會在 JS 裡運算顏色，吃不了 CSS 變數，只能寫 hex，每個值旁邊用註解標出對應色階：主色 `blue-500`、hover `blue-600`、pressed `blue-700`；錯誤色 `red-600`、hover `red-700`、pressed `red-800`；邊框 `black-100`。改 `tokens.scss` 的色值時這裡要手動同步
   - 設計系統原檔有個小瑕疵：`--1111-Black-100` 被定義兩次（Icon-Neutral 區塊裡寫成 `#fff`，後面 1111/Black 色階又寫成 `#e9ecef`，後者生效），本專案的 `--color-black-100` 用 `#e9ecef`
 - **字體**：中文預設 **Noto Sans TC**，英文／數字預設 **Roboto**，都從 Google Fonts 載入
@@ -196,13 +200,14 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面
 - **「狀態」欄位的樣式**：桌面表格維持純文字（顏色沿用儲存格原本的文字色）；手機卡片是**透明底＋邊框的膠囊**（`.work-item-table__status`），邊框用 `currentcolor`，每個狀態只要設一次 `color`，邊框自動同色。桌面版的還原寫在 `&__status` 區塊最後的 `@media` 裡（`color: inherit`、去掉框線與內距），依照「RWD 斷點」的巢狀寫法規定，必須排在所有狀態修飾符之後才蓋得過
   - 顏色對應（寫在 `WorkItemTable.vue` 的 `&__status--*` 修飾符）：待辦 `--color-black-600` `#495057`／進行中 `--color-blue-700` `#0f47b8`／前端完成 `--color-teal-800` `#005c75`／返修 `--color-red-700` `#a51028`／確認上線 `--color-green-800` `#3a6c14`／暫緩 `--color-yellow-800` `#8f590d`
-  - 選階原則：卡片底色有白、灰（`--color-black-050`）、今天的淡藍（`--color-blue-050`）三種，每個色系挑「在淡藍底上對比度仍 ≥ 4.5:1（WCAG AA 小字標準）」的**最淺**一階。所以主色 `blue-500`／`red-600`（淡藍底 4.0／4.5）不用、改用 700；`teal-700`（4.59）太貼近下限改用 800；`green-700`（3.53）不夠改用 800；`yellow-800`（4.90）剛好夠。暫緩選 Yellow 不選 Orange，是為了跟返修的紅色拉開距離
-  - 暫緩和放假色目前都是 `--color-yellow-800`（使用者選的），兩者語意不同但同色；之後如果要區分，改其中一處用的色階即可，不用新增自訂 token
+  - 選階原則：卡片底色有白、灰（`--color-black-050`）、今天的淡藍（`--color-blue-050`）三種，每個色系挑「在淡藍底上對比度仍 ≥ 4.5:1（WCAG AA 小字標準）」的**最淺**一階。所以主色 `blue-500`／`red-600`（淡藍底 4.0／4.5）不用、改用 700；`teal-700`（4.59）太貼近下限改用 800；`green-700`（3.53）不夠改用 800；`yellow-800`（4.90）剛好夠。暫緩選 Yellow 不選 Orange，是為了跟返修的紅色拉開距離（曾試過改成 `orange-700`，但跟返修 `red-700` 色相太接近，非今天放假日的淡橘色列上也會跟背景融在一起，所以維持 yellow）
+  - 暫緩和「今天剛好放假」都是 `--color-yellow-800`，兩者語意不同但同色；非今天的放假日是 orange，不會跟暫緩撞色。之後如果要區分，改其中一處用的色階即可，不用新增自訂 token
   - class modifier 需要英文 key，對應表是 `types/work-item.ts` 的 `STATUS_KEYS`（型別綁 `STATUS_OPTIONS`，新增狀態漏寫對應會直接型別錯誤）；Sheet 的狀態是純文字，可能出現清單外的值，`getStatusKey()` 查不到回傳 `undefined`，這時只套基本樣式（深灰膠囊），不會壞掉；狀態為空則不顯示膠囊
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
-- `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框標成 `--color-yellow-800`（琥珀色），跟「逾期」用的紅色（`--color-red-600`／`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒；`HomeView.vue` 在 `DateNav` 與表格之間額外顯示一條獨立提示列（左側 `--color-yellow-800` 標線＋淡色底），寫出同樣的放假原因。細節見下方「台灣國定假日顯示」
+- `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
+  - **不另外顯示放假提示列**：曾經在 `HomeView.vue` 的 `DateNav` 與表格之間放一條獨立提示列（左側標線＋淡色底），已移除。原因：同一件事已經有徽章、表格放假色調、空狀態「這天放假呦！」三處呈現，提示列是重複資訊；它是滿版 `DateNav` 與滿版表格之間唯一一塊有 margin／圓角的卡片，破壞版面節奏；左側標線跟「逾期」是同一種視覺語言，讓中性資訊看起來像警告；切換日期時忽隱忽現造成版面跳動
 
 ## 台灣國定假日顯示
 
@@ -214,7 +219,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - `findNextWorkday(fromDate, direction)`：往前/往後找下一個工作日，`DateNav` 的「上一個工作日／下一個工作日」按鈕用這個。**這裡刻意用原始 `isHoliday` 欄位判斷（不是 `getDay()` 猜週末）**，因為 `isHoliday` 才正確涵蓋補班日的例外情形（補班的週六 `isHoliday` 會是 `false`），用星期幾去猜會在補班日誤判成放假。日期解析要跟 `DateNav.vue` 的 `shift()` 用同一套慣例（`new Date(fromDate)` 純日期字串視為 UTC 午夜，搭配 `setDate`/`getDate` 本地時間方法，再用 `toISOString()` 轉回字串）——這套組合對台灣所在的正 UTC 偏移時區剛好互相抵銷、結果正確；混用 `` `${fromDate}T00:00:00` ``（本地午夜解析）卻仍用 `toISOString()` 轉字串會兩邊時區基準不一致，換算回來的日期少一天（實際踩過這個坑：9/24 按「下一個工作日」原本因為這個 bug 完全沒反應）
   - 查不到或請求失敗就靜默不顯示假日資訊／視為工作日，不影響其他功能，也不擋頁面
 - **不在月曆彈窗格子內標色**：`NDatePicker` 沒有自訂格子樣式的介面，改用旁邊獨立的徽章表示，取捨紀錄見上方「UI 元件庫」段落
-- **色彩 token**：放假色用 `--color-yellow-800`，跟逾期的紅色、一般強調的藍色區分
+- **色彩 token**：放假色預設 orange、今天剛好放假時改 yellow（規則見上方「放假色」），跟逾期的紅色、一般強調的藍色區分
 - 本專案在瀏覽器執行期間會打「Apps Script 以外的第三方網址」的地方只有兩處：這裡的 jsdelivr CDN，以及 Google Fonts 字體（見上方「UI/UX 定案」的字體段落），記錄於此避免之後忘記這些例外
 
 ## RWD 斷點
