@@ -305,7 +305,8 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     var email = verifyIdToken_(body.idToken);
     if (!email) {
-      return jsonOutput_({ error: '未登入或無權限' });
+      // code 給前端判斷錯誤類型（登入錯誤要強制登出回唯讀模式），不要靠比對 error 文字
+      return jsonOutput_({ error: '未登入或無權限', code: 'UNAUTHORIZED' });
     }
 
     if (body.action === 'create') return handleCreate_(body.item);
