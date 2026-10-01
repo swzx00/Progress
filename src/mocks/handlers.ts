@@ -81,6 +81,11 @@ let items: WorkItem[] = [
   },
 ];
 
+// 項次是「每天」從 1 開始的流水號：同一工作日期、未刪除紀錄的最大項次 + 1（跟 Code.gs 的
+// getNextDailyIndex_ 同一套規則）。用最大值不用筆數，刪掉中間某筆後才不會撞號
+const getNextDailyIndex = (date: string): number =>
+  Math.max(0, ...items.filter((i) => i.工作日期 === date && !i.已刪除).map((i) => i.項次)) + 1;
+
 let options: WorkItemOptions = {
   交辦單位: ['資訊部', '業務部', '行銷部', '人資部'],
   交辦人員: ['王小明', '李小華', '陳大文'],
@@ -169,13 +174,10 @@ export const handlers = [
     }
 
     if (body.action === 'create') {
-      // 項次是「當月」新增順序，不是當天，跟 Sheet 每月一個分頁的設計對齊
-      const monthKey = body.item.工作日期.slice(0, 7);
-      const sameMonthCount = items.filter((item) => item.工作日期.startsWith(monthKey)).length;
       const created: WorkItem = {
         ...body.item,
         id: crypto.randomUUID(),
-        項次: sameMonthCount + 1,
+        項次: getNextDailyIndex(body.item.工作日期),
         已刪除: false,
       };
       items = [...items, created];
@@ -190,7 +192,10 @@ export const handlers = [
       let updated: WorkItem | undefined;
       items = items.map((item) => {
         if (item.id !== body.id) return item;
-        updated = { ...item, ...body.item };
+        // 項次一律由後端決定：工作日期沒改沿用原本的項次，改到別天就在新的那天重新編號
+        const nextDate = body.item.工作日期 ?? item.工作日期;
+        const 項次 = nextDate === item.工作日期 ? item.項次 : getNextDailyIndex(nextDate);
+        updated = { ...item, ...body.item, 項次 };
         return updated;
       });
       return HttpResponse.json({ item: updated });

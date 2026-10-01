@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { NSelect, type SelectOption } from 'naive-ui';
-import { computed, onMounted, reactive, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { useOptions } from '@/composables/useOptions';
+import { fetchNextIndex } from '@/composables/useWorkItems';
 import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item';
 
 const props = withDefaults(
@@ -64,6 +65,37 @@ const resetForm = (item: WorkItem | null | undefined): void => {
 
 watch(() => props.item, resetForm, { immediate: true });
 
+/**
+ * 項次欄（唯讀，項次一律由後端決定）：
+ * - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
+ * - 新增，或編輯時把工作日期改到別天：顯示那一天的預計項次（查詢中「…」、失敗「—」）
+ * 連續改日期時只採用最後一次查詢的結果，避免較早的回應晚到、蓋掉新的值。
+ */
+const indexDisplay = ref('…');
+let latestIndexRequest = 0;
+
+const updateIndexDisplay = async (): Promise<void> => {
+  const requestId = ++latestIndexRequest;
+  const date = form.工作日期;
+  if (props.item && date === props.item.工作日期) {
+    indexDisplay.value = String(props.item.項次);
+    return;
+  }
+  if (!date) {
+    indexDisplay.value = '—';
+    return;
+  }
+  indexDisplay.value = '…';
+  try {
+    const nextIndex = await fetchNextIndex(date);
+    if (requestId === latestIndexRequest) indexDisplay.value = String(nextIndex);
+  } catch {
+    if (requestId === latestIndexRequest) indexDisplay.value = '—';
+  }
+};
+
+watch([() => form.工作日期, () => props.item], updateIndexDisplay, { immediate: true });
+
 const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'));
 
 const onSubmit = (): void => {
@@ -100,10 +132,16 @@ const onSubmit = (): void => {
       </div>
 
       <form id="work-item-form-body" class="work-item-form__body" @submit.prevent="onSubmit">
-        <label class="work-item-form__field work-item-form__field--highlight">
-          工作日期
-          <input v-model="form.工作日期" type="date" required />
-        </label>
+        <div class="work-item-form__row work-item-form__row--highlight">
+          <label class="work-item-form__field">
+            工作日期
+            <input v-model="form.工作日期" type="date" required />
+          </label>
+          <label class="work-item-form__field work-item-form__field--index">
+            項次
+            <input :value="indexDisplay" type="text" disabled />
+          </label>
+        </div>
 
         <div class="work-item-form__row">
           <label class="work-item-form__field">
@@ -167,13 +205,13 @@ const onSubmit = (): void => {
         </label>
 
         <label class="work-item-form__field">
-          預計期限
-          <input v-model="form.預計期限" type="date" required />
+          完成度 (0–100)
+          <input v-model.number="form.完成度" type="number" min="0" max="100" required />
         </label>
 
         <label class="work-item-form__field">
-          完成度 (0–100)
-          <input v-model.number="form.完成度" type="number" min="0" max="100" required />
+          預計期限
+          <input v-model="form.預計期限" type="date" required />
         </label>
 
         <label class="work-item-form__field">
@@ -281,6 +319,36 @@ const onSubmit = (): void => {
 
   .work-item-form__field {
     flex: 1;
+    min-width: 0;
+  }
+
+  // 項次只放幾位數字，固定窄欄，剩下的寬度都給同一行的工作日期
+  .work-item-form__field--index {
+    flex: 0 0 72px;
+
+    input {
+      text-align: center;
+    }
+  }
+
+  // 工作日期＋項次這一行整個框起來，作為表單最醒目的區塊
+  &--highlight {
+    padding: 10px 12px;
+    background: var(--color-black-050);
+    border: 1px solid var(--color-blue-500);
+    border-radius: 8px;
+
+    .work-item-form__field {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-blue-500);
+    }
+
+    input {
+      font-size: 15px;
+      font-weight: 700;
+      border-color: var(--color-blue-500);
+    }
   }
 }
 
@@ -305,20 +373,13 @@ const onSubmit = (): void => {
     resize: vertical;
   }
 
-  &--highlight {
-    padding: 10px 12px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-blue-500);
-    background: var(--color-black-050);
-    border: 1px solid var(--color-blue-500);
-    border-radius: 8px;
-
-    input {
-      font-size: 15px;
-      font-weight: 700;
-      border-color: var(--color-blue-500);
-    }
+  // 唯讀欄位（項次）：灰底灰框，一眼看得出不能輸入。寫在 .work-item-form__row--highlight
+  // 之後，同權重時後寫的贏，才蓋得過醒目框裡 input 的藍色邊框
+  input:disabled {
+    color: var(--color-black-500);
+    cursor: not-allowed;
+    background: var(--color-black-100);
+    border-color: var(--color-black-200);
   }
 }
 
