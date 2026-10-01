@@ -1,7 +1,7 @@
 // 色彩 token：統一用色階命名 --color-<色系>-<階>，元件裡文字／背景／邊框都直接挑色階使用
 // 色值來自公司共用設計系統的 primitive 色階
 // D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss
-// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow → 同名
+// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow／Orange → 同名
 :root {
   // Blue（Candidate-Blue）
   --color-blue-000: #f5f8ff;
@@ -86,6 +86,20 @@
   --color-yellow-800: #8f590d;
   --color-yellow-900: #6b3d00;
   --color-yellow-1000: #4d2b00;
+
+  // Orange（1111-Orange）
+  --color-orange-000: #fcf6f2;
+  --color-orange-050: #ffede5;
+  --color-orange-100: #ffc9b2;
+  --color-orange-200: #ffb594;
+  --color-orange-300: #ff9363;
+  --color-orange-400: #ff7940;
+  --color-orange-500: #ff5d15;
+  --color-orange-600: #e55213;
+  --color-orange-700: #b2410f;
+  --color-orange-800: #8a320b;
+  --color-orange-900: #662509;
+  --color-orange-1000: #471a06;
 }
 
 /* 深色模式預留位置，目前只做白色系，尚未提供 [data-theme="dark"] 對應值 */

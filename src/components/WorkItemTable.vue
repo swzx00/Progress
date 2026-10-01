@@ -9,6 +9,8 @@ const props = withDefaults(
     today: string
     editable?: boolean
     viewingToday?: boolean
+    // 對應 useTaiwanHolidays 的 getDayOffLabel()，工作日回傳 null
+    dayOffLabel?: string | null
   }>(),
   {
     editable: false,
@@ -44,6 +46,7 @@ const sortedItems = computed(() =>
     :class="{
       'work-item-table--editable': editable,
       'work-item-table--viewing-today': viewingToday,
+      'work-item-table--holiday': dayOffLabel,
     }"
     role="table"
   >
@@ -161,7 +164,12 @@ const sortedItems = computed(() =>
       </div>
     </div>
 
-    <div v-if="sortedItems.length === 0" class="work-item-table__empty">這天沒有紀錄</div>
+    <div v-if="sortedItems.length === 0" class="work-item-table__empty">
+      <template v-if="dayOffLabel && viewingToday">今天放假呦！</template>
+      <template v-else-if="dayOffLabel">這天放假呦！</template>
+      <template v-else-if="viewingToday">今天還沒有紀錄</template>
+      <template v-else>這天沒有紀錄</template>
+    </div>
   </div>
 </template>
 
@@ -173,6 +181,7 @@ const sortedItems = computed(() =>
   padding: 0 16px;
 
   @media (min-width: 768px) {
+    flex: 1 1 auto;
     gap: 0;
     padding: 0;
   }
@@ -202,6 +211,58 @@ const sortedItems = computed(() =>
     }
   }
 
+  &--holiday {
+    .work-item-table__row {
+      color: var(--color-orange-1000);
+      border: 1px solid var(--color-orange-200);
+
+      @media (min-width: 768px) {
+        border: none;
+        border-bottom: 1px solid var(--color-orange-200);
+      }
+
+      &--header {
+        @media (min-width: 768px) {
+          background: var(--color-orange-100);
+        }
+      }
+
+      &:not(.work-item-table__row--header):nth-child(even) {
+        background: var(--color-orange-050);
+      }
+
+      &:not(.work-item-table__row--header):nth-child(odd) {
+        background: var(--color-orange-000);
+      }
+    }
+
+    &.work-item-table--viewing-today {
+      .work-item-table__row {
+        color: var(--color-yellow-1000);
+        border: 1px solid var(--color-yellow-200);
+
+        @media (min-width: 768px) {
+          border: none;
+          border-bottom: 1px solid var(--color-yellow-200);
+        }
+
+        &--header {
+          @media (min-width: 768px) {
+            background: var(--color-yellow-100);
+          }
+        }
+
+        &:not(.work-item-table__row--header):nth-child(even) {
+          background: var(--color-yellow-050);
+        }
+
+        &:not(.work-item-table__row--header):nth-child(odd) {
+          background: var(--color-yellow-000);
+        }
+      }
+    }
+  }
+
   &__row {
     display: flex;
     flex-flow: row wrap;
@@ -214,10 +275,9 @@ const sortedItems = computed(() =>
 
     @media (min-width: 768px) {
       display: grid;
-      grid-template-columns: 32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(
-          62px,
-          1fr
-        ) 62px 48px 77px 58px;
+      grid-template-columns:
+        32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        62px 48px 77px 58px;
       gap: 8px;
       padding: 8px 32px;
       font-size: 14px;
@@ -228,10 +288,9 @@ const sortedItems = computed(() =>
 
     .work-item-table--editable & {
       @media (min-width: 768px) {
-        grid-template-columns: 32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(
-            62px,
-            1fr
-          ) 62px 48px 77px 58px 46px;
+        grid-template-columns:
+          32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          62px 48px 77px 58px 46px;
       }
     }
 
@@ -738,17 +797,50 @@ const sortedItems = computed(() =>
   }
 
   &__empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
     padding: 32px 12px;
     color: var(--color-black-500);
     text-align: center;
     background: var(--color-black-000);
     border: 1px solid var(--color-black-200);
-    border-radius: 10px;
+    border-radius: 8px;
+
+    @media (min-width: 768px) {
+      border: none;
+      border-radius: 0;
+    }
 
     .work-item-table--viewing-today & {
       color: var(--color-blue-500);
       background: var(--color-blue-000);
       border: 1px solid var(--color-blue-200);
+
+      @media (min-width: 768px) {
+        border: none;
+      }
+    }
+
+    .work-item-table--holiday & {
+      color: var(--color-orange-1000);
+      background: var(--color-orange-000);
+      border: 1px solid var(--color-orange-200);
+
+      @media (min-width: 768px) {
+        border: none;
+      }
+    }
+
+    .work-item-table--holiday.work-item-table--viewing-today & {
+      color: var(--color-yellow-1000);
+      background: var(--color-yellow-000);
+      border: 1px solid var(--color-yellow-200);
+
+      @media (min-width: 768px) {
+        border: none;
+      }
     }
   }
 }

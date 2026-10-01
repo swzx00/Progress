@@ -92,7 +92,13 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
     >
       ⏭
     </button>
-    <span v-if="dayOffLabel" class="date-nav__holiday-badge">🏮 {{ dayOffLabel }}</span>
+    <span
+      v-if="dayOffLabel"
+      class="date-nav__holiday-badge"
+      :class="{ 'date-nav__holiday-badge--today': isToday }"
+    >
+      🏮 {{ dayOffLabel }}
+    </span>
     <div class="date-nav__trailing">
       <span v-if="totalHours !== undefined" class="date-nav__total">
         今日工時合計：{{ totalHours }}hr
@@ -204,10 +210,16 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-yellow-800);
+  color: var(--color-orange-800);
   white-space: nowrap;
-  border: 1px solid var(--color-yellow-800);
+  border: 1px solid var(--color-orange-800);
   border-radius: 999px;
+}
+
+// 放假色預設 orange，今天剛好放假時改 yellow，跟 WorkItemTable 的 --holiday／--viewing-today 一致
+.date-nav__holiday-badge--today {
+  color: var(--color-yellow-800);
+  border-color: var(--color-yellow-800);
 }
 
 .date-nav__trailing {
