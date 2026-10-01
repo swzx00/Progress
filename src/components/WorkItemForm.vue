@@ -245,174 +245,183 @@ const onSubmit = (): void => {
   position: fixed;
   inset: 0;
   z-index: 100;
-}
 
-.work-item-form__backdrop {
-  position: absolute;
-  inset: 0;
-  display: none;
-  background: rgb(27 31 39 / 35%);
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background: rgb(27 31 39 / 35%);
 
-  @media (min-width: 768px) {
-    display: block;
-  }
-}
-
-.work-item-form__panel {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-black-000);
-
-  @media (min-width: 768px) {
-    inset: 0 0 0 auto;
-    width: min(440px, 100%);
-    box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
-  }
-}
-
-.work-item-form__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid var(--color-black-100);
-
-  @media (min-width: 768px) {
-    padding: 20px 24px;
-  }
-}
-
-.work-item-form__title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--color-black-800);
-}
-
-.work-item-form__close-btn {
-  font-size: 18px;
-  line-height: 1;
-  color: var(--color-black-500);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-}
-
-.work-item-form__body {
-  display: flex;
-  flex-grow: 1;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  overflow: auto;
-
-  @media (min-width: 768px) {
-    padding: 20px 24px;
-  }
-}
-
-.work-item-form__row {
-  display: flex;
-  gap: 10px;
-
-  .work-item-form__field {
-    flex: 1;
-    min-width: 0;
-  }
-
-  // 項次只放幾位數字，固定窄欄，剩下的寬度都給同一行的工作日期
-  .work-item-form__field--index {
-    flex: 0 0 72px;
-
-    input {
-      text-align: center;
+    @media (min-width: 768px) {
+      display: block;
     }
   }
 
-  // 工作日期＋項次這一行整個框起來，作為表單最醒目的區塊
-  &--highlight {
-    padding: 10px 12px;
-    background: var(--color-black-050);
-    border: 1px solid var(--color-blue-500);
-    border-radius: 8px;
+  &__panel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-black-000);
 
-    .work-item-form__field {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--color-blue-500);
-    }
-
-    input {
-      font-size: 15px;
-      font-weight: 700;
-      border-color: var(--color-blue-500);
+    @media (min-width: 768px) {
+      inset: 0 0 0 auto;
+      width: min(440px, 100%);
+      box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
     }
   }
-}
 
-.work-item-form__field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--color-black-500);
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--color-black-100);
 
-  input,
-  textarea {
-    padding: 8px 10px;
-    font-family: inherit;
-    font-size: 13px;
+    @media (min-width: 768px) {
+      padding: 20px 24px;
+    }
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
     color: var(--color-black-800);
-    border: 1px solid var(--color-black-100);
-    border-radius: 6px;
   }
 
-  textarea {
-    resize: vertical;
-  }
-
-  // 唯讀欄位（項次）：灰底灰框，一眼看得出不能輸入。寫在 .work-item-form__row--highlight
-  // 之後，同權重時後寫的贏，才蓋得過醒目框裡 input 的藍色邊框
-  input:disabled {
+  &__close-btn {
+    font-size: 18px;
+    line-height: 1;
     color: var(--color-black-500);
-    cursor: not-allowed;
-    background: var(--color-black-100);
-    border-color: var(--color-black-200);
-  }
-}
-
-.work-item-form__footer {
-  display: flex;
-  gap: 10px;
-  padding: 16px;
-  border-top: 1px solid var(--color-black-100);
-
-  @media (min-width: 768px) {
-    padding: 16px 24px;
-  }
-}
-
-.work-item-form__btn {
-  flex: 1;
-  padding: 9px;
-  font-size: 14px;
-  color: var(--color-black-800);
-  cursor: pointer;
-  background: var(--color-black-000);
-  border: 1px solid var(--color-black-100);
-  border-radius: 6px;
-
-  &--primary {
-    font-weight: 600;
-    color: var(--color-black-000);
-    background: var(--color-blue-500);
+    cursor: pointer;
+    background: transparent;
     border: none;
   }
-}
 
-/*
+  &__body {
+    display: flex;
+    flex-grow: 1;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    overflow: auto;
+
+    @media (min-width: 768px) {
+      padding: 20px 24px;
+    }
+  }
+
+  &__row {
+    display: flex;
+    gap: 10px;
+
+    .work-item-form__field {
+      flex: 1;
+      min-width: 0;
+
+      // 項次只放幾位數字，固定窄欄，剩下的寬度都給同一行的工作日期
+      &--index {
+        flex: 0 0 36px;
+
+        input {
+          text-align: center;
+        }
+      }
+    }
+
+    // 工作日期＋項次這一行整個框起來，作為表單最醒目的區塊
+    &--highlight {
+      padding: 8px 16px;
+      margin-top: -16px;
+      margin-right: -16px;
+      margin-left: -16px;
+      background: var(--color-black-050);
+      border-top: 1px solid var(--color-blue-200);
+      border-bottom: 1px solid var(--color-blue-200);
+
+      @media (min-width: 768px) {
+        padding: 10px 24px;
+        margin-top: -20px;
+        margin-right: -24px;
+        margin-left: -24px;
+      }
+
+      .work-item-form__field {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-blue-500);
+      }
+
+      input {
+        font-size: 15px;
+        font-weight: 700;
+        border-color: var(--color-blue-500);
+      }
+    }
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--color-black-500);
+
+    input,
+    textarea {
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--color-black-800);
+      border: 1px solid var(--color-black-100);
+      border-radius: 6px;
+    }
+
+    textarea {
+      resize: vertical;
+    }
+
+    // 唯讀欄位（項次）：灰底灰框，一眼看得出不能輸入。寫在 .work-item-form__row--highlight
+    // 之後，同權重時後寫的贏，才蓋得過醒目框裡 input 的藍色邊框
+    input:disabled {
+      color: var(--color-black-500);
+      cursor: not-allowed;
+      background: var(--color-black-100);
+      border-color: var(--color-black-200);
+    }
+  }
+
+  &__footer {
+    display: flex;
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid var(--color-black-100);
+
+    @media (min-width: 768px) {
+      padding: 16px 24px;
+    }
+  }
+
+  &__btn {
+    flex: 1;
+    padding: 9px;
+    font-size: 14px;
+    color: var(--color-black-800);
+    cursor: pointer;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-100);
+    border-radius: 6px;
+
+    &--primary {
+      font-weight: 600;
+      color: var(--color-black-000);
+      background: var(--color-blue-500);
+      border: none;
+    }
+  }
+
+  /*
  * 進場/退場動畫：手機由下往上滑入，≥768px（平板/桌面）由右側滑入。
  * 動畫套在外層 .work-item-form（Transition 元件套用 class 的地方），
  * 用子選擇器分別控制 panel 的位移跟 backdrop 的淡入淡出。
@@ -423,32 +432,33 @@ const onSubmit = (): void => {
  * 讓 Vue 抓到正確的 0.25s，離場時才會等動畫播完再把元素移除 DOM，
  * 不然關閉會直接被瞬間拔掉，子元素的滑出動畫來不及播放。
  */
-.work-item-form-enter-active,
-.work-item-form-leave-active {
-  transition: transform 0.25s ease;
-}
-
-.work-item-form-enter-active .work-item-form__panel,
-.work-item-form-leave-active .work-item-form__panel {
-  transition: transform 0.25s ease;
-}
-
-.work-item-form-enter-active .work-item-form__backdrop,
-.work-item-form-leave-active .work-item-form__backdrop {
-  transition: opacity 0.25s ease;
-}
-
-.work-item-form-enter-from .work-item-form__panel,
-.work-item-form-leave-to .work-item-form__panel {
-  transform: translateY(100%);
-
-  @media (min-width: 768px) {
-    transform: translateX(100%);
+  &-enter-active,
+  &-leave-active {
+    transition: transform 0.25s ease;
   }
-}
 
-.work-item-form-enter-from .work-item-form__backdrop,
-.work-item-form-leave-to .work-item-form__backdrop {
-  opacity: 0;
+  &-enter-active &__panel,
+  &-leave-active &__panel {
+    transition: transform 0.25s ease;
+  }
+
+  &-enter-active &__backdrop,
+  &-leave-active &__backdrop {
+    transition: opacity 0.25s ease;
+  }
+
+  &-enter-from &__panel,
+  &-leave-to &__panel {
+    transform: translateY(100%);
+
+    @media (min-width: 768px) {
+      transform: translateX(100%);
+    }
+  }
+
+  &-enter-from &__backdrop,
+  &-leave-to &__backdrop {
+    opacity: 0;
+  }
 }
 </style>
