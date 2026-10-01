@@ -2,6 +2,7 @@
 import { NSelect, type SelectOption } from 'naive-ui';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchNextIndex } from '@/composables/useWorkItems';
 import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item';
@@ -61,6 +62,42 @@ const resetForm = (item: WorkItem | null | undefined): void => {
   form.今日工時 = item?.今日工時 ?? 0;
   form.完成度 = item?.完成度 ?? 0;
   form.狀態 = item?.狀態 ?? '';
+  snapshot.value = JSON.stringify(form);
+};
+
+/**
+ * 關閉前的未儲存確認：表單打開（resetForm）時存一份快照，關閉時跟目前的值比對。
+ * 改了又改回原值視為沒有修改，直接關閉；有修改才跳確認對話框。
+ * 存檔成功、登入錯誤這兩種關閉是 HomeView 直接關掉表單，不經過這裡，不會跳確認。
+ */
+const snapshot = ref('');
+const isDirty = computed(() => JSON.stringify(form) !== snapshot.value);
+const discardConfirmOpen = ref(false);
+
+const requestClose = (): void => {
+  if (isDirty.value) {
+    discardConfirmOpen.value = true;
+  } else {
+    emit('cancel');
+  }
+};
+
+/**
+ * 按「放棄變更」：先關確認對話框，等它的離場動畫播完（Transition 的 after-leave）
+ * 才通知外層關閉表單。如果同一時間關掉兩者，表單會在對話框還沒消失前就開始滑出，
+ * 對話框跟著表單一起被帶走，順序看起來是反的。
+ */
+let discardAfterDialogLeave = false;
+
+const confirmDiscard = (): void => {
+  discardAfterDialogLeave = true;
+  discardConfirmOpen.value = false;
+};
+
+const onDiscardDialogAfterLeave = (): void => {
+  if (!discardAfterDialogLeave) return;
+  discardAfterDialogLeave = false;
+  emit('cancel');
 };
 
 watch(() => props.item, resetForm, { immediate: true });
@@ -117,7 +154,7 @@ const onSubmit = (): void => {
 
 <template>
   <div class="work-item-form">
-    <div class="work-item-form__backdrop" @click="emit('cancel')" />
+    <div class="work-item-form__backdrop" @click="requestClose" />
     <div class="work-item-form__panel" role="dialog" aria-modal="true">
       <div class="work-item-form__header">
         <h2 class="work-item-form__title">{{ title }}</h2>
@@ -125,7 +162,7 @@ const onSubmit = (): void => {
           type="button"
           aria-label="關閉"
           class="work-item-form__close-btn"
-          @click="emit('cancel')"
+          @click="requestClose"
         >
           ✕
         </button>
@@ -226,7 +263,7 @@ const onSubmit = (): void => {
       </form>
 
       <div class="work-item-form__footer">
-        <button type="button" class="work-item-form__btn" @click="emit('cancel')">取消</button>
+        <button type="button" class="work-item-form__btn" @click="requestClose">取消</button>
         <button
           type="submit"
           form="work-item-form-body"
@@ -237,6 +274,19 @@ const onSubmit = (): void => {
         </button>
       </div>
     </div>
+
+    <Transition name="confirm-dialog" @after-leave="onDiscardDialogAfterLeave">
+      <ConfirmDialog
+        v-if="discardConfirmOpen"
+        title="要放棄變更嗎？"
+        message="關閉後，這次填寫或修改的內容都不會被儲存。"
+        confirm-label="放棄變更"
+        cancel-label="繼續編輯"
+        danger
+        @confirm="confirmDiscard"
+        @cancel="discardConfirmOpen = false"
+      />
+    </Transition>
   </div>
 </template>
 
