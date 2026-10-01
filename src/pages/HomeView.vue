@@ -137,11 +137,6 @@ const confirmDelete = async (): Promise<void> => {
       </template>
     </DateNav>
 
-    <div v-if="dayOffLabel" class="home-view__holiday-banner">
-      <span class="home-view__holiday-icon" aria-hidden="true">🎉</span>
-      <span>{{ selectedDate }} 是「{{ dayOffLabel }}」，非工作日</span>
-    </div>
-
     <div v-if="loading" class="home-view__loading">
       <span class="home-view__spinner" aria-hidden="true"></span>
       <span>載入中…</span>
@@ -156,6 +151,7 @@ const confirmDelete = async (): Promise<void> => {
       :today="toDateString(new Date())"
       :editable="isAuthorized"
       :viewing-today="isViewingToday"
+      :day-off-label="dayOffLabel"
       @edit="openEditForm"
       @delete="openDeleteConfirm"
     />
@@ -193,181 +189,170 @@ const confirmDelete = async (): Promise<void> => {
 </template>
 
 <style scoped lang="scss">
-.home-view__header {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 16px;
-  background-color: var(--color-black-050);
-  border-bottom: 1px solid var(--color-black-100);
-
-  @media (min-width: 768px) {
-    padding: 24px 32px;
-  }
-}
-
-.home-view__title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-black-800);
-  word-break: keep-all;
-}
-
-.home-view__badge {
-  padding: 2px 10px;
-  font-size: 12px;
-  color: var(--color-black-500);
-  word-break: keep-all;
-  border: 1px solid var(--color-black-100);
-  border-radius: 999px;
-}
-
-.home-view__theme-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  aspect-ratio: 1/1;
-  padding: 0;
-  font-size: 13px;
-  color: var(--color-black-500);
-  cursor: not-allowed;
-  background: var(--color-black-000);
-  border: 1px solid var(--color-black-100);
-  border-radius: 999px;
-}
-
-.home-view__account,
-.home-view__unauthorized {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: auto;
-}
-
-.home-view__unauthorized {
-  font-size: 12px;
-  color: var(--color-red-600);
-}
-
-.home-view__signin {
-  margin-left: auto;
-}
-
-.home-view__signout-btn {
-  padding: 3px 8px;
-  font-size: 12px;
-  color: var(--color-black-500);
-  cursor: pointer;
-  background: var(--color-black-000);
-  border: 1px solid var(--color-black-100);
-  border-radius: 6px;
-}
-
-.home-view__avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-black-000);
-  background: var(--color-blue-500);
-  border-radius: 999px;
-}
-
-.home-view__email {
-  display: none;
-  font-size: 12px;
-  color: var(--color-black-500);
-
-  @media (min-width: 768px) {
-    display: inline;
-  }
-}
-
-.home-view__add-btn {
-  padding: 6px 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-black-000);
-  white-space: nowrap;
-  cursor: pointer;
-  background: var(--color-blue-500);
-  border: none;
-  border-radius: 6px;
-}
-
-.home-view__holiday-banner {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 10px 14px;
-  margin: 0 16px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-yellow-800);
-  background: color-mix(in srgb, var(--color-yellow-800) 10%, var(--color-black-000));
-  border-radius: 8px;
-  box-shadow: inset 3px 0 0 var(--color-yellow-800);
-
-  @media (min-width: 768px) {
-    margin: 0 32px 16px;
-  }
-}
-
-.home-view__holiday-icon {
-  font-size: 15px;
-}
-
-.home-view__loading {
+.home-view {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  padding: 48px 0;
-  color: var(--color-black-500);
-}
+  gap: 0;
+  width: 100dvw;
+  height: 100%;
+  min-height: 100dvh;
 
-.home-view__spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--color-black-100);
-  border-top-color: var(--color-blue-500);
-  border-radius: 50%;
-  animation: home-view-spin 0.7s linear infinite;
-}
+  &__header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    background-color: var(--color-black-050);
+    border-bottom: 1px solid var(--color-black-100);
 
-@keyframes home-view-spin {
-  to {
-    transform: rotate(360deg);
+    @media (min-width: 768px) {
+      padding: 24px 32px;
+    }
   }
-}
 
-.home-view__error {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  padding: 48px 16px;
-  color: var(--color-red-600);
-  text-align: center;
-}
+  &__title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-black-800);
+    word-break: keep-all;
+  }
 
-.home-view__error-icon {
-  font-size: 24px;
-}
+  &__badge {
+    padding: 2px 10px;
+    font-size: 12px;
+    color: var(--color-black-500);
+    word-break: keep-all;
+    border: 1px solid var(--color-black-100);
+    border-radius: 999px;
+  }
 
-.home-view__save-error {
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--color-red-600);
+  &__theme-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    aspect-ratio: 1/1;
+    padding: 0;
+    font-size: 13px;
+    color: var(--color-black-500);
+    cursor: not-allowed;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-100);
+    border-radius: 999px;
+  }
 
-  @media (min-width: 768px) {
-    padding: 8px 32px;
+  &__account,
+  &__unauthorized {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  &__unauthorized {
+    font-size: 12px;
+    color: var(--color-red-600);
+  }
+
+  &__signin {
+    margin-left: auto;
+  }
+
+  &__signout-btn {
+    padding: 3px 8px;
+    font-size: 12px;
+    color: var(--color-black-500);
+    cursor: pointer;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-100);
+    border-radius: 6px;
+  }
+
+  &__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-black-000);
+    background: var(--color-blue-500);
+    border-radius: 999px;
+  }
+
+  &__email {
+    display: none;
+    font-size: 12px;
+    color: var(--color-black-500);
+
+    @media (min-width: 768px) {
+      display: inline;
+    }
+  }
+
+  &__add-btn {
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-black-000);
+    white-space: nowrap;
+    cursor: pointer;
+    background: var(--color-blue-500);
+    border: none;
+    border-radius: 6px;
+  }
+
+  &__loading {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 0;
+    color: var(--color-black-500);
+  }
+
+  &__spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--color-black-100);
+    border-top-color: var(--color-blue-500);
+    border-radius: 50%;
+    animation: home-view-spin 0.7s linear infinite;
+  }
+
+  @keyframes home-view-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  &__error {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    padding: 48px 16px;
+    color: var(--color-red-600);
+    text-align: center;
+  }
+
+  &__error-icon {
+    font-size: 24px;
+  }
+
+  &__save-error {
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--color-red-600);
+
+    @media (min-width: 768px) {
+      padding: 8px 32px;
+    }
   }
 }
 </style>
