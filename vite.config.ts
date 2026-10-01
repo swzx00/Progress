@@ -1,7 +1,7 @@
-import { fileURLToPath, URL } from 'node:url'
+import { fileURLToPath, URL } from 'node:url';
 
-import vue from '@vitejs/plugin-vue'
-import { defineConfig, loadEnv, type Plugin } from 'vite'
+import vue from '@vitejs/plugin-vue';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 /**
  * 本機開發、且關掉 MSW（VITE_ENABLE_MSW=false）時，讓瀏覽器打 /apps-script-proxy，
@@ -22,42 +22,42 @@ function appsScriptDevProxyPlugin(appsScriptUrl: string): Plugin {
       server.middlewares.use('/apps-script-proxy', (req, res) => {
         void (async () => {
           try {
-            const targetUrl = new URL(appsScriptUrl)
-            const incomingUrl = new URL(req.url ?? '', 'http://localhost')
-            targetUrl.search = incomingUrl.search
+            const targetUrl = new URL(appsScriptUrl);
+            const incomingUrl = new URL(req.url ?? '', 'http://localhost');
+            targetUrl.search = incomingUrl.search;
 
-            let body: string | undefined
+            let body: string | undefined;
             if (req.method === 'POST') {
-              const chunks: Buffer[] = []
-              for await (const chunk of req) chunks.push(chunk as Buffer)
-              body = Buffer.concat(chunks).toString('utf-8')
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              body = Buffer.concat(chunks).toString('utf-8');
             }
 
             const upstreamRes = await fetch(targetUrl, {
               method: req.method,
               headers: req.method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
               body,
-            })
-            const text = await upstreamRes.text()
-            res.statusCode = 200
-            res.setHeader('Content-Type', 'application/json')
-            res.end(text)
+            });
+            const text = await upstreamRes.text();
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(text);
           } catch (err) {
-            res.statusCode = 500
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: String(err) }))
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: String(err) }));
           }
-        })()
-      })
+        })();
+      });
     },
-  }
+  };
 }
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
-  const appsScriptUrl = env.VITE_APPS_SCRIPT_URL ?? ''
-  const isRealAppsScriptUrl = /^https:\/\/script\.google\.com\//.test(appsScriptUrl)
+  const env = loadEnv(mode, process.cwd(), '');
+  const appsScriptUrl = env.VITE_APPS_SCRIPT_URL ?? '';
+  const isRealAppsScriptUrl = /^https:\/\/script\.google\.com\//.test(appsScriptUrl);
 
   return {
     plugins: [vue(), isRealAppsScriptUrl ? appsScriptDevProxyPlugin(appsScriptUrl) : null],
@@ -66,5 +66,5 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-  }
-})
+  };
+});

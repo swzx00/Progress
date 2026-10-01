@@ -1,60 +1,60 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
-import { NDatePicker } from 'naive-ui'
+import { NDatePicker } from 'naive-ui';
 
-import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays'
+import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 
 const props = defineProps<{
-  modelValue: string
-  totalHours?: number
-}>()
+  modelValue: string;
+  totalHours?: number;
+}>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
-}>()
+  'update:modelValue': [value: string];
+}>();
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
 const shift = (days: number): void => {
-  const d = new Date(props.modelValue)
-  d.setDate(d.getDate() + days)
-  emit('update:modelValue', toDateString(d))
-}
+  const d = new Date(props.modelValue);
+  d.setDate(d.getDate() + days);
+  emit('update:modelValue', toDateString(d));
+};
 
-const todayStr = computed(() => toDateString(new Date()))
-const isToday = computed(() => props.modelValue === todayStr.value)
+const todayStr = computed(() => toDateString(new Date()));
+const isToday = computed(() => props.modelValue === todayStr.value);
 
 const goToday = (): void => {
-  emit('update:modelValue', todayStr.value)
-}
+  emit('update:modelValue', todayStr.value);
+};
 
-const pickerValue = computed(() => new Date(`${props.modelValue}T00:00:00`).getTime())
+const pickerValue = computed(() => new Date(`${props.modelValue}T00:00:00`).getTime());
 
 const onPickerUpdate = (value: number | null): void => {
-  if (value === null) return
-  emit('update:modelValue', toDateString(new Date(value)))
-}
+  if (value === null) return;
+  emit('update:modelValue', toDateString(new Date(value)));
+};
 
-const { getDayOffLabel, isWorkday, findNextWorkday } = useTaiwanHolidays()
+const { getDayOffLabel, isWorkday, findNextWorkday } = useTaiwanHolidays();
 
-const dayOffLabel = computed(() => getDayOffLabel(props.modelValue))
+const dayOffLabel = computed(() => getDayOffLabel(props.modelValue));
 
 const adjacentDate = (days: number): string => {
-  const d = new Date(props.modelValue)
-  d.setDate(d.getDate() + days)
-  return toDateString(d)
-}
+  const d = new Date(props.modelValue);
+  d.setDate(d.getDate() + days);
+  return toDateString(d);
+};
 
 // 「上一個工作日」的用途是跳過假日，如果緊鄰的那一天本來就是工作日，按下去
 // 效果跟「上一天」一樣，沒有額外用途，所以停用
-const prevWorkdayDisabled = computed(() => isWorkday(adjacentDate(-1)))
-const nextWorkdayDisabled = computed(() => isWorkday(adjacentDate(1)))
+const prevWorkdayDisabled = computed(() => isWorkday(adjacentDate(-1)));
+const nextWorkdayDisabled = computed(() => isWorkday(adjacentDate(1)));
 
 const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
-  const next = await findNextWorkday(props.modelValue, direction)
-  emit('update:modelValue', next)
-}
+  const next = await findNextWorkday(props.modelValue, direction);
+  emit('update:modelValue', next);
+};
 </script>
 
 <template>

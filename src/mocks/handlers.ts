@@ -1,18 +1,18 @@
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw';
 
-import type { WorkItem, WorkItemOptions } from '@/types/work-item'
+import type { WorkItem, WorkItemOptions } from '@/types/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/')
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/');
 
 const addDays = (base: Date, days: number): Date => {
-  const d = new Date(base)
-  d.setDate(d.getDate() + days)
-  return d
-}
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+};
 
-const today = toDateString(new Date())
-const yesterday = toDateString(addDays(new Date(), -1))
+const today = toDateString(new Date());
+const yesterday = toDateString(addDays(new Date(), -1));
 
 let items: WorkItem[] = [
   {
@@ -79,63 +79,63 @@ let items: WorkItem[] = [
     工作日期: yesterday,
     已刪除: false,
   },
-]
+];
 
 let options: WorkItemOptions = {
   交辦單位: ['資訊部', '業務部', '行銷部', '人資部'],
   交辦人員: ['王小明', '李小華', '陳大文'],
   專案名稱: ['官網改版', '會員系統優化', '年度報告'],
   專案Repo: ['AAA', 'BBBB', 'member-web'],
-}
+};
 
 const addOptionIfNew = (category: keyof WorkItemOptions, value: string): void => {
-  if (!value) return
+  if (!value) return;
   if (!options[category].includes(value)) {
-    options = { ...options, [category]: [...options[category], value] }
+    options = { ...options, [category]: [...options[category], value] };
   }
-}
+};
 
 interface CreatePayload {
-  action: 'create'
-  idToken: string
-  item: Omit<WorkItem, 'id' | '項次' | '已刪除'>
+  action: 'create';
+  idToken: string;
+  item: Omit<WorkItem, 'id' | '項次' | '已刪除'>;
 }
 
 interface UpdatePayload {
-  action: 'update'
-  idToken: string
-  id: string
-  originalDate: string
-  item: Partial<Omit<WorkItem, 'id'>>
+  action: 'update';
+  idToken: string;
+  id: string;
+  originalDate: string;
+  item: Partial<Omit<WorkItem, 'id'>>;
 }
 
 interface DeletePayload {
-  action: 'delete'
-  idToken: string
-  id: string
-  originalDate: string
+  action: 'delete';
+  idToken: string;
+  id: string;
+  originalDate: string;
 }
 
 interface AddOptionPayload {
-  action: 'addOption'
-  idToken: string
-  category: keyof WorkItemOptions
-  value: string
+  action: 'addOption';
+  idToken: string;
+  category: keyof WorkItemOptions;
+  value: string;
 }
 
 interface RenameOptionPayload {
-  action: 'renameOption'
-  idToken: string
-  category: keyof WorkItemOptions
-  oldValue: string
-  newValue: string
+  action: 'renameOption';
+  idToken: string;
+  category: keyof WorkItemOptions;
+  oldValue: string;
+  newValue: string;
 }
 
 interface DeleteOptionPayload {
-  action: 'deleteOption'
-  idToken: string
-  category: keyof WorkItemOptions
-  value: string
+  action: 'deleteOption';
+  idToken: string;
+  category: keyof WorkItemOptions;
+  value: string;
 }
 
 type DoPostPayload =
@@ -144,97 +144,97 @@ type DoPostPayload =
   | DeletePayload
   | AddOptionPayload
   | RenameOptionPayload
-  | DeleteOptionPayload
+  | DeleteOptionPayload;
 
 export const handlers = [
   http.get('*/exec', ({ request }) => {
-    const url = new URL(request.url)
+    const url = new URL(request.url);
 
     if (url.searchParams.get('type') === 'options') {
-      return HttpResponse.json({ options })
+      return HttpResponse.json({ options });
     }
 
-    const date = url.searchParams.get('date') ?? today
-    const dayItems = items.filter((item) => item.工作日期 === date && !item.已刪除)
-    return HttpResponse.json({ items: dayItems })
+    const date = url.searchParams.get('date') ?? today;
+    const dayItems = items.filter((item) => item.工作日期 === date && !item.已刪除);
+    return HttpResponse.json({ items: dayItems });
   }),
 
   http.post('*/exec', async ({ request }) => {
-    const body = (await request.json()) as DoPostPayload
+    const body = (await request.json()) as DoPostPayload;
 
     // Apps Script 網頁應用程式的回應一律是 HTTP 200，錯誤只能放在回應內容的
     // error 欄位裡，這裡刻意不用 { status: 401 } 之類的寫法，貼近真實行為。
     if (!body.idToken) {
-      return HttpResponse.json({ error: '未登入或登入已過期' })
+      return HttpResponse.json({ error: '未登入或登入已過期' });
     }
 
     if (body.action === 'create') {
       // 項次是「當月」新增順序，不是當天，跟 Sheet 每月一個分頁的設計對齊
-      const monthKey = body.item.工作日期.slice(0, 7)
-      const sameMonthCount = items.filter((item) => item.工作日期.startsWith(monthKey)).length
+      const monthKey = body.item.工作日期.slice(0, 7);
+      const sameMonthCount = items.filter((item) => item.工作日期.startsWith(monthKey)).length;
       const created: WorkItem = {
         ...body.item,
         id: crypto.randomUUID(),
         項次: sameMonthCount + 1,
         已刪除: false,
-      }
-      items = [...items, created]
-      addOptionIfNew('交辦單位', created.交辦單位)
-      addOptionIfNew('交辦人員', created.交辦人員)
-      addOptionIfNew('專案名稱', created.專案名稱)
-      created.專案Repo.forEach((repo) => addOptionIfNew('專案Repo', repo))
-      return HttpResponse.json({ item: created })
+      };
+      items = [...items, created];
+      addOptionIfNew('交辦單位', created.交辦單位);
+      addOptionIfNew('交辦人員', created.交辦人員);
+      addOptionIfNew('專案名稱', created.專案名稱);
+      created.專案Repo.forEach((repo) => addOptionIfNew('專案Repo', repo));
+      return HttpResponse.json({ item: created });
     }
 
     if (body.action === 'update') {
-      let updated: WorkItem | undefined
+      let updated: WorkItem | undefined;
       items = items.map((item) => {
-        if (item.id !== body.id) return item
-        updated = { ...item, ...body.item }
-        return updated
-      })
-      return HttpResponse.json({ item: updated })
+        if (item.id !== body.id) return item;
+        updated = { ...item, ...body.item };
+        return updated;
+      });
+      return HttpResponse.json({ item: updated });
     }
 
     if (body.action === 'delete') {
-      items = items.map((item) => (item.id === body.id ? { ...item, 已刪除: true } : item))
-      return HttpResponse.json({ ok: true })
+      items = items.map((item) => (item.id === body.id ? { ...item, 已刪除: true } : item));
+      return HttpResponse.json({ ok: true });
     }
 
     if (body.action === 'addOption') {
-      const value = body.value.trim()
-      if (!value) return HttpResponse.json({ error: '新增的值不可為空' })
-      addOptionIfNew(body.category, value)
-      return HttpResponse.json({ options })
+      const value = body.value.trim();
+      if (!value) return HttpResponse.json({ error: '新增的值不可為空' });
+      addOptionIfNew(body.category, value);
+      return HttpResponse.json({ options });
     }
 
     if (body.action === 'renameOption') {
-      const newValue = body.newValue.trim()
-      if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' })
+      const newValue = body.newValue.trim();
+      if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' });
       if (!options[body.category].includes(body.oldValue)) {
-        return HttpResponse.json({ error: '找不到這個值' })
+        return HttpResponse.json({ error: '找不到這個值' });
       }
       if (options[body.category].includes(newValue)) {
-        return HttpResponse.json({ error: '這個名稱已經存在' })
+        return HttpResponse.json({ error: '這個名稱已經存在' });
       }
       options = {
         ...options,
         [body.category]: options[body.category].map((v) => (v === body.oldValue ? newValue : v)),
-      }
-      return HttpResponse.json({ options })
+      };
+      return HttpResponse.json({ options });
     }
 
     if (body.action === 'deleteOption') {
       if (!options[body.category].includes(body.value)) {
-        return HttpResponse.json({ error: '找不到這個值' })
+        return HttpResponse.json({ error: '找不到這個值' });
       }
       options = {
         ...options,
         [body.category]: options[body.category].filter((v) => v !== body.value),
-      }
-      return HttpResponse.json({ options })
+      };
+      return HttpResponse.json({ options });
     }
 
-    return HttpResponse.json({ error: 'unknown action' })
+    return HttpResponse.json({ error: 'unknown action' });
   }),
-]
+];

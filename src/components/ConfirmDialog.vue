@@ -1,12 +1,12 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    title: string
-    message: string
-    confirmLabel?: string
-    cancelLabel?: string
-    danger?: boolean
-    busy?: boolean
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    danger?: boolean;
+    busy?: boolean;
   }>(),
   {
     confirmLabel: '確定',
@@ -14,12 +14,12 @@ withDefaults(
     danger: false,
     busy: false,
   },
-)
+);
 
 const emit = defineEmits<{
-  confirm: []
-  cancel: []
-}>()
+  confirm: [];
+  cancel: [];
+}>();
 </script>
 
 <template>

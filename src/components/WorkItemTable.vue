@@ -1,43 +1,43 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
-import { getStatusKey, isOverdue, type WorkItem } from '@/types/work-item'
+import { getStatusKey, isOverdue, type WorkItem } from '@/types/work-item';
 
 const props = withDefaults(
   defineProps<{
-    items: WorkItem[]
-    today: string
-    editable?: boolean
-    viewingToday?: boolean
+    items: WorkItem[];
+    today: string;
+    editable?: boolean;
+    viewingToday?: boolean;
     // 對應 useTaiwanHolidays 的 getDayOffLabel()，工作日回傳 null
-    dayOffLabel?: string | null
+    dayOffLabel?: string | null;
   }>(),
   {
     editable: false,
     viewingToday: false,
   },
-)
+);
 
 const emit = defineEmits<{
-  edit: [item: WorkItem]
-  delete: [item: WorkItem]
-}>()
+  edit: [item: WorkItem];
+  delete: [item: WorkItem];
+}>();
 
-const formatDate = (date: string): string => date.replaceAll('-', '/')
+const formatDate = (date: string): string => date.replaceAll('-', '/');
 
 const statusClass = (status: string): string | undefined => {
-  const key = getStatusKey(status)
-  return key ? `work-item-table__status--${key}` : undefined
-}
+  const key = getStatusKey(status);
+  return key ? `work-item-table__status--${key}` : undefined;
+};
 
 const sortedItems = computed(() =>
   [...props.items].sort((a, b) => {
-    const aOverdue = isOverdue(a, props.today)
-    const bOverdue = isOverdue(b, props.today)
-    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1
-    return a.項次 - b.項次
+    const aOverdue = isOverdue(a, props.today);
+    const bOverdue = isOverdue(b, props.today);
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+    return a.項次 - b.項次;
   }),
-)
+);
 </script>
 
 <template>

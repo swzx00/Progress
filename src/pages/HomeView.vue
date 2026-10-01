@@ -1,105 +1,105 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue';
 
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import DateNav from '@/components/DateNav.vue'
-import OptionsManagerModal from '@/components/OptionsManagerModal.vue'
-import WorkItemForm from '@/components/WorkItemForm.vue'
-import WorkItemTable from '@/components/WorkItemTable.vue'
-import { useGoogleAuth } from '@/composables/useGoogleAuth'
-import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays'
-import { useWorkItems } from '@/composables/useWorkItems'
-import type { WorkItem } from '@/types/work-item'
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DateNav from '@/components/DateNav.vue';
+import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
+import WorkItemForm from '@/components/WorkItemForm.vue';
+import WorkItemTable from '@/components/WorkItemTable.vue';
+import { useGoogleAuth } from '@/composables/useGoogleAuth';
+import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
+import { useWorkItems } from '@/composables/useWorkItems';
+import type { WorkItem } from '@/types/work-item';
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
 const { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOut } =
-  useGoogleAuth()
+  useGoogleAuth();
 
-const signInButtonEl = ref<HTMLElement | null>(null)
+const signInButtonEl = ref<HTMLElement | null>(null);
 watch(signInButtonEl, (el) => {
-  if (el) renderSignInButton(el)
-})
+  if (el) renderSignInButton(el);
+});
 
-const selectedDate = ref(toDateString(new Date()))
-const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems()
-const { getDayOffLabel } = useTaiwanHolidays()
-const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value))
-const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()))
+const selectedDate = ref(toDateString(new Date()));
+const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems();
+const { getDayOffLabel } = useTaiwanHolidays();
+const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
+const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()));
 
-watch(selectedDate, (date) => fetchByDate(date), { immediate: true })
+watch(selectedDate, (date) => fetchByDate(date), { immediate: true });
 
 const totalHours = computed(() =>
   loading.value ? undefined : items.value.reduce((sum, item) => sum + item.今日工時, 0),
-)
+);
 
-const optionsManagerOpen = ref(false)
+const optionsManagerOpen = ref(false);
 
-const formOpen = ref(false)
-const editingItem = ref<WorkItem | null>(null)
-const saving = ref(false)
-const saveError = ref<string | null>(null)
+const formOpen = ref(false);
+const editingItem = ref<WorkItem | null>(null);
+const saving = ref(false);
+const saveError = ref<string | null>(null);
 
 const openCreateForm = (): void => {
-  editingItem.value = null
-  saveError.value = null
-  formOpen.value = true
-}
+  editingItem.value = null;
+  saveError.value = null;
+  formOpen.value = true;
+};
 
 const openEditForm = (item: WorkItem): void => {
-  editingItem.value = item
-  saveError.value = null
-  formOpen.value = true
-}
+  editingItem.value = item;
+  saveError.value = null;
+  formOpen.value = true;
+};
 
 const closeForm = (): void => {
-  formOpen.value = false
-}
+  formOpen.value = false;
+};
 
 const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): Promise<void> => {
   if (!idToken.value) {
-    saveError.value = '尚未登入，無法儲存'
-    return
+    saveError.value = '尚未登入，無法儲存';
+    return;
   }
-  saving.value = true
-  saveError.value = null
+  saving.value = true;
+  saveError.value = null;
   try {
     if (editingItem.value) {
-      await updateItem(idToken.value, editingItem.value.id, editingItem.value.工作日期, payload)
+      await updateItem(idToken.value, editingItem.value.id, editingItem.value.工作日期, payload);
     } else {
-      await createItem(idToken.value, payload)
+      await createItem(idToken.value, payload);
     }
-    await fetchByDate(selectedDate.value)
-    formOpen.value = false
+    await fetchByDate(selectedDate.value);
+    formOpen.value = false;
   } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '儲存時發生未知錯誤'
+    saveError.value = e instanceof Error ? e.message : '儲存時發生未知錯誤';
   } finally {
-    saving.value = false
+    saving.value = false;
   }
-}
+};
 
-const deleteTarget = ref<WorkItem | null>(null)
-const deleting = ref(false)
+const deleteTarget = ref<WorkItem | null>(null);
+const deleting = ref(false);
 
 const openDeleteConfirm = (item: WorkItem): void => {
-  deleteTarget.value = item
-}
+  deleteTarget.value = item;
+};
 
 const closeDeleteConfirm = (): void => {
-  deleteTarget.value = null
-}
+  deleteTarget.value = null;
+};
 
 const confirmDelete = async (): Promise<void> => {
-  if (!deleteTarget.value || !idToken.value) return
-  deleting.value = true
+  if (!deleteTarget.value || !idToken.value) return;
+  deleting.value = true;
   try {
-    await deleteItem(idToken.value, deleteTarget.value.id, deleteTarget.value.工作日期)
-    await fetchByDate(selectedDate.value)
+    await deleteItem(idToken.value, deleteTarget.value.id, deleteTarget.value.工作日期);
+    await fetchByDate(selectedDate.value);
   } finally {
-    deleting.value = false
-    deleteTarget.value = null
+    deleting.value = false;
+    deleteTarget.value = null;
   }
-}
+};
 </script>
 
 <template>

@@ -1,38 +1,38 @@
 <script setup lang="ts">
-import { NSelect, type SelectOption } from 'naive-ui'
-import { computed, onMounted, reactive, watch } from 'vue'
+import { NSelect, type SelectOption } from 'naive-ui';
+import { computed, onMounted, reactive, watch } from 'vue';
 
-import { useOptions } from '@/composables/useOptions'
-import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item'
+import { useOptions } from '@/composables/useOptions';
+import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item';
 
 const props = withDefaults(
   defineProps<{
-    item?: WorkItem | null
-    saving?: boolean
+    item?: WorkItem | null;
+    saving?: boolean;
   }>(),
   {
     saving: false,
   },
-)
+);
 
 const emit = defineEmits<{
-  save: [payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>]
-  cancel: []
-}>()
+  save: [payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>];
+  cancel: [];
+}>();
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10)
+const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
-const { options, fetchOptions } = useOptions()
-onMounted(fetchOptions)
+const { options, fetchOptions } = useOptions();
+onMounted(fetchOptions);
 
 const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
-  (values ?? []).map((value) => ({ label: value, value }))
+  (values ?? []).map((value) => ({ label: value, value }));
 
-const unitOptions = computed(() => toSelectOptions(options.value?.交辦單位))
-const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人員))
-const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱))
-const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo))
-const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]))
+const unitOptions = computed(() => toSelectOptions(options.value?.交辦單位));
+const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人員));
+const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱));
+const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo));
+const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
 
 const form = reactive({
   工作日期: toDateString(new Date()),
@@ -46,25 +46,25 @@ const form = reactive({
   今日工時: 0,
   完成度: 0,
   狀態: '',
-})
+});
 
 const resetForm = (item: WorkItem | null | undefined): void => {
-  form.工作日期 = item?.工作日期 ?? toDateString(new Date())
-  form.交辦單位 = item?.交辦單位 ?? ''
-  form.交辦人員 = item?.交辦人員 ?? ''
-  form.專案名稱 = item?.專案名稱 ?? ''
-  form.專案Repo = item ? [...item.專案Repo] : []
-  form.工作目標 = item?.工作目標 ?? ''
-  form.預計期限 = item?.預計期限 ?? ''
-  form.處理內容 = item?.處理內容 ?? ''
-  form.今日工時 = item?.今日工時 ?? 0
-  form.完成度 = item?.完成度 ?? 0
-  form.狀態 = item?.狀態 ?? ''
-}
+  form.工作日期 = item?.工作日期 ?? toDateString(new Date());
+  form.交辦單位 = item?.交辦單位 ?? '';
+  form.交辦人員 = item?.交辦人員 ?? '';
+  form.專案名稱 = item?.專案名稱 ?? '';
+  form.專案Repo = item ? [...item.專案Repo] : [];
+  form.工作目標 = item?.工作目標 ?? '';
+  form.預計期限 = item?.預計期限 ?? '';
+  form.處理內容 = item?.處理內容 ?? '';
+  form.今日工時 = item?.今日工時 ?? 0;
+  form.完成度 = item?.完成度 ?? 0;
+  form.狀態 = item?.狀態 ?? '';
+};
 
-watch(() => props.item, resetForm, { immediate: true })
+watch(() => props.item, resetForm, { immediate: true });
 
-const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'))
+const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'));
 
 const onSubmit = (): void => {
   emit('save', {
@@ -79,8 +79,8 @@ const onSubmit = (): void => {
     今日工時: Number(form.今日工時),
     完成度: Number(form.完成度),
     狀態: form.狀態,
-  })
-}
+  });
+};
 </script>
 
 <template>
