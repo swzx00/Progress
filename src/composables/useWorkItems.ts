@@ -69,6 +69,34 @@ const postAction = async (idToken: string, payload: object): Promise<void> => {
   }
 };
 
+/** 讀取某一天未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
+const requestItemsByDate = async (date: string): Promise<WorkItem[]> => {
+  const url = new URL(API_BASE_URL, window.location.origin);
+  url.searchParams.set('date', toApiDate(date));
+  const res = await fetch(url.toString());
+  const data = (await res.json()) as DoGetResponse;
+  if (data.error) {
+    throw new Error(data.error);
+  }
+  return data.items
+    .filter((item) => !item.已刪除)
+    .map((item) => ({
+      ...item,
+      工作日期: fromApiDate(item.工作日期),
+      預計期限: fromApiDate(item.預計期限),
+    }));
+};
+
+/**
+ * 預計項次：某一天未刪除紀錄的最大項次 + 1，跟 Code.gs 的 getNextDailyIndex_ 同一套規則
+ * （改其中一邊要一起改）。只是給表單顯示的參考值，實際項次由後端寫入當下決定。
+ * 不會動到 useWorkItems() 的 items 狀態，表格正在顯示的資料不受影響。
+ */
+export const fetchNextIndex = async (date: string): Promise<number> => {
+  const dayItems = await requestItemsByDate(date);
+  return Math.max(0, ...dayItems.map((item) => item.項次)) + 1;
+};
+
 export function useWorkItems() {
   const items = ref<WorkItem[]>([]);
   const loading = ref(false);
@@ -78,20 +106,7 @@ export function useWorkItems() {
     loading.value = true;
     error.value = null;
     try {
-      const url = new URL(API_BASE_URL, window.location.origin);
-      url.searchParams.set('date', toApiDate(date));
-      const res = await fetch(url.toString());
-      const data = (await res.json()) as DoGetResponse;
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      items.value = data.items
-        .filter((item) => !item.已刪除)
-        .map((item) => ({
-          ...item,
-          工作日期: fromApiDate(item.工作日期),
-          預計期限: fromApiDate(item.預計期限),
-        }));
+      items.value = await requestItemsByDate(date);
     } catch (e) {
       error.value = e instanceof Error ? e.message : '讀取資料時發生未知錯誤';
       items.value = [];

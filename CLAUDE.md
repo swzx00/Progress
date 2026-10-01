@@ -30,7 +30,7 @@
 |---|---|
 | **ID**（系統） | UUID，寫入時自動產生，編輯/刪除用來精準定位列 |
 | **工作日期**（新增） | 這筆紀錄所屬的那一天，預設今天可手動改（補登用）。前台以此欄位做「單日檢視」。Sheet 儲存格與 API 傳輸格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），細節見下方「日期欄位格式」 |
-| 項次 | 系統自動編號（依當月新增順序），非必要不手動輸入 |
+| 項次 | 系統自動編號，**每天從 1 開始**：同一工作日期、未刪除紀錄的最大項次＋1（用最大值不用筆數，刪掉中間某筆後新增才不會撞號；已刪除的不佔號，所以刪掉當天最後一號再新增會拿回同一號）。一律由後端決定，使用者不能自訂，前端送來的值會被忽略。規則寫在 `Code.gs` 的 `getNextDailyIndex_`，前端 `useWorkItems.ts` 的 `fetchNextIndex`（表單顯示預計項次用）跟 MSW 用同一套規則，改一處要三處一起改。原本是「當月新增順序」，已改成每天編號（使用者決定），舊資料用 `renumberDailyIndexes()` 一次性重新編號 |
 | 交辦單位 | 可搜尋下拉選單（來自「選項清單」分頁，可輸入清單沒有的新值直接當作答案送出）（原欄名「單位」） |
 | 交辦人員 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
 | 專案名稱 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
@@ -53,7 +53,7 @@
 
 **資料模式**：情境 A（日誌式）——同一專案每天新增一列新紀錄，不覆寫舊資料，歷史紀錄自然依時間往下疊。
 
-**日期欄位格式**：「工作日期」「預計期限」在 Google Sheet 儲存格顯示、以及 Apps Script API（`doGet`/`doPost`）傳輸的字串格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），Sheet 端這兩欄也套用對應的 `yyyy/mm/dd` 儲存格數值格式（`Code.gs` 的 `applyDateColumnFormat_`，新建月份分頁時自動套用；改動當下已存在的分頁需手動在 Apps Script 編輯器執行一次 `fixExistingMonthSheetDateFormats_()` 補上，用法同 `installTrigger()`，一次性）。
+**日期欄位格式**：「工作日期」「預計期限」在 Google Sheet 儲存格顯示、以及 Apps Script API（`doGet`/`doPost`）傳輸的字串格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），Sheet 端這兩欄也套用對應的 `yyyy/mm/dd` 儲存格數值格式（`Code.gs` 的 `applyDateColumnFormat_`，新建月份分頁時自動套用；改動當下已存在的分頁需手動在 Apps Script 編輯器執行一次 `fixExistingMonthSheetDateFormats()` 補上，用法同 `installTrigger()`，一次性）。
 
 前端**內部狀態**（`WorkItemForm.vue` 的表單欄位、`DateNav.vue`、`HomeView.vue` 的 `selectedDate`、`isOverdue` 比較、`useTaiwanHolidays.ts`）維持 ISO 的 `YYYY-MM-DD`，不是為了跟後端不一致，而是瀏覽器原生 `<input type="date">` 規格規定只能吃這個格式，沒有替代選項；JS `Date`／`toISOString()` 的日期運算也天生是 ISO。兩種格式的轉換**只集中在 `useWorkItems.ts` 一個邊界**（`toApiDate`/`fromApiDate`/`toApiItem`）：送出 `fetchByDate` 的 `date` 查詢參數、`createItem`/`updateItem` 的 `item.工作日期`/`item.預計期限`、`updateItem`/`deleteItem` 的 `originalDate` 之前轉成 `YYYY/MM/DD`；`fetchByDate` 收到的回應則把每筆 `工作日期`/`預計期限` 轉回 ISO 才存進 `items.value`。除了這個邊界，程式碼其他地方完全不用知道 API 實際傳輸格式是什麼。MSW mock（`src/mocks/handlers.ts`）的假資料日期也同步用 `YYYY/MM/DD` 產生，貼近真後端行為。
 
@@ -69,8 +69,8 @@
 **doPost(e)**
 - body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性，取出 email 並比對是否為 swzx00@gmail.com，不符合直接拒絕
 - 依 `action` 分派：
-  - `create`：判斷/建立當月分頁，產生 UUID 當 ID，項次＝該月分頁目前列數＋1（**當月**新增順序，不是當天），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
-  - `update`：payload 額外帶 `originalDate`（這筆紀錄修改前的工作日期），換算出**原本**月份分頁去定位 `ID`。若 `item.工作日期` 跟 `originalDate` 換算出的月份不同（使用者把工作日期改到別的月份），先從原分頁刪除該列、在新月份分頁新增一列，維持每筆紀錄只存在一個分頁
+  - `create`：判斷/建立當月分頁，產生 UUID 當 ID，項次用 `getNextDailyIndex_` 依工作日期計算（**每天**從 1 開始，見上方「項次」欄位說明），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
+  - `update`：payload 額外帶 `originalDate`（這筆紀錄修改前的工作日期），換算出**原本**月份分頁去定位 `ID`。若 `item.工作日期` 跟 `originalDate` 換算出的月份不同（使用者把工作日期改到別的月份），先從原分頁刪除該列、在新月份分頁新增一列，維持每筆紀錄只存在一個分頁。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天（不論同月或跨月），在新的那天用 `getNextDailyIndex_` 重新編號
   - `delete`：payload 帶 `originalDate`，換算月份分頁定位 `ID`，將「已刪除」設為 TRUE
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見下方「選項清單管理」
 - 後端必須重複驗證前端已做過的規則（完成度限制 0–100、今日工時非負數、必填欄位不可為空等），因為 API 網址公開，理論上可被繞過前端直接呼叫
@@ -101,7 +101,7 @@ src/
     HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
     WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式）
-    WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現）
+    WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次，見「UI/UX 定案」
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值都用這個）
     AppToast.vue          # 錯誤提示 Toast，畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
@@ -208,6 +208,11 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 暫緩和「今天剛好放假」都是 `--color-yellow-800`，兩者語意不同但同色；非今天的放假日是 orange，不會跟暫緩撞色。之後如果要區分，改其中一處用的色階即可，不用新增自訂 token
   - class modifier 需要英文 key，對應表是 `types/work-item.ts` 的 `STATUS_KEYS`（型別綁 `STATUS_OPTIONS`，新增狀態漏寫對應會直接型別錯誤）；Sheet 的狀態是純文字，可能出現清單外的值，`getStatusKey()` 查不到回傳 `undefined`，這時只套基本樣式（深灰膠囊），不會壞掉；狀態為空則不顯示膠囊
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
+- **表單（`WorkItemForm.vue`）的項次欄**：跟「工作日期」放在同一行（同一個醒目框裡，項次是右側 72px 窄欄），一律 `disabled`，使用者不能自訂
+  - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
+  - 新增，或編輯時把工作日期改到別天：顯示那天的預計項次（`fetchNextIndex`，沿用 `doGet` 的 `date` 查詢自己算，不另開 API、不影響表格的 `items`）；查詢中顯示「…」、失敗顯示「—」，不擋存檔。連續改日期只採用最後一次查詢的結果
+  - 預計項次只是參考值，實際項次由後端寫入當下決定（中間若有其他新增，號碼可能較大）
+- 表單欄位順序：工作日期／項次 → 交辦單位／交辦人員 → 專案名稱 → 專案 Repo → 工作目標 → 處理內容 → 今日工時 → 完成度 → 預計期限 → 狀態
 - **儲存失敗的處理**（`HomeView.vue` 的 `onSave`／`handleSaveError`）：不在頁面上顯示錯誤文字，一律用 `AppToast` 顯示錯誤訊息
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
@@ -329,8 +334,9 @@ npm run format     # Prettier 格式化 src/
 
 - ~~在 GCP 建立 OAuth 用戶端 ID~~（已完成，Client ID 在本機 `.env` 裡）
 - ~~確認 Google Sheet 已依上述結構調整~~（已完成：`2026-09` 分頁表頭、「選項清單」分頁都已建好，見上方「Google Sheet 結構設計」的實際欄位順序）
-- 部署這次的日期格式改動後，在 Apps Script 編輯器手動執行一次 `fixExistingMonthSheetDateFormats_()`，把已存在的月份分頁（例如 `2026-09`）補上 `yyyy/mm/dd` 儲存格格式（新分頁會自動套用，不用做這件事；見上方「日期欄位格式」）
-- 重新部署 `Code.gs`（貼到 Apps Script 編輯器後，「管理部署作業」編輯既有部署、版本選「新版本」，網址不變）（`doPost` 登入失敗多回 `code: 'UNAUTHORIZED'`）。部署前真後端的登入錯誤不帶 `code`，前端會當成「其他錯誤」處理（只顯示 Toast、關表單，不會自動登出）
+- 部署這次的日期格式改動後，在 Apps Script 編輯器手動執行一次 `fixExistingMonthSheetDateFormats()`，把已存在的月份分頁（例如 `2026-09`）補上 `yyyy/mm/dd` 儲存格格式（新分頁會自動套用，不用做這件事；見上方「日期欄位格式」）
+- ~~重新部署 `Code.gs`，`doPost` 登入失敗多回 `code: 'UNAUTHORIZED'`~~（已完成，第 5 版）
+- 重新部署 `Code.gs`（項次改成每天編號）：貼到 Apps Script 編輯器後，「管理部署作業」編輯既有部署、版本選「新版本」，網址不變。部署後在編輯器的「執行」選單手動執行一次 `renumberDailyIndexes()`，把既有資料的項次重新編成每天 1、2、3（未刪除的照現有順序重編，已刪除的維持原號）
 
 ---
 
