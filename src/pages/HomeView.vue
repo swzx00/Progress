@@ -177,6 +177,7 @@ const confirmDelete = async (): Promise<void> => {
         v-if="formOpen && isAuthorized"
         :item="editingItem"
         :saving="saving"
+        :default-date="selectedDate"
         @save="onSave"
         @cancel="closeForm"
       />

@@ -34,7 +34,32 @@ var NUMBER_FIELDS = ['今日工時', '完成度'];
 var ARRAY_FIELDS = ['專案Repo'];
 var BOOLEAN_FIELDS = ['已刪除'];
 var DATE_FIELDS = ['工作日期', '預計期限'];
-var REQUIRED_FIELDS = ['交辦單位', '交辦人員', '專案名稱', '工作目標', '處理內容', '工作日期', '預計期限'];
+
+// 欄位驗證規則：手動同步自 shared/validation-schema.json（前後端共用的唯一事實來源，
+// npm run build:gs 自動轉檔尚未實作），改那份 JSON 時這裡要一起改
+var VALIDATION_RULES = {
+  工作日期: { label: '工作日期', kind: 'date', required: true, minYear: 2020, maxYear: 2099 },
+  交辦單位: { label: '交辦單位', kind: 'select', required: true, maxLength: 50 },
+  交辦人員: { label: '交辦人員', kind: 'select', required: true, maxLength: 50 },
+  專案名稱: { label: '專案名稱', kind: 'select', required: true, maxLength: 50 },
+  專案Repo: {
+    label: '專案 Repo',
+    kind: 'tags',
+    required: false,
+    maxLength: 50,
+    maxItems: 10,
+    forbiddenChars: ',',
+  },
+  工作目標: { label: '工作目標', kind: 'text', required: true, maxLength: 500 },
+  處理內容: { label: '處理內容', kind: 'text', required: false, maxLength: 2000 },
+  今日工時: { label: '今日工時', kind: 'number', required: false, default: 0, min: 0, max: 24, step: 0.25 },
+  完成度: { label: '完成度', kind: 'number', required: false, default: 0, min: 0, max: 100, step: 1 },
+  預計期限: { label: '預計期限', kind: 'date', required: false, minYear: 2020, maxYear: 2099 },
+  狀態: { label: '狀態', kind: 'status', required: true, default: '待辦' },
+};
+
+// 手動同步自 src/types/work-item.ts 的 STATUS_OPTIONS
+var STATUS_OPTIONS = ['進行中', '前端完成', '返修', '待辦', '確認上線', '暫緩'];
 
 // ===== Sheet 共用工具 =====
 
@@ -239,17 +264,92 @@ function verifyIdToken_(idToken) {
   return payload.email;
 }
 
-// ===== 欄位驗證（跟前端 WorkItemForm 的規則對齊，防止繞過前端直接打 API） =====
+// ===== 欄位驗證（跟前端 src/validation/work-item.ts 同一套規則，防止繞過前端直接打 API） =====
+
+var API_DATE_PATTERN = /^\d{4}\/\d{2}\/\d{2}$/;
+
+function isBlank_(value) {
+  return value === undefined || value === null || String(value).trim() === '';
+}
+
+function validateTextField_(rule, value) {
+  if (isBlank_(value)) {
+    if (!rule.required) return null;
+    return (rule.kind === 'select' ? '請選擇' : '請填寫') + rule.label;
+  }
+  if (rule.maxLength && String(value).trim().length > rule.maxLength) {
+    return rule.label + '不可超過 ' + rule.maxLength + ' 字';
+  }
+  return null;
+}
+
+function validateTagsField_(rule, value) {
+  var tags = (Array.isArray(value) ? value : [])
+    .map(function (tag) {
+      return String(tag).trim();
+    })
+    .filter(function (tag) {
+      return tag.length > 0;
+    });
+  if (tags.length === 0) return rule.required ? '請選擇' + rule.label : null;
+  if (rule.maxItems && tags.length > rule.maxItems) {
+    return rule.label + ' 最多 ' + rule.maxItems + ' 個';
+  }
+  var tooLong = tags.some(function (tag) {
+    return tag.length > rule.maxLength;
+  });
+  if (rule.maxLength && tooLong) return '每個' + rule.label + ' 不可超過 ' + rule.maxLength + ' 字';
+  // Sheet 用逗號把多個 Repo 串成一格存，名稱本身含逗號讀回來會被拆開
+  var forbidden = (rule.forbiddenChars || '').split('');
+  var hasForbidden = tags.some(function (tag) {
+    return forbidden.some(function (char) {
+      return tag.indexOf(char) !== -1;
+    });
+  });
+  if (hasForbidden) return rule.label + ' 不可包含「' + forbidden.join('') + '」';
+  return null;
+}
+
+function validateNumberField_(rule, value) {
+  // 選填數字欄位沒給值時用預設值，不算錯誤
+  if (isBlank_(value)) return rule.required ? '請填寫' + rule.label : null;
+  var num = Number(value);
+  if (isNaN(num)) return rule.label + '需為數字';
+  if (num < rule.min || num > rule.max) return rule.label + '需介於 ' + rule.min + '–' + rule.max;
+  if (rule.step && Math.abs(num / rule.step - Math.round(num / rule.step)) > 1e-9) {
+    return rule.step === 1 ? rule.label + '需為整數' : rule.label + '需為 ' + rule.step + ' 的倍數';
+  }
+  return null;
+}
+
+function validateDateField_(rule, value) {
+  if (isBlank_(value)) return rule.required ? '請選擇' + rule.label : null;
+  if (!API_DATE_PATTERN.test(String(value))) return rule.label + '格式不正確';
+  var year = Number(String(value).slice(0, 4));
+  if (year < rule.minYear || year > rule.maxYear) {
+    return rule.label + '的年份需介於 ' + rule.minYear + '–' + rule.maxYear;
+  }
+  return null;
+}
+
+function validateStatusField_(rule, value) {
+  if (isBlank_(value)) return rule.required ? '請選擇' + rule.label : null;
+  return STATUS_OPTIONS.indexOf(String(value)) === -1 ? '請選擇' + rule.label : null;
+}
 
 function validateItem_(item) {
   var errors = [];
-  REQUIRED_FIELDS.forEach(function (field) {
-    if (!item[field]) errors.push(field + ' 不可為空');
+  Object.keys(VALIDATION_RULES).forEach(function (field) {
+    var rule = VALIDATION_RULES[field];
+    var value = item[field];
+    var message;
+    if (rule.kind === 'tags') message = validateTagsField_(rule, value);
+    else if (rule.kind === 'number') message = validateNumberField_(rule, value);
+    else if (rule.kind === 'date') message = validateDateField_(rule, value);
+    else if (rule.kind === 'status') message = validateStatusField_(rule, value);
+    else message = validateTextField_(rule, value);
+    if (message) errors.push(message);
   });
-  var hours = Number(item.今日工時);
-  if (isNaN(hours) || hours < 0) errors.push('今日工時需為非負數');
-  var progress = Number(item.完成度);
-  if (isNaN(progress) || progress < 0 || progress > 100) errors.push('完成度需介於 0–100');
   return errors;
 }
 

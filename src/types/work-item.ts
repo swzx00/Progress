@@ -15,8 +15,9 @@ export interface WorkItem {
   已刪除: boolean;
 }
 
+// 預計期限是選填，沒填（空字串）不算逾期；空字串在字串比較上永遠小於任何日期，要先排除
 export const isOverdue = (item: WorkItem, today: string): boolean =>
-  item.完成度 < 100 && item.預計期限 < today;
+  item.預計期限 !== '' && item.完成度 < 100 && item.預計期限 < today;
 
 export interface WorkItemOptions {
   交辦單位: string[];

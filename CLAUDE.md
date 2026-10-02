@@ -35,13 +35,15 @@
 | 交辦人員 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
 | 專案名稱 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
 | **專案Repo**（新增） | 選填，可搜尋的**多選**下拉選單（來自「選項清單」分頁，同上可自訂新值），可填多個 repo 名稱（例如 `AAA`、`BBBB`）。Sheet 儲存格存成逗號分隔的字串（如 `AAA,BBBB`），前端拆開後以 `#AAA` `#BBBB` 標籤呈現；沒有值就不顯示 |
-| 工作目標 | 文字（原欄名「工作內容」） |
-| 處理內容 | 文字，語意＝工作日期當天的處理情形（原欄名「今日處理情形」） |
-| 今日工時 | 數字（語意＝工作日期當天的工時），需為非負數 |
-| 預計期限 | 日期（原欄名「預計完成期限」）。格式同「工作日期」，見下方「日期欄位格式」 |
-| 完成度 | 數字，限制 0–100（原欄名「完成%」，改名後鍵名不含特殊字元，程式裡可直接用 `item.完成度` 不用中括號） |
-| 狀態 | 簡單下拉選單（不用搜尋），固定選項：`進行中`／`前端完成`／`返修`／`待辦`／`確認上線`／`暫緩`，可留空（原欄名「完成回報」） |
+| 工作目標 | 文字，必填（原欄名「工作內容」） |
+| 處理內容 | 文字，選填，語意＝工作日期當天的處理情形（原欄名「今日處理情形」） |
+| 今日工時 | 數字，選填（預設 0），0–24、以 0.25 小時為單位（語意＝工作日期當天的工時） |
+| 預計期限 | 日期，選填（原欄名「預計完成期限」）。格式同「工作日期」，見下方「日期欄位格式」。沒填不算逾期 |
+| 完成度 | 數字，選填（預設 0），0–100 的整數（原欄名「完成%」，改名後鍵名不含特殊字元，程式裡可直接用 `item.完成度` 不用中括號） |
+| 狀態 | 簡單下拉選單（不用搜尋），必填，預設 `待辦`，固定選項：`進行中`／`前端完成`／`返修`／`待辦`／`確認上線`／`暫緩`（原欄名「完成回報」）。舊資料可能是空的，編輯時表單預設帶 `待辦` |
 | **已刪除**（系統） | TRUE/FALSE，軟刪除標記，不做真刪除 |
+
+**欄位驗證規則**（必填、字數、數值範圍等）完整定義在 `shared/validation-schema.json`，見下方「共用驗證 schema 同步方式」與「UI/UX 定案」的表單驗證段落。
 
 **表格顯示的合併欄位**（僅畫面呈現合併，資料仍是各自獨立欄位，表頭文字也標明合併了哪些欄位）：
 - **交辦單位 + 交辦人員**：共用一欄，表頭寫「交辦單位/人員」。手機卡片版面較寬，呈現單行「某某某（OO部門）」；桌面表格的這欄是固定窄欄（110px），單行塞不下，改呈現兩行堆疊「OO部門」換行「某某某」
@@ -73,7 +75,7 @@
   - `update`：payload 額外帶 `originalDate`（這筆紀錄修改前的工作日期），換算出**原本**月份分頁去定位 `ID`。若 `item.工作日期` 跟 `originalDate` 換算出的月份不同（使用者把工作日期改到別的月份），先從原分頁刪除該列、在新月份分頁新增一列，維持每筆紀錄只存在一個分頁。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天（不論同月或跨月），在新的那天用 `getNextDailyIndex_` 重新編號
   - `delete`：payload 帶 `originalDate`，換算月份分頁定位 `ID`，將「已刪除」設為 TRUE
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見下方「選項清單管理」
-- 後端必須重複驗證前端已做過的規則（完成度限制 0–100、今日工時非負數、必填欄位不可為空等），因為 API 網址公開，理論上可被繞過前端直接呼叫
+- 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100 整數、狀態在固定選項內、日期格式與年份、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
 
@@ -112,16 +114,21 @@ src/
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢，見下方「台灣國定假日顯示」
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message)／hideToast()
+  validation/
+    work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
     tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），預留深色模式擴充，元件一律吃變數不寫死 hex
 shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # clasp 專案（Apps Script 原始碼版控）
   Code.gs
-  build/schema.gs           # 由 shared/validation-schema.json 產生，build 時自動同步
+  build/schema.gs           # （規劃中，尚未實作）由 shared/validation-schema.json 產生
 ```
 
-**共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端直接 import；另有一支 build script（`npm run build:gs`）在建置階段把這份 JSON 轉成 Apps Script 可讀的 `schema.gs`，避免手動維護兩份規則。
+**共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端 `src/validation/work-item.ts` 直接 import。**目前 `Code.gs` 的 `VALIDATION_RULES` 是手動同步的**——原本規劃的 build script（`npm run build:gs`，把 JSON 轉成 Apps Script 可讀的 `schema.gs`）還沒實作，`apps-script/` 也還沒設定 clasp（目前是手動把 `Code.gs` 貼到 Apps Script 編輯器部署）。改 JSON 時 `Code.gs` 要一起改。
+
+- 狀態的可選值不在 JSON 裡，放在 `src/types/work-item.ts` 的 `STATUS_OPTIONS`（TypeScript 需要 `as const` 字面值型別才能推導 `Status` 型別），`Code.gs` 的 `STATUS_OPTIONS` 也是手動同步
+- 日期的年份範圍用 `minYear`／`maxYear` 表示，不寫完整日期字串，前端（`YYYY-MM-DD`）與 API（`YYYY/MM/DD`）格式不同也能共用同一份規則
 
 **開發工具鏈**：
 - **ESLint**（flat config，`eslint.config.js`）：`eslint-plugin-vue` + `@vue/eslint-config-typescript`，`npm run lint` 檢查程式碼品質（未使用變數、type 錯誤等）
@@ -201,7 +208,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   4. **色階怎麼選色**：今天／非今天用的底色不是隨便挑的中間值，是直接拿 `blue`／`black` 色階上對應深淺位置的既有色階（`-000`／`-050`／`-100`），見上方「色彩 token：統一用色階，不分用途」
 - **`WorkItemTable` 桌面（≥768px）版面：留白責任從「容器」移到「列」**——`.work-item-table` 本身不留左右 padding，列的背景／底線因此橫向撐滿到 `.home-view` 的邊緣（跟 `DateNav` 一樣是無側邊留白的全寬區塊，不會被關進一個縮排的框裡），改成 `.work-item-table__row` 自己吃 `padding: 0 32px`，讓儲存格內容的起始位置對齊 `DateNav` 的 32px 內距。這是取捨過的結果：容器留白會讓表格看起來卡在一個框裡、跟滿版的 `DateNav` 不協調；容器和 `DateNav` 一起不留白，`DateNav` 的按鈕又會貼到畫面邊緣，兩種都試過、都不好看，所以拆成「列背景滿版、列內容對齊」。手機（< 768px）維持原本容器留白＋卡片式列表（各自有 border/border-radius/margin），這條只套用在桌面的表格版面
 - **桌面表格資料列（不含表頭）用斑馬紋**：單數列（第 1、3、5…筆）底色比雙數列略深，方便橫向對齊閱讀；今天／非今天各自用一組色階（見上方「今天／非今天要有視覺區別」第 3 點）。**實作上的坑**：表頭在 DOM 上是 `.work-item-table` 底下第一個 child，資料列因此整體被往後推一格，所以「第 1 筆資料」對應的 CSS selector 其實是 `:nth-child(even)`，不是看起來更直覺的 `:nth-child(odd)`，程式碼裡有寫註解記錄這件事。只在桌面套用（手機卡片各自有留白間隔，斑馬紋在卡片版面上沒有意義）
-- 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面
+- 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面。預計期限是選填，沒填不算逾期（`types/work-item.ts` 的 `isOverdue` 要先排除空字串：空字串在字串比較上永遠小於任何日期）
 - **「狀態」欄位的樣式**：桌面表格維持純文字（顏色沿用儲存格原本的文字色）；手機卡片是**透明底＋邊框的膠囊**（`.work-item-table__status`），邊框用 `currentcolor`，每個狀態只要設一次 `color`，邊框自動同色。桌面版的還原寫在 `&__status` 區塊最後的 `@media` 裡（`color: inherit`、去掉框線與內距），依照「RWD 斷點」的巢狀寫法規定，必須排在所有狀態修飾符之後才蓋得過
   - 顏色對應（寫在 `WorkItemTable.vue` 的 `&__status--*` 修飾符）：待辦 `--color-black-600` `#495057`／進行中 `--color-blue-700` `#0f47b8`／前端完成 `--color-teal-800` `#005c75`／返修 `--color-red-700` `#a51028`／確認上線 `--color-green-800` `#3a6c14`／暫緩 `--color-yellow-800` `#8f590d`
   - 選階原則：卡片底色有白、灰（`--color-black-050`）、今天的淡藍（`--color-blue-050`）三種，每個色系挑「在淡藍底上對比度仍 ≥ 4.5:1（WCAG AA 小字標準）」的**最淺**一階。所以主色 `blue-500`／`red-600`（淡藍底 4.0／4.5）不用、改用 700；`teal-700`（4.59）太貼近下限改用 800；`green-700`（3.53）不夠改用 800；`yellow-800`（4.90）剛好夠。暫緩選 Yellow 不選 Orange，是為了跟返修的紅色拉開距離（曾試過改成 `orange-700`，但跟返修 `red-700` 色相太接近，非今天放假日的淡橘色列上也會跟背景融在一起，所以維持 yellow）
@@ -215,11 +222,33 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - `danger`（破壞性動作）：動作按鈕用**紅色文字**（`--color-red-600`），不是紅色實心底；預設按鈕（粗體、開啟時取得焦點、按 Enter 觸發）是比較安全的「取消」，避免誤按就執行破壞性動作
   - 非 `danger`：動作按鈕是預設按鈕（主色實心底、取得焦點）
   - **開關動畫**：參照 `OptionsManagerModal` 桌面版的淡入＋輕微縮放（背景淡入、卡片 `scale(0.95)` → 1，0.2s）。`ConfirmDialog` 手機也是置中卡片，所以不分斷點都用這組，不套 `OptionsManagerModal` 手機的「由下滑入」。動畫 class 寫在 `ConfirmDialog` 自己的 scoped style，**使用端要用 `<Transition name="confirm-dialog">` 包住 `<ConfirmDialog v-if>`**（`HomeView`、`OptionsManagerModal`、`WorkItemForm` 三處都有包），新增使用的地方也要記得包；跟 `OptionsManagerModal` 一樣，根元素要宣告 `transition-duration`，Vue 才等得到離場動畫播完
-- **表單（`WorkItemForm.vue`）的項次欄**：跟「工作日期」放在同一行（同一個醒目框裡，項次是右側 72px 窄欄），一律 `disabled`，使用者不能自訂
+- **表單（`WorkItemForm.vue`）的項次欄**：跟「工作日期」放在同一行（項次是右側窄欄），只負責顯示。**刻意不用 `<input>`**，改用外觀模仿停用輸入框的 `<div class="work-item-form__readonly">`（灰底灰框），不是表單控制項，使用者無從輸入（使用者決定）；沒有值時顯示淡灰色的「項次」當 placeholder。就算用開發者工具改了畫面上的數字也影響不到 Sheet：送出的資料不含項次，後端也會忽略前端送來的值
   - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
-  - 新增，或編輯時把工作日期改到別天：顯示那天的預計項次（`fetchNextIndex`，沿用 `doGet` 的 `date` 查詢自己算，不另開 API、不影響表格的 `items`）；查詢中顯示「…」、失敗顯示「—」，不擋存檔。連續改日期只採用最後一次查詢的結果
+  - 新增，或編輯時把工作日期改到別天：顯示那天的預計項次（`fetchNextIndex`，沿用 `doGet` 的 `date` 查詢自己算，不另開 API、不影響表格的 `items`）；查詢中或失敗時留空（顯示 placeholder），不擋存檔。連續改日期只採用最後一次查詢的結果
   - 預計項次只是參考值，實際項次由後端寫入當下決定（中間若有其他新增，號碼可能較大）
 - 表單欄位順序：工作日期／項次 → 交辦單位／交辦人員 → 專案名稱 → 專案 Repo → 工作目標 → 處理內容 → 今日工時 → 完成度 → 預計期限 → 狀態
+- **表單欄位規格**（使用者定案；規則數值以 `shared/validation-schema.json` 為準）：
+
+  | 欄位 | 必填 | 預設 | placeholder | 限制 |
+  |---|---|---|---|---|
+  | 工作日期 | ✅ | DateNav 選到的那天（`HomeView` 傳 `default-date`） | 請選擇工作日期 | 年份 2020–2099 |
+  | 交辦單位／交辦人員／專案名稱 | ✅ | — | 請選擇交辦單位／交辦人員／專案名稱 | ≤ 50 字 |
+  | 專案 Repo | 選填 | — | 請選擇專案 Repo (選填) | 每個 ≤ 50 字、最多 10 個、不可含逗號（Sheet 用逗號串成一格存） |
+  | 工作目標 | ✅ | — | 請填寫工作目標 | ≤ 500 字（textarea） |
+  | 處理內容 | 選填 | — | 請填寫處理內容 | ≤ 2000 字（textarea） |
+  | 今日工時 | 選填 | 0 | 請填寫今日工時 | 0–24，`step` 0.25；清空送出時用 0 |
+  | 完成度 | 選填 | 0 | 請填寫完成度(%) | 0–100 整數；清空送出時用 0 |
+  | 預計期限 | 選填 | — | 請選擇預計期限 | 年份 2020–2099 |
+  | 狀態 | ✅ | 待辦（編輯舊資料狀態為空時也帶待辦） | 請選擇狀態 | 固定選項，不可清除 |
+
+  - 日期欄維持原生 `<input type="date">`（使用者決定，手機用系統原生滾輪）：原生日期欄會忽略 `placeholder`，空白時顯示的是瀏覽器自己的「年／月／日」，所以「預計期限」的 placeholder 實際上看不到，屬已知限制
+  - 送出時文字欄位去掉前後空白
+  - **單選 `NSelect` 的 placeholder**：`NSelect` 只有值是 `null` 時才顯示 placeholder，空字串會被當成「選了一個空的值」而不顯示。表單內部（驗證、送出、快照比對）維持用空字串代表「沒選」，交辦單位／交辦人員／專案名稱／狀態綁定 `NSelect` 時經過 `selectModel()` 這層 computed 互轉（`'' ↔ null`）；多選的專案 Repo 是空陣列，本來就正常
+  - 必填欄位的名稱後面加紅色「＊」（`--color-red-600`，`aria-hidden`），是否顯示由 `isRequired(field)` 讀 schema 的 `required` 決定，不寫死在 template；欄位名稱跟＊包在 `.work-item-form__label` 裡（label 是 flex column，不包的話＊會被擠到下一行）
+- **表單驗證**（`src/validation/work-item.ts` 的 `validateWorkItem`）：`<form novalidate>` 關掉瀏覽器內建驗證，全部欄位統一走自訂驗證（交辦單位、狀態等是 `NSelect`，不是原生欄位，內建 `required` 檢查不到）
+  - 第一次按「儲存」才開始顯示錯誤；之後每次修改即時重新驗證，修正後錯誤馬上消失
+  - 錯誤呈現：欄位下方紅字（`--color-red-600`）＋欄位框變紅（原生欄位用 `.work-item-form__field--invalid`，`NSelect` 用 `status="error"`），並捲動到第一個錯誤欄位、聚焦其中的輸入框
+  - textarea 另外設了 `maxlength`，打字時就擋在上限，不用等送出
 - **儲存失敗的處理**（`HomeView.vue` 的 `onSave`／`handleSaveError`）：不在頁面上顯示錯誤文字，一律用 `AppToast` 顯示錯誤訊息
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
@@ -344,6 +373,7 @@ npm run format     # Prettier 格式化 src/
 - 部署這次的日期格式改動後，在 Apps Script 編輯器手動執行一次 `fixExistingMonthSheetDateFormats()`，把已存在的月份分頁（例如 `2026-09`）補上 `yyyy/mm/dd` 儲存格格式（新分頁會自動套用，不用做這件事；見上方「日期欄位格式」）
 - ~~重新部署 `Code.gs`，`doPost` 登入失敗多回 `code: 'UNAUTHORIZED'`~~（已完成，第 5 版）
 - 重新部署 `Code.gs`（項次改成每天編號）：貼到 Apps Script 編輯器後，「管理部署作業」編輯既有部署、版本選「新版本」，網址不變。部署後在編輯器的「執行」選單手動執行一次 `renumberDailyIndexes()`，把既有資料的項次重新編成每天 1、2、3（未刪除的照現有順序重編，已刪除的維持原號）
+- 重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回
 
 ---
 
