@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
+import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DateNav from '@/components/DateNav.vue';
@@ -153,10 +154,7 @@ const confirmDelete = async (): Promise<void> => {
       </template>
     </DateNav>
 
-    <div v-if="loading" class="home-view__loading">
-      <span class="home-view__spinner" aria-hidden="true"></span>
-      <span>載入中…</span>
-    </div>
+    <AppLoading v-if="loading" class="home-view__loading" />
     <div v-else-if="error" class="home-view__error">
       <span class="home-view__error-icon" aria-hidden="true">⚠</span>
       <span>{{ error }}</span>
@@ -325,30 +323,10 @@ const confirmDelete = async (): Promise<void> => {
     border-radius: 6px;
   }
 
+  // 轉圈＋文字的樣式在 AppLoading 裡，這裡只管它在頁面上佔的空間
   &__loading {
-    display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
-    gap: 12px;
-    align-items: center;
-    justify-content: center;
     padding: 48px 0;
-    color: var(--color-black-500);
-  }
-
-  &__spinner {
-    width: 28px;
-    height: 28px;
-    border: 3px solid var(--color-black-100);
-    border-top-color: var(--color-blue-500);
-    border-radius: 50%;
-    animation: home-view-spin 0.7s linear infinite;
-  }
-
-  @keyframes home-view-spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   &__error {
