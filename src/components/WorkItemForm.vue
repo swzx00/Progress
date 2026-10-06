@@ -502,7 +502,6 @@ const onSubmit = (): void => {
     // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
     // 同樣寫在 .work-item-form__row--highlight 之後，才蓋得過工作日期的藍色邊框
     &--invalid {
-
       input,
       textarea {
         border-color: var(--color-red-600);
