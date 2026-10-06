@@ -106,6 +106,7 @@ src/
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次，見「UI/UX 定案」
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
+    AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     AppToast.vue          # 錯誤提示 Toast，畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
     ProjectAutocomplete.vue
@@ -217,6 +218,11 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
 - **表單關閉前的未儲存確認**：`WorkItemForm` 打開時存一份欄位快照，「✕」「取消」、點背景三個關閉入口都走 `requestClose()`，跟快照比對有差異才跳 `ConfirmDialog`（「要放棄變更嗎？」，按鈕「繼續編輯」／「放棄變更」），沒差異（含改了又改回原值）直接關閉。存檔成功、登入錯誤強制關閉是 `HomeView` 直接關，不經過這個確認
   - **關閉順序**：按「放棄變更」時先關確認對話框，等它的離場動畫播完（`Transition` 的 `@after-leave`）才 `emit('cancel')` 關表單；不能同時關，否則表單滑出時會把還沒消失的對話框一起帶走，順序看起來是反的（使用者要求）
+- **表單送出中（`saving`）防止重複送出**（使用者要求）：兩層一起做，不互相取代
+  - 滿版 Loading 遮罩：`saving` 時在 `WorkItemForm` 最上層蓋 `.work-item-form__loading-mask`（半透明白，中間 `<AppLoading label="儲存中…" />`），擋住所有點擊；Toast（`z-index: 200`）仍在遮罩上方，存檔失敗看得到訊息
+  - 欄位與按鈕本身也停用：所有原生欄位、`NSelect`、「✕」「取消」「儲存」都綁 `:disabled="saving"`（遮罩擋不住鍵盤，停用才能擋 Tab／打字）；`onSubmit()`、`requestClose()` 開頭也檢查 `saving`，點背景關閉（`div` 無法 disabled）靠後者擋
+  - 存檔失敗 `saving` 變回 false，遮罩消失、欄位恢復可編輯，已填內容保留
+  - 狀態名稱維持 `saving` 不改成 `pending`（使用者確認）：表單只有「儲存」一種非同步操作，名稱越具體越好讀
 - **確認對話框（`ConfirmDialog`）的按鈕配置照 Apple Human Interface Guidelines（Alerts）**（使用者決定，全站確認對話框統一）：
   - 取消在左、動作在右；按鈕文字用具體動詞（例如「刪除」「放棄變更」），不用「確定／是」
   - `danger`（破壞性動作）：動作按鈕用**紅色文字**（`--color-red-600`），不是紅色實心底；預設按鈕（粗體、開啟時取得焦點、按 Enter 觸發）是比較安全的「取消」，避免誤按就執行破壞性動作
