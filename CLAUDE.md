@@ -373,6 +373,7 @@ npm run format     # Prettier 格式化 src/
 - 部署這次的日期格式改動後，在 Apps Script 編輯器手動執行一次 `fixExistingMonthSheetDateFormats()`，把已存在的月份分頁（例如 `2026-09`）補上 `yyyy/mm/dd` 儲存格格式（新分頁會自動套用，不用做這件事；見上方「日期欄位格式」）
 - ~~重新部署 `Code.gs`，`doPost` 登入失敗多回 `code: 'UNAUTHORIZED'`~~（已完成，第 5 版）
 - 重新部署 `Code.gs`（項次改成每天編號）：貼到 Apps Script 編輯器後，「管理部署作業」編輯既有部署、版本選「新版本」，網址不變。部署後在編輯器的「執行」選單手動執行一次 `renumberDailyIndexes()`，把既有資料的項次重新編成每天 1、2、3（未刪除的照現有順序重編，已刪除的維持原號）
+- 重新部署 `Code.gs`（修正 ID 欄位對不上：Sheet 表頭是大寫 `ID`，API／前端鍵名是小寫 `id`，原本新增時 UUID 沒寫進 Sheet、讀取時也回傳 `ID` 鍵，導致編輯/刪除一律「找不到這筆紀錄」；現在由 `rowToItem_`／`itemToRow_` 用 `ID_HEADER`／`ID_KEY` 互轉）。部署後在編輯器的「執行」選單手動執行一次 `fillMissingIds()`，把既有 ID 空白的紀錄補上 UUID（已有 ID 的不動），不補的話那些舊資料還是無法編輯/刪除
 - 重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回
 
 ---

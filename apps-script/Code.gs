@@ -34,6 +34,9 @@ var NUMBER_FIELDS = ['今日工時', '完成度'];
 var ARRAY_FIELDS = ['專案Repo'];
 var BOOLEAN_FIELDS = ['已刪除'];
 var DATE_FIELDS = ['工作日期', '預計期限'];
+// Sheet 表頭是大寫「ID」，API／前端的物件鍵名是小寫「id」，讀寫時在這裡互轉
+var ID_HEADER = 'ID';
+var ID_KEY = 'id';
 
 // 欄位驗證規則：手動同步自 shared/validation-schema.json（前後端共用的唯一事實來源，
 // npm run build:gs 自動轉檔尚未實作），改那份 JSON 時這裡要一起改
@@ -153,6 +156,32 @@ function renumberDailyIndexes() {
   });
 }
 
+// 一次性遷移用：補上 ID 是空白的紀錄。修正前 handleCreate_ 產生的 UUID 放在 item.id，
+// 但表頭是「ID」，對不上所以沒寫進 Sheet，那段期間新增的紀錄 ID 都是空的，編輯/刪除找不到列。
+// 掃過所有月份分頁，只補空白的 ID，已有 ID 的不動。用法同 renumberDailyIndexes()，
+// 在 Apps Script 編輯器手動執行一次即可（名稱不加結尾底線的理由也一樣）。
+function fillMissingIds() {
+  var ss = getSpreadsheet_();
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    var idCol = getColumnMap_(sheet)[ID_HEADER];
+    if (!idCol) return;
+    var range = sheet.getRange(2, idCol, lastRow - 1, 1);
+    var ids = range.getValues();
+    var changed = false;
+    ids.forEach(function (row) {
+      if (!String(row[0]).trim()) {
+        row[0] = Utilities.getUuid();
+        changed = true;
+      }
+    });
+    if (changed) range.setValues(ids);
+  });
+}
+
 // 讀表頭列，回傳 {欄位名稱: 1-based 欄位編號}，讀寫都靠這個對應表查位置，
 // 不寫死欄位順序，之後 Sheet 欄位順序調整不會壞掉。
 function getColumnMap_(sheet) {
@@ -176,7 +205,9 @@ function rowToItem_(colMap, rowValues) {
   var item = {};
   Object.keys(colMap).forEach(function (key) {
     var raw = rowValues[colMap[key] - 1];
-    if (ARRAY_FIELDS.indexOf(key) !== -1) {
+    if (key === ID_HEADER) {
+      item[ID_KEY] = raw === undefined || raw === null ? '' : String(raw);
+    } else if (ARRAY_FIELDS.indexOf(key) !== -1) {
       item[key] = raw
         ? String(raw)
             .split(',')
@@ -203,9 +234,10 @@ function rowToItem_(colMap, rowValues) {
 function itemToRow_(colMap, headerCount, item) {
   var row = new Array(headerCount).fill('');
   Object.keys(colMap).forEach(function (key) {
-    if (!(key in item)) return;
+    var itemKey = key === ID_HEADER ? ID_KEY : key;
+    if (!(itemKey in item)) return;
     var col = colMap[key];
-    var value = item[key];
+    var value = item[itemKey];
     if (ARRAY_FIELDS.indexOf(key) !== -1) {
       row[col - 1] = Array.isArray(value) ? value.join(',') : '';
     } else if (BOOLEAN_FIELDS.indexOf(key) !== -1) {
@@ -220,7 +252,7 @@ function itemToRow_(colMap, headerCount, item) {
 function findRowById_(sheet, colMap, id) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
-  var idCol = colMap.ID;
+  var idCol = colMap[ID_HEADER];
   var ids = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
     if (ids[i][0] === id) return i + 2; // 實際列號，1-based，跳過表頭
