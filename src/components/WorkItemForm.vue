@@ -2,6 +2,7 @@
 import { NSelect, type SelectOption } from 'naive-ui';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
+import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchNextIndex } from '@/composables/useWorkItems';
@@ -144,6 +145,8 @@ const isDirty = computed(() => JSON.stringify(form) !== snapshot.value);
 const discardConfirmOpen = ref(false);
 
 const requestClose = (): void => {
+  // 送出中不能關閉；遮罩是 div 沒辦法 disabled，點遮罩關閉要靠這裡擋
+  if (props.saving) return;
   if (isDirty.value) {
     discardConfirmOpen.value = true;
   } else {
@@ -204,6 +207,8 @@ watch([() => form.工作日期, () => props.item], updateIndexValue, { immediate
 const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'));
 
 const onSubmit = (): void => {
+  // 按鈕停用只擋得住畫面操作，這裡再擋一次，避免重複送出兩筆
+  if (props.saving) return;
   submitAttempted = true;
   errors.value = validateWorkItem(form);
   if (Object.keys(errors.value).length > 0) {
@@ -233,7 +238,8 @@ const onSubmit = (): void => {
     <div class="work-item-form__panel" role="dialog" aria-modal="true">
       <div class="work-item-form__header">
         <h2 class="work-item-form__title">{{ title }}</h2>
-        <button type="button" aria-label="關閉" class="work-item-form__close-btn" @click="requestClose">
+        <button type="button" aria-label="關閉" class="work-item-form__close-btn" :disabled="saving"
+          @click="requestClose">
           ✕
         </button>
       </div>
@@ -246,7 +252,7 @@ const onSubmit = (): void => {
               <span v-if="isRequired('工作日期')" class="work-item-form__required" aria-hidden="true">＊</span>
             </span>
             <input v-model="form.工作日期" type="date" placeholder="請選擇工作日期" required :min="workDateRange.min"
-              :max="workDateRange.max" />
+              :max="workDateRange.max" :disabled="saving" />
             <span v-if="errors.工作日期" class="work-item-form__error">{{ errors.工作日期 }}</span>
           </label>
           <!-- 項次只負責顯示，刻意不用 input（不是表單控制項，使用者無從輸入），外層也就不用 label -->
@@ -266,7 +272,7 @@ const onSubmit = (): void => {
               <span v-if="isRequired('交辦單位')" class="work-item-form__required" aria-hidden="true">＊</span>
             </span>
             <NSelect v-model:value="unitModel" filterable tag :options="unitOptions"
-              :status="errors.交辦單位 ? 'error' : undefined" placeholder="請選擇交辦單位" />
+              :status="errors.交辦單位 ? 'error' : undefined" placeholder="請選擇交辦單位" :disabled="saving" />
             <span v-if="errors.交辦單位" class="work-item-form__error">{{ errors.交辦單位 }}</span>
           </label>
           <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.交辦人員 }">
@@ -275,7 +281,7 @@ const onSubmit = (): void => {
               <span v-if="isRequired('交辦人員')" class="work-item-form__required" aria-hidden="true">＊</span>
             </span>
             <NSelect v-model:value="assigneeModel" filterable tag :options="assigneeOptions"
-              :status="errors.交辦人員 ? 'error' : undefined" placeholder="請選擇交辦人員" />
+              :status="errors.交辦人員 ? 'error' : undefined" placeholder="請選擇交辦人員" :disabled="saving" />
             <span v-if="errors.交辦人員" class="work-item-form__error">{{ errors.交辦人員 }}</span>
           </label>
         </div>
@@ -286,14 +292,14 @@ const onSubmit = (): void => {
             <span v-if="isRequired('專案名稱')" class="work-item-form__required" aria-hidden="true">＊</span>
           </span>
           <NSelect v-model:value="projectModel" filterable tag :options="projectOptions"
-            :status="errors.專案名稱 ? 'error' : undefined" placeholder="請選擇專案名稱" />
+            :status="errors.專案名稱 ? 'error' : undefined" placeholder="請選擇專案名稱" :disabled="saving" />
           <span v-if="errors.專案名稱" class="work-item-form__error">{{ errors.專案名稱 }}</span>
         </label>
 
         <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.專案Repo }">
           專案 Repo（可多個）
           <NSelect v-model:value="form.專案Repo" filterable multiple tag :options="repoOptions"
-            :status="errors.專案Repo ? 'error' : undefined" placeholder="請選擇專案 Repo (選填)" />
+            :status="errors.專案Repo ? 'error' : undefined" placeholder="請選擇專案 Repo (選填)" :disabled="saving" />
           <span v-if="errors.專案Repo" class="work-item-form__error">{{ errors.專案Repo }}</span>
         </label>
 
@@ -303,34 +309,35 @@ const onSubmit = (): void => {
             <span v-if="isRequired('工作目標')" class="work-item-form__required" aria-hidden="true">＊</span>
           </span>
           <textarea v-model="form.工作目標" rows="2" placeholder="請填寫工作目標" required
-            :maxlength="WORK_ITEM_RULES.工作目標.maxLength" />
+            :maxlength="WORK_ITEM_RULES.工作目標.maxLength" :disabled="saving" />
           <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
         </label>
 
         <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.處理內容 }">
           處理內容
-          <textarea v-model="form.處理內容" rows="2" placeholder="請填寫處理內容" :maxlength="WORK_ITEM_RULES.處理內容.maxLength" />
+          <textarea v-model="form.處理內容" rows="2" placeholder="請填寫處理內容" :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
+            :disabled="saving" />
           <span v-if="errors.處理內容" class="work-item-form__error">{{ errors.處理內容 }}</span>
         </label>
 
         <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.今日工時 }">
           今日工時
           <input v-model.number="form.今日工時" type="number" placeholder="請填寫今日工時" :min="WORK_ITEM_RULES.今日工時.min"
-            :max="WORK_ITEM_RULES.今日工時.max" :step="WORK_ITEM_RULES.今日工時.step" />
+            :max="WORK_ITEM_RULES.今日工時.max" :step="WORK_ITEM_RULES.今日工時.step" :disabled="saving" />
           <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
         </label>
 
         <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.完成度 }">
           完成度 (0–100)
           <input v-model.number="form.完成度" type="number" placeholder="請填寫完成度(%)" :min="WORK_ITEM_RULES.完成度.min"
-            :max="WORK_ITEM_RULES.完成度.max" :step="WORK_ITEM_RULES.完成度.step" />
+            :max="WORK_ITEM_RULES.完成度.max" :step="WORK_ITEM_RULES.完成度.step" :disabled="saving" />
           <span v-if="errors.完成度" class="work-item-form__error">{{ errors.完成度 }}</span>
         </label>
 
         <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.預計期限 }">
           預計期限
-          <input v-model="form.預計期限" type="date" placeholder="請選擇預計期限" :min="deadlineRange.min"
-            :max="deadlineRange.max" />
+          <input v-model="form.預計期限" type="date" placeholder="請選擇預計期限" :min="deadlineRange.min" :max="deadlineRange.max"
+            :disabled="saving" />
           <span v-if="errors.預計期限" class="work-item-form__error">{{ errors.預計期限 }}</span>
         </label>
 
@@ -340,18 +347,25 @@ const onSubmit = (): void => {
             <span v-if="isRequired('狀態')" class="work-item-form__required" aria-hidden="true">＊</span>
           </span>
           <NSelect v-model:value="statusModel" :options="statusOptions" :status="errors.狀態 ? 'error' : undefined"
-            placeholder="請選擇狀態" />
+            placeholder="請選擇狀態" :disabled="saving" />
           <span v-if="errors.狀態" class="work-item-form__error">{{ errors.狀態 }}</span>
         </label>
       </form>
 
       <div class="work-item-form__footer">
-        <button type="button" class="work-item-form__btn" @click="requestClose">取消</button>
+        <button type="button" class="work-item-form__btn" :disabled="saving" @click="requestClose">
+          取消
+        </button>
         <button type="submit" form="work-item-form-body" class="work-item-form__btn work-item-form__btn--primary"
           :disabled="saving">
           {{ saving ? '儲存中…' : '儲存' }}
         </button>
       </div>
+    </div>
+
+    <!-- 送出中蓋一層滿版遮罩，擋住所有點擊，避免重複送出或誤操作；欄位與按鈕本身也都停用 -->
+    <div v-if="saving" class="work-item-form__loading-mask">
+      <AppLoading label="儲存中" />
     </div>
 
     <Transition name="confirm-dialog" @after-leave="onDiscardDialogAfterLeave">
@@ -418,6 +432,11 @@ const onSubmit = (): void => {
     cursor: pointer;
     background: transparent;
     border: none;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
   }
 
   &__body {
@@ -493,6 +512,13 @@ const onSubmit = (): void => {
       color: var(--color-black-800);
       border: 1px solid var(--color-black-100);
       border-radius: 6px;
+
+      // 送出中停用（NSelect 用自己的 disabled 樣式）
+      &:disabled {
+        color: var(--color-black-500);
+        cursor: not-allowed;
+        background: var(--color-black-050);
+      }
     }
 
     textarea {
@@ -502,6 +528,7 @@ const onSubmit = (): void => {
     // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
     // 同樣寫在 .work-item-form__row--highlight 之後，才蓋得過工作日期的藍色邊框
     &--invalid {
+
       input,
       textarea {
         border-color: var(--color-red-600);
@@ -575,6 +602,24 @@ const onSubmit = (): void => {
       background: var(--color-blue-500);
       border: none;
     }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+
+  // 送出中的滿版遮罩：疊在 panel 與背景之上（同一個 .work-item-form 內，DOM 順序在後），
+  // Toast（z-index 200）仍在它上方，存檔失敗的訊息看得到。
+  // 半透明白無法用色階 token（CSS 變數的 hex 不能加透明度），同 __backdrop 寫死 rgb()
+  &__loading-mask {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: wait;
+    background: rgb(255 255 255 / 70%);
   }
 
   /*
