@@ -238,116 +238,255 @@ const onSubmit = (): void => {
     <div class="work-item-form__panel" role="dialog" aria-modal="true">
       <div class="work-item-form__header">
         <h2 class="work-item-form__title">{{ title }}</h2>
-        <button type="button" aria-label="關閉" class="work-item-form__close-btn" :disabled="saving"
-          @click="requestClose">
+        <button
+          type="button"
+          aria-label="關閉"
+          class="work-item-form__close-btn"
+          :disabled="saving"
+          @click="requestClose"
+        >
           ✕
         </button>
       </div>
 
-      <form id="work-item-form-body" ref="formEl" class="work-item-form__body" novalidate @submit.prevent="onSubmit">
+      <form
+        id="work-item-form-body"
+        ref="formEl"
+        class="work-item-form__body"
+        novalidate
+        @submit.prevent="onSubmit"
+      >
         <div class="work-item-form__row work-item-form__row--highlight">
-          <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.工作日期 }">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.工作日期 }"
+          >
             <span class="work-item-form__label">
               工作日期
-              <span v-if="isRequired('工作日期')" class="work-item-form__required" aria-hidden="true">＊</span>
+              <span
+                v-if="isRequired('工作日期')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
             </span>
-            <input v-model="form.工作日期" type="date" placeholder="請選擇工作日期" required :min="workDateRange.min"
-              :max="workDateRange.max" :disabled="saving" />
+            <input
+              v-model="form.工作日期"
+              type="date"
+              placeholder="請選擇工作日期"
+              required
+              :min="workDateRange.min"
+              :max="workDateRange.max"
+              :disabled="saving"
+            />
             <span v-if="errors.工作日期" class="work-item-form__error">{{ errors.工作日期 }}</span>
           </label>
           <!-- 項次只負責顯示，刻意不用 input（不是表單控制項，使用者無從輸入），外層也就不用 label -->
           <div class="work-item-form__field work-item-form__field--index">
             項次
-            <div class="work-item-form__readonly"
-              :class="{ 'work-item-form__readonly--placeholder': indexValue === null }">
+            <div
+              class="work-item-form__readonly"
+              :class="{ 'work-item-form__readonly--placeholder': indexValue === null }"
+            >
               {{ indexValue ?? '...' }}
             </div>
           </div>
         </div>
 
         <div class="work-item-form__row">
-          <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.交辦單位 }">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.交辦單位 }"
+          >
             <span class="work-item-form__label">
               交辦單位
-              <span v-if="isRequired('交辦單位')" class="work-item-form__required" aria-hidden="true">＊</span>
+              <span
+                v-if="isRequired('交辦單位')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
             </span>
-            <NSelect v-model:value="unitModel" filterable tag :options="unitOptions"
-              :status="errors.交辦單位 ? 'error' : undefined" placeholder="請選擇交辦單位" :disabled="saving" />
+            <NSelect
+              v-model:value="unitModel"
+              filterable
+              tag
+              :options="unitOptions"
+              :status="errors.交辦單位 ? 'error' : undefined"
+              placeholder="請選擇交辦單位"
+              :disabled="saving"
+            />
             <span v-if="errors.交辦單位" class="work-item-form__error">{{ errors.交辦單位 }}</span>
           </label>
-          <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.交辦人員 }">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.交辦人員 }"
+          >
             <span class="work-item-form__label">
               交辦人員
-              <span v-if="isRequired('交辦人員')" class="work-item-form__required" aria-hidden="true">＊</span>
+              <span
+                v-if="isRequired('交辦人員')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
             </span>
-            <NSelect v-model:value="assigneeModel" filterable tag :options="assigneeOptions"
-              :status="errors.交辦人員 ? 'error' : undefined" placeholder="請選擇交辦人員" :disabled="saving" />
+            <NSelect
+              v-model:value="assigneeModel"
+              filterable
+              tag
+              :options="assigneeOptions"
+              :status="errors.交辦人員 ? 'error' : undefined"
+              placeholder="請選擇交辦人員"
+              :disabled="saving"
+            />
             <span v-if="errors.交辦人員" class="work-item-form__error">{{ errors.交辦人員 }}</span>
           </label>
         </div>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.專案名稱 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.專案名稱 }"
+        >
           <span class="work-item-form__label">
             專案名稱
-            <span v-if="isRequired('專案名稱')" class="work-item-form__required" aria-hidden="true">＊</span>
+            <span v-if="isRequired('專案名稱')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
           </span>
-          <NSelect v-model:value="projectModel" filterable tag :options="projectOptions"
-            :status="errors.專案名稱 ? 'error' : undefined" placeholder="請選擇專案名稱" :disabled="saving" />
+          <NSelect
+            v-model:value="projectModel"
+            filterable
+            tag
+            :options="projectOptions"
+            :status="errors.專案名稱 ? 'error' : undefined"
+            placeholder="請選擇專案名稱"
+            :disabled="saving"
+          />
           <span v-if="errors.專案名稱" class="work-item-form__error">{{ errors.專案名稱 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.專案Repo }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.專案Repo }"
+        >
           專案 Repo（可多個）
-          <NSelect v-model:value="form.專案Repo" filterable multiple tag :options="repoOptions"
-            :status="errors.專案Repo ? 'error' : undefined" placeholder="請選擇專案 Repo (選填)" :disabled="saving" />
+          <NSelect
+            v-model:value="form.專案Repo"
+            filterable
+            multiple
+            tag
+            :options="repoOptions"
+            :status="errors.專案Repo ? 'error' : undefined"
+            placeholder="請選擇專案 Repo (選填)"
+            :disabled="saving"
+          />
           <span v-if="errors.專案Repo" class="work-item-form__error">{{ errors.專案Repo }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.工作目標 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.工作目標 }"
+        >
           <span class="work-item-form__label">
             工作目標
-            <span v-if="isRequired('工作目標')" class="work-item-form__required" aria-hidden="true">＊</span>
+            <span v-if="isRequired('工作目標')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
           </span>
-          <textarea v-model="form.工作目標" rows="2" placeholder="請填寫工作目標" required
-            :maxlength="WORK_ITEM_RULES.工作目標.maxLength" :disabled="saving" />
+          <textarea
+            v-model="form.工作目標"
+            rows="2"
+            placeholder="請填寫工作目標"
+            required
+            :maxlength="WORK_ITEM_RULES.工作目標.maxLength"
+            :disabled="saving"
+          />
           <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.處理內容 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.處理內容 }"
+        >
           處理內容
-          <textarea v-model="form.處理內容" rows="2" placeholder="請填寫處理內容" :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
-            :disabled="saving" />
+          <textarea
+            v-model="form.處理內容"
+            rows="2"
+            placeholder="請填寫處理內容"
+            :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
+            :disabled="saving"
+          />
           <span v-if="errors.處理內容" class="work-item-form__error">{{ errors.處理內容 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.今日工時 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.今日工時 }"
+        >
           今日工時
-          <input v-model.number="form.今日工時" type="number" placeholder="請填寫今日工時" :min="WORK_ITEM_RULES.今日工時.min"
-            :max="WORK_ITEM_RULES.今日工時.max" :step="WORK_ITEM_RULES.今日工時.step" :disabled="saving" />
+          <input
+            v-model.number="form.今日工時"
+            type="number"
+            placeholder="請填寫今日工時"
+            :min="WORK_ITEM_RULES.今日工時.min"
+            :max="WORK_ITEM_RULES.今日工時.max"
+            :step="WORK_ITEM_RULES.今日工時.step"
+            :disabled="saving"
+          />
           <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.完成度 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.完成度 }"
+        >
           完成度 (0–100)
-          <input v-model.number="form.完成度" type="number" placeholder="請填寫完成度(%)" :min="WORK_ITEM_RULES.完成度.min"
-            :max="WORK_ITEM_RULES.完成度.max" :step="WORK_ITEM_RULES.完成度.step" :disabled="saving" />
+          <input
+            v-model.number="form.完成度"
+            type="number"
+            placeholder="請填寫完成度(%)"
+            :min="WORK_ITEM_RULES.完成度.min"
+            :max="WORK_ITEM_RULES.完成度.max"
+            :step="WORK_ITEM_RULES.完成度.step"
+            :disabled="saving"
+          />
           <span v-if="errors.完成度" class="work-item-form__error">{{ errors.完成度 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.預計期限 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.預計期限 }"
+        >
           預計期限
-          <input v-model="form.預計期限" type="date" placeholder="請選擇預計期限" :min="deadlineRange.min" :max="deadlineRange.max"
-            :disabled="saving" />
+          <input
+            v-model="form.預計期限"
+            type="date"
+            placeholder="請選擇預計期限"
+            :min="deadlineRange.min"
+            :max="deadlineRange.max"
+            :disabled="saving"
+          />
           <span v-if="errors.預計期限" class="work-item-form__error">{{ errors.預計期限 }}</span>
         </label>
 
-        <label class="work-item-form__field" :class="{ 'work-item-form__field--invalid': errors.狀態 }">
+        <label
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.狀態 }"
+        >
           <span class="work-item-form__label">
             狀態
-            <span v-if="isRequired('狀態')" class="work-item-form__required" aria-hidden="true">＊</span>
+            <span v-if="isRequired('狀態')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
           </span>
-          <NSelect v-model:value="statusModel" :options="statusOptions" :status="errors.狀態 ? 'error' : undefined"
-            placeholder="請選擇狀態" :disabled="saving" />
+          <NSelect
+            v-model:value="statusModel"
+            :options="statusOptions"
+            :status="errors.狀態 ? 'error' : undefined"
+            placeholder="請選擇狀態"
+            :disabled="saving"
+          />
           <span v-if="errors.狀態" class="work-item-form__error">{{ errors.狀態 }}</span>
         </label>
       </form>
@@ -356,8 +495,12 @@ const onSubmit = (): void => {
         <button type="button" class="work-item-form__btn" :disabled="saving" @click="requestClose">
           取消
         </button>
-        <button type="submit" form="work-item-form-body" class="work-item-form__btn work-item-form__btn--primary"
-          :disabled="saving">
+        <button
+          type="submit"
+          form="work-item-form-body"
+          class="work-item-form__btn work-item-form__btn--primary"
+          :disabled="saving"
+        >
           {{ saving ? '儲存中…' : '儲存' }}
         </button>
       </div>
@@ -369,8 +512,16 @@ const onSubmit = (): void => {
     </div>
 
     <Transition name="confirm-dialog" @after-leave="onDiscardDialogAfterLeave">
-      <ConfirmDialog v-if="discardConfirmOpen" title="要放棄變更嗎？" message="關閉後，這次填寫或修改的內容都不會被儲存。" confirm-label="放棄變更"
-        cancel-label="繼續編輯" danger @confirm="confirmDiscard" @cancel="discardConfirmOpen = false" />
+      <ConfirmDialog
+        v-if="discardConfirmOpen"
+        title="要放棄變更嗎？"
+        message="關閉後，這次填寫或修改的內容都不會被儲存。"
+        confirm-label="放棄變更"
+        cancel-label="繼續編輯"
+        danger
+        @confirm="confirmDiscard"
+        @cancel="discardConfirmOpen = false"
+      />
     </Transition>
   </div>
 </template>
@@ -528,7 +679,6 @@ const onSubmit = (): void => {
     // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
     // 同樣寫在 .work-item-form__row--highlight 之後，才蓋得過工作日期的藍色邊框
     &--invalid {
-
       input,
       textarea {
         border-color: var(--color-red-600);
