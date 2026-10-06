@@ -10,6 +10,12 @@
   "[markdown]": {
     "editor.formatOnSave": false
   },
+  "[vue]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[scss]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
   "workbench.colorCustomizations": {
     "activityBar.activeBackground": "#00123d",
     "activityBar.activeBorder": "#e7e7e7",
