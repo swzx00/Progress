@@ -581,7 +581,7 @@ function doPost(e) {
     }
 
     if (body.action === 'create') return handleCreate_(body.item);
-    if (body.action === 'batchCreate') return handleBatchCreate_(body.items);
+    if (body.action === 'batchCreate') return handleBatchCreate_(body.items, body.replace === true);
     if (body.action === 'update') return handleUpdate_(body.id, body.originalDate, body.item);
     if (body.action === 'delete') return handleDelete_(body.id, body.originalDate);
     if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
@@ -632,7 +632,9 @@ function handleCreate_(item) {
 // 一次新增多筆（前端「複製本日」用）：全部先驗證，任何一筆不合格、或任何一天的工時合計
 // （既有紀錄＋這批）超過 DAILY_HOURS_MAX，就整批退回、不寫入任何一筆。
 // 項次依陣列順序、照每日編號規則接續；新值同步寫回選項清單（請假列一樣略過）。
-function handleBatchCreate_(items) {
+// replace 為 true 時（「複製本日」覆蓋目標日）：工時合計只算這批，驗證全部通過後，先把這批涉及的
+// 工作日期原本未刪除的紀錄（含請假）軟刪除，再寫入；已刪除的不佔項次，所以新紀錄從 1 開始編號。
+function handleBatchCreate_(items, replace) {
   if (!Array.isArray(items) || items.length === 0) {
     return jsonOutput_({ error: '沒有要新增的紀錄' });
   }
@@ -668,12 +670,21 @@ function handleBatchCreate_(items) {
   var dates = Object.keys(days);
   for (var i = 0; i < dates.length; i++) {
     var day = days[dates[i]];
-    var dayHours = getDayHoursExcluding_(day.target.sheet, day.target.colMap, dates[i], null);
+    var dayHours = replace
+      ? 0
+      : getDayHoursExcluding_(day.target.sheet, day.target.colMap, dates[i], null);
     if (dayHours + day.hours > DAILY_HOURS_MAX) {
       return jsonOutput_({ error: dailyHoursError_(dayHours, day.hours) });
     }
-    day.nextIndex = getNextDailyIndex_(day.target.sheet, day.target.colMap, dates[i]);
   }
+
+  // 驗證全部通過才開始動 Sheet：覆蓋模式先軟刪除，再算項次
+  var replacedCount = 0;
+  dates.forEach(function (date) {
+    var day = days[date];
+    if (replace) replacedCount += softDeleteDayRows_(day.target.sheet, day.target.colMap, date);
+    day.nextIndex = getNextDailyIndex_(day.target.sheet, day.target.colMap, date);
+  });
 
   var created = prepared.map(function (item) {
     var day = days[item.工作日期];
@@ -699,7 +710,23 @@ function handleBatchCreate_(items) {
 
   created.forEach(syncOptionsFromItem_);
 
-  return jsonOutput_({ items: created });
+  return jsonOutput_({ items: created, replaced: replacedCount });
+}
+
+// 把某一工作日期所有未刪除的紀錄（含請假）標成已刪除，回傳筆數
+function softDeleteDayRows_(sheet, colMap, date) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var count = 0;
+  values.forEach(function (row, i) {
+    var item = rowToItem_(colMap, row);
+    if (item.工作日期 === date && !item.已刪除) {
+      sheet.getRange(i + 2, colMap.已刪除).setValue('TRUE');
+      count += 1;
+    }
+  });
+  return count;
 }
 
 function handleUpdate_(id, originalDate, itemPatch) {
