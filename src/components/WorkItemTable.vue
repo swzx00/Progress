@@ -118,18 +118,18 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     </div>
 
     <!--
-      資料列可拖曳排序（vue-draggable-plus）：桌面直接拖，手機長按 300ms 才開始拖（避免跟捲動衝突）；
-      按鈕不觸發拖曳（filter），存檔中或唯讀時停用
+      資料列可拖曳排序（vue-draggable-plus）：只有按住拖曳把手（work-item-table__drag-handle）才能拖，
+      手機不用長按延遲（把手設了 touch-action: none，不會跟頁面捲動衝突）；存檔中或唯讀時停用。
+      forceFallback 讓拖曳中的那一列由 SortableJS 自己畫（才能加陰影，fallback-class），原位置留半透明佔位（ghost-class）
     -->
     <VueDraggable
       v-model="rows"
       class="work-item-table__body"
       :disabled="!editable || reordering"
       :animation="150"
-      :delay="300"
-      :delay-on-touch-only="true"
-      filter="button"
-      :prevent-on-filter="false"
+      handle=".work-item-table__drag-handle"
+      :force-fallback="true"
+      fallback-class="work-item-table__row--dragging"
       ghost-class="work-item-table__row--ghost"
       @update="emitOrder"
     >
@@ -211,6 +211,37 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           }}</span
           ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
         </div>
+
+        <!--
+          拖曳把手（只在登入時顯示）：桌面、平板在列的最左邊（左側內距裡的 20px 窄欄），手機在卡片右上角。
+          上移／下移按鈕是同功能的無障礙替代，所以把手本身對螢幕閱讀器隱藏。
+          圖示：Lucide grip-vertical（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
+        -->
+        <span
+          v-if="editable"
+          class="work-item-table__drag-handle"
+          title="按住拖曳排序"
+          aria-hidden="true"
+        >
+          <svg
+            class="work-item-table__drag-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            focusable="false"
+          >
+            <circle cx="9" cy="12" r="1" />
+            <circle cx="9" cy="5" r="1" />
+            <circle cx="9" cy="19" r="1" />
+            <circle cx="15" cy="12" r="1" />
+            <circle cx="15" cy="5" r="1" />
+            <circle cx="15" cy="19" r="1" />
+          </svg>
+        </span>
 
         <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
         <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
@@ -506,6 +537,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   }
 
   &__row {
+    position: relative;
     display: flex;
     flex-flow: row wrap;
     gap: 2px 8px;
@@ -584,6 +616,13 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     // 拖曳中留在原位的佔位列
     &--ghost {
       opacity: 0.4;
+    }
+
+    // 拖曳中跟著游標走的那一列：加陰影浮起來（使用者決定）
+    &--dragging {
+      background: var(--color-black-000);
+      box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+      opacity: 1;
     }
 
     &--overdue {
@@ -1313,6 +1352,43 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   }
 
   // 圖示：手機不顯示（文字按鈕），平板、桌面顯示
+  // 拖曳把手：手機在卡片右上角（第一行，排在狀態後面）；桌面、平板放在列左側 32px 內距裡
+  // （絕對定位，不佔 grid 欄位，表格寬度不用變）。平時淡灰，滑過那一列時變深
+  &__drag-handle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    order: 1;
+    width: 24px;
+    height: 24px;
+    color: var(--color-black-300);
+    touch-action: none;
+    cursor: grab;
+
+    .work-item-table__row:hover & {
+      color: var(--color-black-600);
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    @media (min-width: 768px) {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 6px;
+      width: 20px;
+      height: auto;
+    }
+  }
+
+  &__drag-icon {
+    width: 16px;
+    height: 16px;
+  }
+
   // 上移／下移：平板、桌面放在項次欄（數字上下），手機放在操作列最前面
   &__move-btn {
     display: inline-flex;
