@@ -30,7 +30,7 @@
 |---|---|
 | **ID**（系統） | UUID，寫入時自動產生，編輯/刪除用來精準定位列 |
 | **工作日期**（新增） | 這筆紀錄所屬的那一天，預設今天可手動改（補登用）。前台以此欄位做「單日檢視」。Sheet 儲存格與 API 傳輸格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），細節見下方「日期欄位格式」 |
-| 項次 | 系統自動編號，**每天從 1 開始**：同一工作日期、未刪除紀錄的最大項次＋1（用最大值不用筆數，刪掉中間某筆後新增才不會撞號；已刪除的不佔號，所以刪掉當天最後一號再新增會拿回同一號）。一律由後端決定，使用者不能自訂，前端送來的值會被忽略。規則寫在 `Code.gs` 的 `getNextDailyIndex_`，前端 `useWorkItems.ts` 的 `fetchDaySummary`（表單顯示預計項次用）跟 MSW 用同一套規則，改一處要三處一起改。原本是「當月新增順序」，已改成每天編號（使用者決定），舊資料用 `renumberDailyIndexes()` 一次性重新編號 |
+| 項次 | 系統自動編號，**每天從 1 開始**：同一工作日期、未刪除紀錄的最大項次＋1（用最大值不用筆數，刪掉中間某筆後新增才不會撞號；已刪除的不佔號，所以刪掉當天最後一號再新增會拿回同一號）。新增時一律由後端決定，前端送來的值會被忽略；之後可以在畫面上用上移／下移、拖曳調整順序（`reorder` action，見下方「項次調整」）。規則寫在 `Code.gs` 的 `getNextDailyIndex_`，前端 `useWorkItems.ts` 的 `fetchDaySummary`（表單顯示預計項次用）跟 MSW 用同一套規則，改一處要三處一起改。原本是「當月新增順序」，已改成每天編號（使用者決定），舊資料用 `renumberDailyIndexes()` 一次性重新編號 |
 | 交辦單位 | 可搜尋下拉選單（來自「選項清單」分頁，可輸入清單沒有的新值直接當作答案送出）（原欄名「單位」） |
 | 交辦人員 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
 | 專案名稱 | 可搜尋下拉選單（來自「選項清單」分頁，同上可自訂新值） |
@@ -84,6 +84,7 @@
   - `update`：payload 額外帶 `originalDate`（這筆紀錄修改前的工作日期），換算出**原本**月份分頁去定位 `ID`。若 `item.工作日期` 跟 `originalDate` 換算出的月份不同（使用者把工作日期改到別的月份），先從原分頁刪除該列、在新月份分頁新增一列，維持每筆紀錄只存在一個分頁。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天（不論同月或跨月），在新的那天用 `getNextDailyIndex_` 重新編號
   - `delete`：payload 帶 `originalDate`，換算月份分頁定位 `ID`，將「已刪除」設為 TRUE
   - `batchCreate`：payload 帶 `items` 陣列，一次新增多筆（前端「複製本日」用，`handleBatchCreate_`）。全部先驗證，任何一筆不合格（錯誤訊息標出第幾筆）、或任何一天的工時合計（既有紀錄＋這批）超過 24 小時，就**整批退回、不寫入任何一筆**；通過後項次依陣列順序照每日編號規則接續，同一月份分頁的列一次 `setValues` 寫入，新值同步寫回「選項清單」（請假列一樣略過）。回應 `{ items: [...], replaced }`。另可帶 `replace: true`（「複製本日」覆蓋目標日用）：工時合計只算這批，驗證全部通過後，先把這批涉及的工作日期原本未刪除的紀錄（含請假）**軟刪除**（`softDeleteDayRows_`），再寫入；已刪除的不佔項次，新紀錄從 1 開始編號，`replaced` 是被軟刪除的筆數。驗證沒過時原本的紀錄完全不動
+  - `reorder`：payload 帶 `date` 與那天所有未刪除紀錄（含請假）依新順序排列的 `ids`（`handleReorder_`）。`ids` 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少、不能重複、不能混到已刪除或別天的），不一致代表資料已被別處改過，回「紀錄已變更，請重新整理後再排序」、不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見下方「選項清單管理」
 - 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 
@@ -160,6 +161,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **套件管理工具**：僅使用 npm（`package.json` 的 `packageManager` 欄位已鎖定），不要混用 yarn/pnpm，避免 lockfile 衝突
 - **樣式語言**：採用 **SCSS**，元件的 `<style>` 一律加 `lang="scss"`（`<style scoped lang="scss">`），需要安裝 `sass` 作為 devDependency
 - **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤／日期選擇」這類自己刻成本高的互動元件才用 **Naive UI**（目前用到 `NSelect`、`NDatePicker`）。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.scss` 的色階（見下方「色彩 token：統一用色階，不分用途」）；同一個 `n-config-provider` 也帶入 `zhTW`/`dateZhTW` 兩個 locale（`:locale`/`:date-locale`），讓 Naive UI 元件顯示繁體中文。`NDatePicker` 的 `:first-day-of-week="6"` 讓月曆以星期日為一週第一天——這個 prop 的數值語意不直觀，**不是** date-fns 的 `getDay()`（星期日＝0）對應值：實測 naive-ui 內部排陣列的演算法後，`firstDayOfWeek=6` 才會排出「日一二三四五六」，`zhTW` locale 預設的 `firstDayOfWeek: 0` 反而是「一二三四五六日」（星期一開頭），所以這裡要明確覆寫、不能依賴 locale 預設值。其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
+- **拖曳排序**：用 `vue-draggable-plus`（SortableJS 的 Vue 3 包裝）做表格資料列的拖曳，只用在「項次調整」，見下方「UI/UX 定案」
 - **`DateNav` 的日期選擇器**：曾經改用 `NPopover` 包 `NCalendar`，換取「月曆彈窗裡每一格都能標假日顏色」（`NDatePicker` 沒有 cell slot、格子沒暴露完整日期資料，做不到這件事），但 `NCalendar` 是整月網格＋沒有年份快速跳選，手機寬度下的 popover 版面調校成本明顯偏高，實際體驗評估後改回 `NDatePicker`，放棄「月曆格子內逐格標色」，改成 `format="yyyy/MM/dd (EEEEE)"`（date-fns 格式字串，`EEEEE` 是最短星期字樣，例如「五」）搭配旁邊一個獨立的假日名稱徽章（顏色見下方「UI/UX 定案」的「放假色」）
   - **`.date-nav__picker--today` 直接用 `:deep()` 改內部邊框/文字顏色**：原本刻意只用 `outline` 避免碰 Naive UI 內部 class，但後來確認「今天」狀態需要連文字顏色都變色，而 `NInput` 實際顯示文字/畫邊框的都是內部元素（不是我們拿到 class 的外層根節點），Naive UI 直接在那些內部元素自己身上設顏色（不是繼承外層），外層 class 單寫 `color`/`border-color` 沒有用，只能穿透進去改。既然文字非改內部不可，邊框也一併改成 `:deep()` 直接改 `border-color`，不再用 outline 這個「不用碰內部但視覺上是外圈另一條線」的折衷做法，兩者統一：
     - 邊框：`:deep(.n-input__border)`（`NInput` 用兩個疊在一起的空 div 畫邊框，`.n-input__border` 是預設常駐的那個，`.n-input__state-border` 是 hover/focus 才淡入的狀態邊框，要蓋掉平常看到的顏色要改前者，不是後者）
@@ -216,14 +218,16 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   3. `WorkItemTable`（桌面表格與手機卡片**共用同一套 CSS**，改一次兩邊都套用，不用分別寫）：表頭跟資料列（不含表頭）各自固定一個底色，今天／非今天各自一組：
      - 非今天：表頭 `--color-black-100`，資料列單雙數交錯用 `--color-black-050`／`--color-black-000`
      - 今天：表頭 `--color-blue-100`，資料列單雙數交錯用 `--color-blue-050`／`--color-blue-000`
-     - 表頭在 DOM 順序上是 `.work-item-table` 底下第一個 child，資料列因此整體被往後推一格，所以「第 1 筆資料」對應的 CSS 其實是 `:nth-child(even)`，不是看起來更直覺的 `:nth-child(odd)`，程式碼裡有寫註解記錄這件事
-     - 手機表頭雖然 `display:none` 看不到，但還是在 DOM 裡，`nth-child` 計數不受影響，桌面/手機算出來的單雙數一致，不用另外寫一份手機專用規則
+     - 資料列包在 `.work-item-table__body`（拖曳排序的容器）裡，表頭在它外面，所以資料列的 `nth-child` 從 1 開始算：「第 1 筆資料」就是 `:nth-child(odd)`。（以前表頭跟資料列是同一層，第 1 筆資料要用 `:nth-child(even)`，加了拖曳容器後已改掉）
      - 逾期維持原本的紅色 inset 標線在列自己身上，不受今天/非今天狀態影響，兩種語意的提醒（今天＝藍、逾期＝紅）刻意不疊在同一個地方比顏色，避免互搶注意力
   4. **色階怎麼選色**：今天／非今天用的底色不是隨便挑的中間值，是直接拿 `blue`／`black` 色階上對應深淺位置的既有色階（`-000`／`-050`／`-100`），見上方「色彩 token：統一用色階，不分用途」
 - **`WorkItemTable` 桌面（≥768px）版面：留白責任從「容器」移到「列」**——`.work-item-table` 本身不留左右 padding，列的背景／底線因此橫向撐滿到 `.home-view` 的邊緣（跟 `DateNav` 一樣是無側邊留白的全寬區塊，不會被關進一個縮排的框裡），改成 `.work-item-table__row` 自己吃 `padding: 0 32px`，讓儲存格內容的起始位置對齊 `DateNav` 的 32px 內距。這是取捨過的結果：容器留白會讓表格看起來卡在一個框裡、跟滿版的 `DateNav` 不協調；容器和 `DateNav` 一起不留白，`DateNav` 的按鈕又會貼到畫面邊緣，兩種都試過、都不好看，所以拆成「列背景滿版、列內容對齊」。手機（< 768px）維持原本容器留白＋卡片式列表（各自有 border/border-radius/margin），這條只套用在桌面的表格版面
-- **桌面表格資料列（不含表頭）用斑馬紋**：單數列（第 1、3、5…筆）底色比雙數列略深，方便橫向對齊閱讀；今天／非今天各自用一組色階（見上方「今天／非今天要有視覺區別」第 3 點）。**實作上的坑**：表頭在 DOM 上是 `.work-item-table` 底下第一個 child，資料列因此整體被往後推一格，所以「第 1 筆資料」對應的 CSS selector 其實是 `:nth-child(even)`，不是看起來更直覺的 `:nth-child(odd)`，程式碼裡有寫註解記錄這件事。只在桌面套用（手機卡片各自有留白間隔，斑馬紋在卡片版面上沒有意義）
+- **桌面表格資料列（不含表頭）用斑馬紋**：單數列（第 1、3、5…筆）底色比雙數列略深，方便橫向對齊閱讀；今天／非今天各自用一組色階（見上方「今天／非今天要有視覺區別」第 3 點）。資料列包在 `.work-item-table__body` 裡、表頭在外面，所以「第 1 筆資料」對應 `:nth-child(odd)`。只在桌面套用（手機卡片各自有留白間隔，斑馬紋在卡片版面上沒有意義）
 - **每日工時上限**：`DateNav` 的「今日工時合計：Xhr」文字不變，合計**超過** 8 小時（`shared/validation-schema.json` 的 `dailyHours.warn`，`DateNav.vue` 透過 `DAILY_HOURS_WARN` 讀取，剛好 8 不算）才加上 `date-nav__total--over`：只把文字換成紅色 `--color-red-700`，不加粗、不用膠囊框（使用者決定）。合計**超過** 24 小時（`dailyHours.max`）不能存：`WorkItemForm` 用 `fetchDaySummary` 查當天其他紀錄（編輯時排除自己）的工時合計 `otherHours`，加上本筆超過就在今日工時（請假時數）欄位顯示錯誤「當天工時合計不可超過 24 小時（其他紀錄已 X 小時，已超出Y小時）」（使用者決定；前端 `dailyHoursMessage`、`Code.gs` 的 `dailyHoursError_`、MSW 三處格式相同，數字四捨五入到小數兩位避免浮點誤差）。送出前前端一定先算出當天合計再決定是否放行：`otherHours` 還沒查到（查詢中或先前失敗）就在 `onSubmit` 當場再查一次（期間「儲存」按鈕顯示「檢查中…」並停用，用表單自己的 `checkingDayHours`，不動父層的 `saving`），查不到就擋下並在今日工時欄位提示「無法確認當天工時合計，請稍後再試」；剛好 24 可以存。後端也檢查（`Code.gs` 的 `handleCreate_`／`handleUpdate_` 寫入前也檢查，跨月編輯在刪舊列之前就檢查）
-- 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期，並排在前面。預計期限是選填，沒填不算逾期（`types/work-item.ts` 的 `isOverdue` 要先排除空字串：空字串在字串比較上永遠小於任何日期）
+- 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期（紅色標線＋「逾期」標籤）。列的順序一律照項次，逾期不再自動排到最前面（使用者決定，手動調整的順序才不會被打亂）。預計期限是選填，沒填不算逾期（`types/work-item.ts` 的 `isOverdue` 要先排除空字串：空字串在字串比較上永遠小於任何日期）
+- **項次調整**（使用者決定）：已登入時可以調整同一天紀錄的順序（請假列也能排），每次移動就立即呼叫 `reorder` 存檔（`HomeView` 的 `onReorder`）：先在畫面上套用新順序，失敗就還原成移動前的資料並用 Toast 顯示錯誤，登入錯誤時登出；存檔中暫時停用拖曳與上移／下移（`WorkItemTable` 的 `reordering` prop）
+  - 上移／下移按鈕（Lucide `chevron-up`／`chevron-down`，ISC 授權）：平板、桌面放在項次欄，數字上下各一顆；手機卡片沒有項次欄，放在操作列最前面。第一筆不能上移、最後一筆不能下移（按鈕停用）
+  - 拖曳（`vue-draggable-plus`）：桌面直接拖整列；手機長按 300ms 才開始拖，避免跟捲動衝突；按鈕不會觸發拖曳。`WorkItemTable` 內部用 `rows`（依項次排序的本地副本）給 `VueDraggable` 改，拖完把新順序 emit `reorder`，使用端更新或還原 `items` 後 `rows` 會跟著重新同步
 - **「狀態」欄位的樣式**：桌面表格維持純文字（顏色沿用儲存格原本的文字色）；手機卡片是**透明底＋邊框的膠囊**（`.work-item-table__status`），邊框用 `currentcolor`，每個狀態只要設一次 `color`，邊框自動同色。桌面版的還原寫在 `&__status` 區塊最後的 `@media` 裡（`color: inherit`、去掉框線與內距），依照「RWD 斷點」的巢狀寫法規定，必須排在所有狀態修飾符之後才蓋得過
   - 顏色對應（寫在 `WorkItemTable.vue` 的 `&__status--*` 修飾符）：待辦 `--color-black-600` `#495057`／進行中 `--color-blue-700` `#0f47b8`／前端完成 `--color-teal-800` `#005c75`／返修 `--color-red-700` `#a51028`／確認上線 `--color-green-800` `#3a6c14`／暫緩 `--color-yellow-800` `#8f590d`
   - 選階原則：卡片底色有白、灰（`--color-black-050`）、今天的淡藍（`--color-blue-050`）三種，每個色系挑「在淡藍底上對比度仍 ≥ 4.5:1（WCAG AA 小字標準）」的**最淺**一階。所以主色 `blue-500`／`red-600`（淡藍底 4.0／4.5）不用、改用 700；`teal-700`（4.59）太貼近下限改用 800；`green-700`（3.53）不夠改用 800；`yellow-800`（4.90）剛好夠。暫緩選 Yellow 不選 Orange，是為了跟返修的紅色拉開距離（曾試過改成 `orange-700`，但跟返修 `red-700` 色相太接近，非今天放假日的淡橘色列上也會跟背景融在一起，所以維持 yellow）
@@ -417,6 +421,7 @@ npm run format     # Prettier 格式化 src/
 - 重新部署 `Code.gs`（項次改成每天編號）：貼到 Apps Script 編輯器後，「管理部署作業」編輯既有部署、版本選「新版本」，網址不變。部署後在編輯器的「執行」選單手動執行一次 `renumberDailyIndexes()`，把既有資料的項次重新編成每天 1、2、3（未刪除的照現有順序重編，已刪除的維持原號）
 - 重新部署 `Code.gs`（修正 ID 欄位對不上：Sheet 表頭是大寫 `ID`，API／前端鍵名是小寫 `id`，原本新增時 UUID 沒寫進 Sheet、讀取時也回傳 `ID` 鍵，導致編輯/刪除一律「找不到這筆紀錄」；現在由 `rowToItem_`／`itemToRow_` 用 `ID_HEADER`／`ID_KEY` 互轉）。部署後在編輯器的「執行」選單手動執行一次 `fillMissingIds()`，把既有 ID 空白的紀錄補上 UUID（已有 ID 的不動），不補的話那些舊資料還是無法編輯/刪除
 - 重新部署 `Code.gs`（新增請假紀錄：狀態 `休假`、固定欄位覆蓋、不寫回選項清單；也包含請假時數上限 8 小時與每日 24 小時合計檢查）。部署前真後端會把狀態 `休假` 當成不合法而退回
+- 重新部署 `Code.gs`（新增 `reorder` action，項次調整用）。部署前真後端會回「未知的 action」，畫面上的順序會被還原
 - 重新部署 `Code.gs`（完成度改成允許小數，step 0.25）。部署前真後端仍只接受整數，前端送出 12.25 這類值會被退回「完成度需為整數」
 - 重新部署 `Code.gs`（`batchCreate` 新增 `replace` 覆蓋模式，「複製本日」目標日已有紀錄時用）。部署前真後端會忽略 `replace`，目標日原本的紀錄不會被刪除，新舊紀錄會疊在一起
 - 重新部署 `Code.gs`（新增 `batchCreate` action，「複製本日」用）。部署前真後端會回「未知的 action」
