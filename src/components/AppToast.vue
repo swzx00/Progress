@@ -9,8 +9,16 @@ const { toast, hideToast } = useToast();
   <div class="app-toast" aria-live="assertive">
     <!-- out-in：新訊息取代舊訊息時，先讓舊的淡出再顯示新的，避免兩則短暫疊在一起 -->
     <Transition name="app-toast" mode="out-in">
-      <div v-if="toast" :key="toast.id" class="app-toast__panel" role="alert">
-        <span class="app-toast__icon" aria-hidden="true">⚠</span>
+      <div
+        v-if="toast"
+        :key="toast.id"
+        class="app-toast__panel"
+        :class="{ 'app-toast__panel--success': toast.type === 'success' }"
+        :role="toast.type === 'success' ? 'status' : 'alert'"
+      >
+        <span class="app-toast__icon" aria-hidden="true">{{
+          toast.type === 'success' ? '✓' : '⚠'
+        }}</span>
         <span class="app-toast__message">{{ toast.message }}</span>
         <button type="button" class="app-toast__close" aria-label="關閉" @click="hideToast">
           ✕
@@ -44,6 +52,13 @@ const { toast, hideToast } = useToast();
     border: 1px solid var(--color-red-200);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+
+    // 操作成功：綠色系，跟錯誤的紅色區分
+    &--success {
+      color: var(--color-green-800);
+      background: var(--color-green-000);
+      border-color: var(--color-green-200);
+    }
   }
 
   &__icon {

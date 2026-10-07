@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchDaySummary } from '@/composables/useWorkItems';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
+import { buildCopyPayload } from '@/utils/copy-work-item';
 import {
   DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
@@ -169,25 +170,27 @@ const resetForm = (item: WorkItem | null | undefined): void => {
 
 /**
  * 複製：用來源紀錄預填，工作日期維持 DateNav 選到的那天（resetForm 已設定）。
- * - 工作項目：帶入交辦單位、交辦人員、專案名稱、專案 Repo、工作目標、預計期限、狀態、完成度；
- *   處理內容、今日工時是「當天」的內容，維持預設值（空白、0）
- * - 請假：帶入假別、請假時數、備註（固定值一樣送出時才補）
+ * 哪些欄位帶入、哪些清空，規則在 utils/copy-work-item.ts 的 buildCopyPayload（跟「複製本日」共用）；
+ * 這裡只把該模式表單上看得到的欄位填進去，請假的固定值一樣送出時才補。
  * 快照取預填後的狀態，打開後沒改就關閉不會跳未儲存確認
  */
 const applyCopySource = (source: WorkItem): void => {
+  const copied = buildCopyPayload(source, form.工作日期);
   if (isLeaveMode.value) {
-    form.工作目標 = source.工作目標;
-    form.今日工時 = source.今日工時;
-    form.處理內容 = source.處理內容;
+    form.工作目標 = copied.工作目標;
+    form.今日工時 = copied.今日工時;
+    form.處理內容 = copied.處理內容;
   } else {
-    form.交辦單位 = source.交辦單位;
-    form.交辦人員 = source.交辦人員;
-    form.專案名稱 = source.專案名稱;
-    form.專案Repo = [...source.專案Repo];
-    form.工作目標 = source.工作目標;
-    form.預計期限 = source.預計期限;
-    form.狀態 = source.狀態 || DEFAULT_STATUS;
-    form.完成度 = source.完成度;
+    form.交辦單位 = copied.交辦單位;
+    form.交辦人員 = copied.交辦人員;
+    form.專案名稱 = copied.專案名稱;
+    form.專案Repo = copied.專案Repo;
+    form.工作目標 = copied.工作目標;
+    form.預計期限 = copied.預計期限;
+    form.狀態 = copied.狀態;
+    form.完成度 = copied.完成度;
+    form.處理內容 = copied.處理內容;
+    form.今日工時 = copied.今日工時;
   }
   snapshot.value = JSON.stringify(form);
 };

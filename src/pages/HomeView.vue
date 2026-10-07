@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue';
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import CopyDayDialog from '@/components/CopyDayDialog.vue';
 import DateNav from '@/components/DateNav.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
@@ -11,8 +12,10 @@ import WorkItemTable from '@/components/WorkItemTable.vue';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { useToast } from '@/composables/useToast';
-import { ApiError, useWorkItems } from '@/composables/useWorkItems';
+import { ApiError, fetchDaySummary, useWorkItems } from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
+import { buildCopyPayload } from '@/utils/copy-work-item';
+import { DAILY_HOURS_MAX, dailyHoursMessage } from '@/validation/work-item';
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
@@ -25,7 +28,8 @@ watch(signInButtonEl, (el) => {
 });
 
 const selectedDate = ref(toDateString(new Date()));
-const { items, loading, error, fetchByDate, createItem, updateItem, deleteItem } = useWorkItems();
+const { items, loading, error, fetchByDate, createItem, batchCreateItems, updateItem, deleteItem } =
+  useWorkItems();
 const { getDayOffLabel } = useTaiwanHolidays();
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
 const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()));
@@ -115,6 +119,76 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
   }
 };
 
+/**
+ * 複製本日：把目前選到那天的全部紀錄（含請假）依原本項次順序，一次複製到目標日期。
+ * 欄位規則跟單項複製共用 buildCopyPayload。送出前前端先估算目標日的工時合計
+ * （既有紀錄＋這批），超過上限就擋下、不送出；後端 batchCreate 也會整批檢查。
+ * 成功後切到目標日期，並用 Toast 顯示複製了幾筆
+ */
+const copyDayOpen = ref(false);
+const copyingDay = ref(false);
+const copyDayError = ref<string | null>(null);
+
+const canCopyDay = computed(() => !loading.value && !error.value && items.value.length > 0);
+
+const openCopyDay = (): void => {
+  copyDayError.value = null;
+  copyDayOpen.value = true;
+};
+
+const closeCopyDay = (): void => {
+  if (copyingDay.value) return;
+  copyDayOpen.value = false;
+};
+
+const confirmCopyDay = async (targetDate: string): Promise<void> => {
+  if (copyingDay.value) return;
+  if (!idToken.value) {
+    copyDayOpen.value = false;
+    showToast('尚未登入，無法複製');
+    signOut();
+    return;
+  }
+  const payloads = [...items.value]
+    .sort((a, b) => a.項次 - b.項次)
+    .map((item) => buildCopyPayload(item, targetDate));
+  const batchHours = payloads.reduce((sum, item) => sum + item.今日工時, 0);
+
+  copyingDay.value = true;
+  copyDayError.value = null;
+  try {
+    let otherHours: number;
+    try {
+      ({ otherHours } = await fetchDaySummary(targetDate));
+    } catch {
+      copyDayError.value = '無法確認目標日的工時合計，請稍後再試';
+      return;
+    }
+    if (otherHours + batchHours > DAILY_HOURS_MAX) {
+      copyDayError.value = dailyHoursMessage(otherHours, batchHours);
+      return;
+    }
+    await batchCreateItems(idToken.value, payloads);
+    copyDayOpen.value = false;
+    if (selectedDate.value === targetDate) {
+      await fetchByDate(targetDate);
+    } else {
+      selectedDate.value = targetDate;
+    }
+    showToast(`已複製 ${payloads.length} 筆紀錄到 ${targetDate.replaceAll('-', '/')}`, 'success');
+  } catch (e) {
+    // 登入錯誤：關閉對話框並登出；其他錯誤（含後端整批退回）：對話框維持開啟，讓使用者換日期重試
+    const unauthorized = e instanceof ApiError && e.code === 'UNAUTHORIZED';
+    showToast(e instanceof Error ? e.message : '複製時發生未知錯誤');
+    if (unauthorized) {
+      copyDayOpen.value = false;
+      signOut();
+    }
+  } finally {
+    copyingDay.value = false;
+  }
+};
+
 const deleteTarget = ref<WorkItem | null>(null);
 const deleting = ref(false);
 
@@ -170,6 +244,14 @@ const confirmDelete = async (): Promise<void> => {
 
     <DateNav v-model="selectedDate" :total-hours="totalHours">
       <template v-if="isAuthorized" #actions>
+        <button
+          v-if="canCopyDay"
+          type="button"
+          class="home-view__add-btn home-view__add-btn--copy-day"
+          @click="openCopyDay"
+        >
+          複製本日
+        </button>
         <button
           type="button"
           class="home-view__add-btn home-view__add-btn--leave"
@@ -228,6 +310,18 @@ const confirmDelete = async (): Promise<void> => {
         :copy-source="copySource"
         @save="onSave"
         @cancel="closeForm"
+      />
+    </Transition>
+
+    <Transition name="copy-day-dialog">
+      <CopyDayDialog
+        v-if="copyDayOpen && isAuthorized"
+        :source-date="selectedDate"
+        :count="items.length"
+        :busy="copyingDay"
+        :error="copyDayError"
+        @confirm="confirmCopyDay"
+        @cancel="closeCopyDay"
       />
     </Transition>
 
@@ -383,6 +477,13 @@ const confirmDelete = async (): Promise<void> => {
       color: var(--color-teal-700);
       background: var(--color-black-000);
       border-color: var(--color-teal-700);
+    }
+
+    // 複製本日：中性灰的次要按鈕，跟表格操作欄的「複製」同一組顏色
+    &--copy-day {
+      color: var(--color-black-600);
+      background: var(--color-black-000);
+      border-color: var(--color-black-300);
     }
 
     &-icon {

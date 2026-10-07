@@ -148,6 +148,12 @@ interface CreatePayload {
   item: Omit<WorkItem, 'id' | '項次' | '已刪除'>;
 }
 
+interface BatchCreatePayload {
+  action: 'batchCreate';
+  idToken: string;
+  items: Omit<WorkItem, 'id' | '項次' | '已刪除'>[];
+}
+
 interface UpdatePayload {
   action: 'update';
   idToken: string;
@@ -187,6 +193,7 @@ interface DeleteOptionPayload {
 
 type DoPostPayload =
   | CreatePayload
+  | BatchCreatePayload
   | UpdatePayload
   | DeletePayload
   | AddOptionPayload
@@ -227,6 +234,44 @@ export const handlers = [
       items = [...items, created];
       syncOptions(created);
       return HttpResponse.json({ item: created });
+    }
+
+    // 跟 Code.gs 的 handleBatchCreate_ 同一套規則：全部先檢查，任何一筆不合格或任何一天
+    // 合計超過上限就整批退回、不寫入任何一筆
+    if (body.action === 'batchCreate') {
+      if (body.items.length === 0) return HttpResponse.json({ error: '沒有要新增的紀錄' });
+      const leaveMax = schema.leave.fields.今日工時.max;
+      const invalidIndex = body.items.findIndex(
+        (item) => isLeaveItem(item as WorkItem) && Number(item.今日工時) > leaveMax,
+      );
+      if (invalidIndex !== -1) {
+        return HttpResponse.json({
+          error: `第 ${invalidIndex + 1} 筆：請假時數不可超過 ${leaveMax} 小時`,
+        });
+      }
+      const batchHours = new Map<string, number>();
+      body.items.forEach((item) => {
+        const hours = batchHours.get(item.工作日期) ?? 0;
+        batchHours.set(item.工作日期, hours + (Number(item.今日工時) || 0));
+      });
+      for (const [date, hours] of batchHours) {
+        const otherHours = getDayHoursExcluding(date);
+        if (otherHours + hours > schema.dailyHours.max) {
+          return HttpResponse.json({ error: dailyHoursMessage(otherHours, hours) });
+        }
+      }
+      const created = body.items.map((item) => {
+        const createdItem: WorkItem = {
+          ...applyLeaveFixedValues(item),
+          id: crypto.randomUUID(),
+          項次: getNextDailyIndex(item.工作日期),
+          已刪除: false,
+        };
+        items = [...items, createdItem];
+        syncOptions(createdItem);
+        return createdItem;
+      });
+      return HttpResponse.json({ items: created });
     }
 
     if (body.action === 'update') {
