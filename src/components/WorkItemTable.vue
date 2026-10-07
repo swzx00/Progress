@@ -156,27 +156,87 @@ const sortedItems = computed(() =>
         <span class="work-item-table__mobile-label">期限：</span>{{ formatDate(item.預計期限) }}
       </div>
 
+      <!--
+        操作欄：桌面是圖示按鈕橫排（滑過用 title 顯示文字提示），手機卡片是文字按鈕橫排。
+        圖示：Lucide pencil／copy／trash-2（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
+      -->
       <div v-if="editable" class="work-item-table__cell work-item-table__cell--actions" role="cell">
         <button
           type="button"
           class="work-item-table__action-btn work-item-table__action-btn--edit"
+          title="編輯"
+          aria-label="編輯"
           @click="emit('edit', item)"
         >
-          編輯
+          <svg
+            class="work-item-table__action-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+            />
+            <path d="m15 5 4 4" />
+          </svg>
+          <span class="work-item-table__action-label">編輯</span>
         </button>
         <button
           type="button"
           class="work-item-table__action-btn work-item-table__action-btn--copy"
+          title="複製"
+          aria-label="複製"
           @click="emit('copy', item)"
         >
-          複製
+          <svg
+            class="work-item-table__action-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
+          <span class="work-item-table__action-label">複製</span>
         </button>
         <button
           type="button"
           class="work-item-table__action-btn work-item-table__action-btn--danger"
+          title="刪除"
+          aria-label="刪除"
           @click="emit('delete', item)"
         >
-          刪除
+          <svg
+            class="work-item-table__action-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+          <span class="work-item-table__action-label">刪除</span>
         </button>
       </div>
     </div>
@@ -307,7 +367,7 @@ const sortedItems = computed(() =>
       @media (min-width: 768px) {
         grid-template-columns:
           32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-          62px 48px 77px 58px 46px;
+          62px 48px 77px 58px 92px;
       }
     }
 
@@ -641,8 +701,8 @@ const sortedItems = computed(() =>
       border-top: 1px solid var(--color-black-200);
 
       @media (min-width: 768px) {
-        flex-direction: column;
         gap: 4px;
+        justify-content: center;
         order: 9;
         padding-top: unset;
         margin-top: unset;
@@ -919,9 +979,31 @@ const sortedItems = computed(() =>
       }
     }
 
+    // 桌面：28px 正方形圖示按鈕，文字收起來（按鈕名稱靠 aria-label，滑過靠 title 顯示）
     @media (min-width: 768px) {
+      display: inline-flex;
       flex: none;
-      padding: 4px 10px;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+    }
+  }
+
+  &__action-icon {
+    display: none;
+    width: 16px;
+    height: 16px;
+
+    @media (min-width: 768px) {
+      display: block;
+    }
+  }
+
+  &__action-label {
+    @media (min-width: 768px) {
+      display: none;
     }
   }
 
