@@ -250,6 +250,25 @@ const confirmDelete = async (): Promise<void> => {
           class="home-view__add-btn home-view__add-btn--copy-day"
           @click="openCopyDay"
         >
+          <!-- 圖示：Lucide files（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
+          <svg
+            class="home-view__add-btn-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8" />
+            <path
+              d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z"
+            />
+            <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" />
+          </svg>
           複製本日
         </button>
         <button
@@ -471,12 +490,24 @@ const confirmDelete = async (): Promise<void> => {
     border: 1px solid var(--color-blue-500);
     border-radius: 6px;
 
+    // hover（使用者決定）：實心底的「＋ 新增」變深；請假、複製本日這類框線按鈕改成淡色底＋深一階的文字與框線
+    &:hover {
+      background: var(--color-blue-700);
+      border-color: var(--color-blue-700);
+    }
+
     // 請假是次要入口：白底＋框線，跟主要的「＋ 新增」做出主次區別。色系用 teal，跟表格請假列一致；
     // 14px 文字在白底要 4.5:1 對比，teal-500／600 不夠，用 teal-700（使用者決定）
     &--leave {
       color: var(--color-teal-700);
       background: var(--color-black-000);
       border-color: var(--color-teal-700);
+
+      &:hover {
+        color: var(--color-teal-800);
+        background: var(--color-teal-050);
+        border-color: var(--color-teal-800);
+      }
     }
 
     // 複製本日：中性灰的次要按鈕，跟表格操作欄的「複製」同一組顏色
@@ -484,6 +515,12 @@ const confirmDelete = async (): Promise<void> => {
       color: var(--color-black-600);
       background: var(--color-black-000);
       border-color: var(--color-black-300);
+
+      &:hover {
+        color: var(--color-black-700);
+        background: var(--color-black-050);
+        border-color: var(--color-black-700);
+      }
     }
 
     &-icon {
