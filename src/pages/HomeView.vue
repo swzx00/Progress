@@ -28,8 +28,17 @@ watch(signInButtonEl, (el) => {
 });
 
 const selectedDate = ref(toDateString(new Date()));
-const { items, loading, error, fetchByDate, createItem, batchCreateItems, updateItem, deleteItem } =
-  useWorkItems();
+const {
+  items,
+  loading,
+  error,
+  fetchByDate,
+  createItem,
+  batchCreateItems,
+  updateItem,
+  deleteItem,
+  reorderItems,
+} = useWorkItems();
 const { getDayOffLabel } = useTaiwanHolidays();
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
 const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()));
@@ -234,6 +243,37 @@ const cancelCopyDayReplace = (): void => {
   copyDayReplaceTarget.value = null;
 };
 
+/**
+ * 項次調整（上移／下移、拖曳）：每次移動立即存檔。先在畫面上套用新順序（項次改成 1、2、3…），
+ * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）
+ */
+const reordering = ref(false);
+
+const onReorder = async (ids: string[]): Promise<void> => {
+  if (reordering.value) return;
+  if (!idToken.value) {
+    showToast('尚未登入，無法調整順序');
+    signOut();
+    return;
+  }
+  const before = items.value;
+  const byId = new Map(before.map((item) => [item.id, item]));
+  items.value = ids.flatMap((id, index) => {
+    const item = byId.get(id);
+    return item ? [{ ...item, 項次: index + 1 }] : [];
+  });
+  reordering.value = true;
+  try {
+    await reorderItems(idToken.value, selectedDate.value, ids);
+  } catch (e) {
+    items.value = before;
+    showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
+    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
+  } finally {
+    reordering.value = false;
+  }
+};
+
 const deleteTarget = ref<WorkItem | null>(null);
 const deleting = ref(false);
 
@@ -388,7 +428,9 @@ const confirmDelete = async (): Promise<void> => {
       :viewing-today="isViewingToday"
       :day-off-label="dayOffLabel"
       @edit="openEditForm"
+      :reordering="reordering"
       @copy="openCopyForm"
+      @reorder="onReorder"
       @delete="openDeleteConfirm"
     />
 

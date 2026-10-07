@@ -169,6 +169,13 @@ export function useWorkItems() {
   const deleteItem = (idToken: string, id: string, originalDate: string): Promise<void> =>
     postAction(idToken, { action: 'delete', id, originalDate: toApiDate(originalDate) });
 
+  /**
+   * 調整某一天的項次順序：ids 是那天所有未刪除紀錄（含請假）依新順序排列的 id，
+   * 後端依順序把項次改成 1、2、3…；跟 Sheet 上的紀錄對不上時整批退回
+   */
+  const reorderItems = (idToken: string, date: string, ids: string[]): Promise<void> =>
+    postAction(idToken, { action: 'reorder', date: toApiDate(date), ids });
+
   return {
     items,
     loading,
@@ -178,5 +185,6 @@ export function useWorkItems() {
     batchCreateItems,
     updateItem,
     deleteItem,
+    reorderItems,
   };
 }

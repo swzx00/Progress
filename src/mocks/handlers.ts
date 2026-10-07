@@ -155,6 +155,13 @@ interface BatchCreatePayload {
   replace?: boolean;
 }
 
+interface ReorderPayload {
+  action: 'reorder';
+  idToken: string;
+  date: string;
+  ids: string[];
+}
+
 interface UpdatePayload {
   action: 'update';
   idToken: string;
@@ -195,6 +202,7 @@ interface DeleteOptionPayload {
 type DoPostPayload =
   | CreatePayload
   | BatchCreatePayload
+  | ReorderPayload
   | UpdatePayload
   | DeletePayload
   | AddOptionPayload
@@ -282,6 +290,22 @@ export const handlers = [
         return createdItem;
       });
       return HttpResponse.json({ items: created, replaced });
+    }
+
+    // 跟 Code.gs 的 handleReorder_ 同一套規則：ids 必須跟那天未刪除的紀錄完全一致，
+    // 通過後項次依順序改成 1、2、3…
+    if (body.action === 'reorder') {
+      const dayIds = items.filter((i) => i.工作日期 === body.date && !i.已刪除).map((i) => i.id);
+      const valid =
+        body.ids.length === dayIds.length &&
+        new Set(body.ids).size === body.ids.length &&
+        body.ids.every((id) => dayIds.includes(id));
+      if (!valid) return HttpResponse.json({ error: '紀錄已變更，請重新整理後再排序' });
+      items = items.map((item) => {
+        const index = body.ids.indexOf(item.id);
+        return index === -1 || item.已刪除 ? item : { ...item, 項次: index + 1 };
+      });
+      return HttpResponse.json({ ok: true });
     }
 
     if (body.action === 'update') {
