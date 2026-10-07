@@ -129,8 +129,8 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   align-items: center;
   padding: 16px;
 
+  // 不強制一行：放不下時右側那組（工時合計、回到今天、動作按鈕）整組換到第二行並靠右（使用者決定）
   @media (min-width: 768px) {
-    flex-wrap: nowrap;
     padding: 16px 32px;
   }
 }
