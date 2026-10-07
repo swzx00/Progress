@@ -64,6 +64,29 @@ var VALIDATION_RULES = {
 // 手動同步自 src/types/work-item.ts 的 STATUS_OPTIONS
 var STATUS_OPTIONS = ['進行中', '前端完成', '返修', '待辦', '確認上線', '暫緩'];
 
+// 請假紀錄規則：手動同步自 shared/validation-schema.json 的 leave。
+// 請假跟工作紀錄寫在同一個月份分頁，用「狀態」等於 LEAVE_RULES.status 區分；
+// fixed 的欄位一律由這裡覆蓋（前端送什麼都不算數），而且不寫回「選項清單」。
+// 假別存在「工作目標」、備註存在「處理內容」、請假時數存在「今日工時」。
+var LEAVE_RULES = {
+  status: '休假',
+  fixed: {
+    交辦單位: '人事室',
+    交辦人員: '--',
+    專案名稱: '休假',
+    專案Repo: [],
+    預計期限: '',
+    完成度: 100,
+  },
+  types: ['特休', '事假', '病假', '其他'],
+  fields: {
+    工作日期: { label: '請假日期', kind: 'date', required: true, minYear: 2020, maxYear: 2099 },
+    工作目標: { label: '假別', kind: 'leaveType', required: true },
+    處理內容: { label: '備註', kind: 'text', required: false, maxLength: 2000 },
+    今日工時: { label: '請假時數', kind: 'number', required: true, default: 8, min: 0.25, max: 8, step: 0.25 },
+  },
+};
+
 // ===== Sheet 共用工具 =====
 
 function getSheetId_() {
@@ -369,13 +392,29 @@ function validateStatusField_(rule, value) {
   return STATUS_OPTIONS.indexOf(String(value)) === -1 ? '請選擇' + rule.label : null;
 }
 
+function isLeaveItem_(item) {
+  return item && item.狀態 === LEAVE_RULES.status;
+}
+
+// 請假列：固定欄位一律覆蓋成 LEAVE_RULES.fixed，回傳新物件
+function applyLeaveFixedValues_(item) {
+  if (!isLeaveItem_(item)) return item;
+  return Object.assign({}, item, LEAVE_RULES.fixed, { 專案Repo: [] });
+}
+
+// 請假列跟工作紀錄用不同的規則；工作紀錄的狀態不在 STATUS_OPTIONS 裡（包含「休假」）會被擋下，
+// 所以一般工作紀錄沒辦法冒用請假的狀態
 function validateItem_(item) {
+  var leave = isLeaveItem_(item);
+  var rules = leave ? LEAVE_RULES.fields : VALIDATION_RULES;
   var errors = [];
-  Object.keys(VALIDATION_RULES).forEach(function (field) {
-    var rule = VALIDATION_RULES[field];
+  Object.keys(rules).forEach(function (field) {
+    var rule = rules[field];
     var value = item[field];
     var message;
-    if (rule.kind === 'tags') message = validateTagsField_(rule, value);
+    if (rule.kind === 'leaveType') {
+      message = LEAVE_RULES.types.indexOf(String(value)) === -1 ? '請選擇' + rule.label : null;
+    } else if (rule.kind === 'tags') message = validateTagsField_(rule, value);
     else if (rule.kind === 'number') message = validateNumberField_(rule, value);
     else if (rule.kind === 'date') message = validateDateField_(rule, value);
     else if (rule.kind === 'status') message = validateStatusField_(rule, value);
@@ -416,6 +455,18 @@ function getOptions_() {
     result[category] = list;
   });
   return result;
+}
+
+// 新增/編輯工作紀錄時，把新的交辦單位/人員/專案名稱/Repo 寫回選項清單；
+// 請假列的固定值（人事室、--、休假）不寫回，避免出現在一般工作紀錄的下拉選單
+function syncOptionsFromItem_(item) {
+  if (isLeaveItem_(item)) return;
+  addOptionIfNew_('交辦單位', item.交辦單位);
+  addOptionIfNew_('交辦人員', item.交辦人員);
+  addOptionIfNew_('專案名稱', item.專案名稱);
+  (item.專案Repo || []).forEach(function (repo) {
+    addOptionIfNew_('專案Repo', repo);
+  });
 }
 
 function addOptionIfNew_(category, value) {
@@ -512,6 +563,7 @@ function doPost(e) {
 }
 
 function handleCreate_(item) {
+  item = applyLeaveFixedValues_(item);
   var errors = validateItem_(item);
   if (errors.length > 0) {
     return jsonOutput_({ error: errors.join('；') });
@@ -532,12 +584,7 @@ function handleCreate_(item) {
   var row = itemToRow_(colMap, sheet.getLastColumn(), created);
   sheet.getRange(lastRow + 1, 1, 1, row.length).setValues([row]);
 
-  addOptionIfNew_('交辦單位', created.交辦單位);
-  addOptionIfNew_('交辦人員', created.交辦人員);
-  addOptionIfNew_('專案名稱', created.專案名稱);
-  (created.專案Repo || []).forEach(function (repo) {
-    addOptionIfNew_('專案Repo', repo);
-  });
+  syncOptionsFromItem_(created);
 
   return jsonOutput_({ item: created });
 }
@@ -563,7 +610,9 @@ function handleUpdate_(id, originalDate, itemPatch) {
   var oldRowValues = oldSheet.getRange(rowIndex, 1, 1, oldSheet.getLastColumn()).getValues()[0];
   var existing = rowToItem_(oldColMap, oldRowValues);
   // 項次一律由後端決定，忽略前端送來的值：工作日期沒改沿用原本的項次，改到別天下面再重新編號
-  var merged = Object.assign({}, existing, itemPatch, { id: id, 項次: existing.項次 });
+  var merged = applyLeaveFixedValues_(
+    Object.assign({}, existing, itemPatch, { id: id, 項次: existing.項次 }),
+  );
   var dateChanged = merged.工作日期 !== existing.工作日期;
 
   var errors = validateItem_(merged);
@@ -589,12 +638,7 @@ function handleUpdate_(id, originalDate, itemPatch) {
     newSheet.getRange(newLastRow + 1, 1, 1, newRow.length).setValues([newRow]);
   }
 
-  addOptionIfNew_('交辦單位', merged.交辦單位);
-  addOptionIfNew_('交辦人員', merged.交辦人員);
-  addOptionIfNew_('專案名稱', merged.專案名稱);
-  (merged.專案Repo || []).forEach(function (repo) {
-    addOptionIfNew_('專案Repo', repo);
-  });
+  syncOptionsFromItem_(merged);
 
   return jsonOutput_({ item: merged });
 }
