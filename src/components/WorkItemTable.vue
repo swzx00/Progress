@@ -367,7 +367,7 @@ const sortedItems = computed(() =>
       @media (min-width: 768px) {
         grid-template-columns:
           32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-          62px 48px 77px 58px 92px;
+          62px 48px 77px 58px 100px;
       }
     }
 
@@ -967,7 +967,9 @@ const sortedItems = computed(() =>
       }
     }
 
+    // 刪除跟前面的按鈕拉開到 12px，避免誤按（使用者決定）：手機 gap 8px＋4px
     &--danger {
+      margin-left: 4px;
       color: var(--color-red-600);
       background: var(--color-red-000);
       border: 1px solid var(--color-red-600);
@@ -988,6 +990,11 @@ const sortedItems = computed(() =>
       width: 28px;
       height: 28px;
       padding: 0;
+
+      // 桌面 gap 4px＋8px＝12px
+      &--danger {
+        margin-left: 8px;
+      }
     }
   }
 
