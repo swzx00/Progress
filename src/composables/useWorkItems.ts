@@ -92,6 +92,8 @@ export interface DaySummary {
   nextIndex: number;
   /** 當天其他紀錄（排除 excludeId）的今日工時合計 */
   otherHours: number;
+  /** 當天未刪除的紀錄筆數（「複製本日」判斷目標日是否已有紀錄） */
+  itemCount: number;
 }
 
 /**
@@ -109,6 +111,7 @@ export const fetchDaySummary = async (date: string, excludeId?: string): Promise
     otherHours: dayItems
       .filter((item) => item.id !== excludeId)
       .reduce((sum, item) => sum + (Number(item.今日工時) || 0), 0),
+    itemCount: dayItems.length,
   };
 };
 
@@ -135,10 +138,15 @@ export function useWorkItems() {
 
   /**
    * 一次新增多筆（「複製本日」用）：後端全部驗證通過才寫入，任何一筆不合格或當天工時合計
-   * 超過上限就整批退回、不寫入任何一筆。項次由後端依陣列順序照每日編號規則接續
+   * 超過上限就整批退回、不寫入任何一筆。項次由後端依陣列順序照每日編號規則接續。
+   * replace 為 true 時（覆蓋目標日）：後端先軟刪除目標日原本的紀錄（含請假）再寫入，工時合計只算這批
    */
-  const batchCreateItems = (idToken: string, items: CreateInput[]): Promise<void> =>
-    postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem) });
+  const batchCreateItems = (
+    idToken: string,
+    items: CreateInput[],
+    replace = false,
+  ): Promise<void> =>
+    postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem), replace });
 
   /**
    * originalDate：這筆紀錄「修改前」的工作日期，用來換算它原本在哪個月份分頁，

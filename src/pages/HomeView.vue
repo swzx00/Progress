@@ -121,15 +121,28 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
 
 /**
  * 複製本日：把目前選到那天的全部紀錄（含請假）依原本項次順序，一次複製到目標日期。
- * 欄位規則跟單項複製共用 buildCopyPayload。送出前前端先估算目標日的工時合計
- * （既有紀錄＋這批），超過上限就擋下、不送出；後端 batchCreate 也會整批檢查。
- * 成功後切到目標日期，並用 Toast 顯示複製了幾筆
+ * 欄位規則跟單項複製共用 buildCopyPayload。
+ * - 目標日不能跟來源同一天
+ * - 目標日已有紀錄：先跳警示確認，確認後用覆蓋模式（後端先軟刪除目標日原本的紀錄，含請假，再寫入），
+ *   工時合計只算這批
+ * - 目標日沒有紀錄：直接複製，工時合計算「既有紀錄＋這批」
+ * 送出前前端先估算工時合計，超過上限就擋下、不送出；後端 batchCreate 也會整批檢查。
+ * 成功後切到目標日期，並用 Toast 顯示複製了幾筆（使用者決定）
  */
 const copyDayOpen = ref(false);
 const copyingDay = ref(false);
 const copyDayError = ref<string | null>(null);
+// 目標日已有紀錄時等待使用者確認覆蓋
+const copyDayReplaceTarget = ref<{ date: string; count: number } | null>(null);
 
 const canCopyDay = computed(() => !loading.value && !error.value && items.value.length > 0);
+
+const formatDisplayDate = (date: string): string => date.replaceAll('-', '/');
+
+const copyDayPayloads = (targetDate: string) =>
+  [...items.value]
+    .sort((a, b) => a.項次 - b.項次)
+    .map((item) => buildCopyPayload(item, targetDate));
 
 const openCopyDay = (): void => {
   copyDayError.value = null;
@@ -141,52 +154,84 @@ const closeCopyDay = (): void => {
   copyDayOpen.value = false;
 };
 
-const confirmCopyDay = async (targetDate: string): Promise<void> => {
-  if (copyingDay.value) return;
+const handleCopyDayUnauthorized = (message: string): void => {
+  copyDayOpen.value = false;
+  copyDayReplaceTarget.value = null;
+  showToast(message);
+  signOut();
+};
+
+const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> => {
   if (!idToken.value) {
-    copyDayOpen.value = false;
-    showToast('尚未登入，無法複製');
-    signOut();
+    handleCopyDayUnauthorized('尚未登入，無法複製');
     return;
   }
-  const payloads = [...items.value]
-    .sort((a, b) => a.項次 - b.項次)
-    .map((item) => buildCopyPayload(item, targetDate));
-  const batchHours = payloads.reduce((sum, item) => sum + item.今日工時, 0);
-
+  const payloads = copyDayPayloads(targetDate);
   copyingDay.value = true;
-  copyDayError.value = null;
   try {
-    let otherHours: number;
-    try {
-      ({ otherHours } = await fetchDaySummary(targetDate));
-    } catch {
-      copyDayError.value = '無法確認目標日的工時合計，請稍後再試';
-      return;
-    }
-    if (otherHours + batchHours > DAILY_HOURS_MAX) {
-      copyDayError.value = dailyHoursMessage(otherHours, batchHours);
-      return;
-    }
-    await batchCreateItems(idToken.value, payloads);
+    await batchCreateItems(idToken.value, payloads, replace);
     copyDayOpen.value = false;
+    copyDayReplaceTarget.value = null;
     if (selectedDate.value === targetDate) {
       await fetchByDate(targetDate);
     } else {
       selectedDate.value = targetDate;
     }
-    showToast(`已複製 ${payloads.length} 筆紀錄到 ${targetDate.replaceAll('-', '/')}`, 'success');
+    showToast(`已複製 ${payloads.length} 筆紀錄到 ${formatDisplayDate(targetDate)}`, 'success');
   } catch (e) {
-    // 登入錯誤：關閉對話框並登出；其他錯誤（含後端整批退回）：對話框維持開啟，讓使用者換日期重試
-    const unauthorized = e instanceof ApiError && e.code === 'UNAUTHORIZED';
-    showToast(e instanceof Error ? e.message : '複製時發生未知錯誤');
-    if (unauthorized) {
-      copyDayOpen.value = false;
-      signOut();
+    // 登入錯誤：關閉對話框並登出；其他錯誤（含後端整批退回）：複製對話框維持開啟，讓使用者換日期重試
+    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') {
+      handleCopyDayUnauthorized(e.message);
+      return;
     }
+    copyDayReplaceTarget.value = null;
+    showToast(e instanceof Error ? e.message : '複製時發生未知錯誤');
   } finally {
     copyingDay.value = false;
   }
+};
+
+const confirmCopyDay = async (targetDate: string): Promise<void> => {
+  if (copyingDay.value) return;
+  copyDayError.value = null;
+  if (targetDate === selectedDate.value) {
+    copyDayError.value = '目標日期不能跟來源同一天';
+    return;
+  }
+  const batchHours = copyDayPayloads(targetDate).reduce((sum, item) => sum + item.今日工時, 0);
+
+  copyingDay.value = true;
+  let summary: { otherHours: number; itemCount: number };
+  try {
+    summary = await fetchDaySummary(targetDate);
+  } catch {
+    copyDayError.value = '無法確認目標日的紀錄，請稍後再試';
+    return;
+  } finally {
+    copyingDay.value = false;
+  }
+
+  // 覆蓋時原本的紀錄會被刪掉，工時合計只算這批
+  const otherHours = summary.itemCount > 0 ? 0 : summary.otherHours;
+  if (otherHours + batchHours > DAILY_HOURS_MAX) {
+    copyDayError.value = dailyHoursMessage(otherHours, batchHours);
+    return;
+  }
+  if (summary.itemCount > 0) {
+    copyDayReplaceTarget.value = { date: targetDate, count: summary.itemCount };
+    return;
+  }
+  await runCopyDay(targetDate, false);
+};
+
+const confirmCopyDayReplace = async (): Promise<void> => {
+  if (!copyDayReplaceTarget.value || copyingDay.value) return;
+  await runCopyDay(copyDayReplaceTarget.value.date, true);
+};
+
+const cancelCopyDayReplace = (): void => {
+  if (copyingDay.value) return;
+  copyDayReplaceTarget.value = null;
 };
 
 const deleteTarget = ref<WorkItem | null>(null);
@@ -369,6 +414,19 @@ const confirmDelete = async (): Promise<void> => {
         :error="copyDayError"
         @confirm="confirmCopyDay"
         @cancel="closeCopyDay"
+      />
+    </Transition>
+
+    <Transition name="confirm-dialog">
+      <ConfirmDialog
+        v-if="copyDayReplaceTarget && isAuthorized"
+        title="目標日已有紀錄"
+        :message="`${formatDisplayDate(copyDayReplaceTarget.date)} 已經有 ${copyDayReplaceTarget.count} 筆紀錄，複製後會先刪除這 ${copyDayReplaceTarget.count} 筆，再寫入 ${items.length} 筆複製的紀錄。`"
+        confirm-label="刪除並複製"
+        danger
+        :busy="copyingDay"
+        @confirm="confirmCopyDayReplace"
+        @cancel="cancelCopyDayReplace"
       />
     </Transition>
 

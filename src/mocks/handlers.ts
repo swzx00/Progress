@@ -152,6 +152,7 @@ interface BatchCreatePayload {
   action: 'batchCreate';
   idToken: string;
   items: Omit<WorkItem, 'id' | '項次' | '已刪除'>[];
+  replace?: boolean;
 }
 
 interface UpdatePayload {
@@ -254,11 +255,20 @@ export const handlers = [
         const hours = batchHours.get(item.工作日期) ?? 0;
         batchHours.set(item.工作日期, hours + (Number(item.今日工時) || 0));
       });
+      // 覆蓋模式：工時合計只算這批，通過後先軟刪除這些日期原本的紀錄（含請假）
       for (const [date, hours] of batchHours) {
-        const otherHours = getDayHoursExcluding(date);
+        const otherHours = body.replace ? 0 : getDayHoursExcluding(date);
         if (otherHours + hours > schema.dailyHours.max) {
           return HttpResponse.json({ error: dailyHoursMessage(otherHours, hours) });
         }
+      }
+      let replaced = 0;
+      if (body.replace) {
+        items = items.map((item) => {
+          if (!batchHours.has(item.工作日期) || item.已刪除) return item;
+          replaced += 1;
+          return { ...item, 已刪除: true };
+        });
       }
       const created = body.items.map((item) => {
         const createdItem: WorkItem = {
@@ -271,7 +281,7 @@ export const handlers = [
         syncOptions(createdItem);
         return createdItem;
       });
-      return HttpResponse.json({ items: created });
+      return HttpResponse.json({ items: created, replaced });
     }
 
     if (body.action === 'update') {
