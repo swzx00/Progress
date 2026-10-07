@@ -56,7 +56,7 @@ var VALIDATION_RULES = {
   工作目標: { label: '工作目標', kind: 'text', required: true, maxLength: 500 },
   處理內容: { label: '處理內容', kind: 'text', required: false, maxLength: 2000 },
   今日工時: { label: '今日工時', kind: 'number', required: false, default: 0, min: 0, max: 24, step: 0.25 },
-  完成度: { label: '完成度', kind: 'number', required: false, default: 0, min: 0, max: 100, step: 1 },
+  完成度: { label: '完成度', kind: 'number', required: false, default: 0, min: 0, max: 100, step: 0.25 },
   預計期限: { label: '預計期限', kind: 'date', required: false, minYear: 2020, maxYear: 2099 },
   狀態: { label: '狀態', kind: 'status', required: true, default: '待辦' },
 };
