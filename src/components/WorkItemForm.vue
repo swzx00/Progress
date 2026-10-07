@@ -30,11 +30,14 @@ const props = withDefaults(
     defaultDate?: string;
     /** 新增請假（從「請假」按鈕開啟）；編輯時看 item 本身是不是請假紀錄，不看這個 */
     leave?: boolean;
+    /** 複製：用這筆紀錄預填「新增」表單，存檔時新增一筆，原紀錄不動（item 有值時忽略） */
+    copySource?: WorkItem | null;
   }>(),
   {
     saving: false,
     defaultDate: undefined,
     leave: false,
+    copySource: null,
   },
 );
 
@@ -43,9 +46,11 @@ const props = withDefaults(
  * 固定值（LEAVE_FIXED_VALUES）。請假跟工作紀錄共用同一個 Drawer，未儲存確認、
  * 送出中遮罩、項次顯示等行為都一樣
  */
-// 新增時可以在表單上方切換「工作項目／請假」，初始值看是從哪個按鈕開啟的；
+// 新增時可以在表單上方切換「工作項目／請假」，初始值看是從哪個按鈕開啟的（複製時看來源紀錄）；
 // 表單每次開啟都重新掛載（HomeView 用 v-if），所以只需要在這裡取一次初始值
-const creatingLeave = ref(props.leave);
+const creatingLeave = ref(props.copySource ? isLeaveItem(props.copySource) : props.leave);
+// 是否為複製模式（標題用）；切換工作項目／請假後欄位重設，就不算複製了
+const copying = ref(!props.item && !!props.copySource);
 const isLeaveMode = computed(() => (props.item ? isLeaveItem(props.item) : creatingLeave.value));
 
 const emit = defineEmits<{
@@ -159,6 +164,32 @@ const resetForm = (item: WorkItem | null | undefined): void => {
   errors.value = {};
   submitAttempted = false;
   snapshot.value = JSON.stringify(form);
+  blankSnapshot.value = snapshot.value;
+};
+
+/**
+ * 複製：用來源紀錄預填，工作日期維持 DateNav 選到的那天（resetForm 已設定）。
+ * - 工作項目：帶入交辦單位、交辦人員、專案名稱、專案 Repo、工作目標、預計期限、狀態、完成度；
+ *   處理內容、今日工時是「當天」的內容，維持預設值（空白、0）
+ * - 請假：帶入假別、請假時數、備註（固定值一樣送出時才補）
+ * 快照取預填後的狀態，打開後沒改就關閉不會跳未儲存確認
+ */
+const applyCopySource = (source: WorkItem): void => {
+  if (isLeaveMode.value) {
+    form.工作目標 = source.工作目標;
+    form.今日工時 = source.今日工時;
+    form.處理內容 = source.處理內容;
+  } else {
+    form.交辦單位 = source.交辦單位;
+    form.交辦人員 = source.交辦人員;
+    form.專案名稱 = source.專案名稱;
+    form.專案Repo = [...source.專案Repo];
+    form.工作目標 = source.工作目標;
+    form.預計期限 = source.預計期限;
+    form.狀態 = source.狀態 || DEFAULT_STATUS;
+    form.完成度 = source.完成度;
+  }
+  snapshot.value = JSON.stringify(form);
 };
 
 /**
@@ -193,6 +224,8 @@ const scrollToFirstError = async (): Promise<void> => {
  * 存檔成功、登入錯誤這兩種關閉是 HomeView 直接關掉表單，不經過這裡，不會跳確認。
  */
 const snapshot = ref('');
+// 該模式的空白預設值（不含複製預填），切換工作項目／請假時判斷「有沒有填內容」用
+const blankSnapshot = ref('');
 const isDirty = computed(() => JSON.stringify(form) !== snapshot.value);
 const discardConfirmOpen = ref(false);
 
@@ -236,12 +269,13 @@ const switchConfirmOpen = ref(false);
 const withoutDate = (json: string): string => JSON.stringify({ ...JSON.parse(json), 工作日期: '' });
 
 const hasEnteredContent = computed(
-  () => withoutDate(JSON.stringify(form)) !== withoutDate(snapshot.value),
+  () => withoutDate(JSON.stringify(form)) !== withoutDate(blankSnapshot.value),
 );
 
 const applyModeSwitch = (): void => {
   const date = form.工作日期;
   creatingLeave.value = !creatingLeave.value;
+  copying.value = false;
   // 快照維持「預設值＋原本的預設日期」，改過的日期關閉時仍會被視為未儲存的修改
   resetForm(null);
   form.工作日期 = date;
@@ -263,7 +297,14 @@ const confirmModeSwitch = (): void => {
   applyModeSwitch();
 };
 
-watch(() => props.item, resetForm, { immediate: true });
+watch(
+  () => props.item,
+  (item) => {
+    resetForm(item);
+    if (!item && props.copySource) applyCopySource(props.copySource);
+  },
+  { immediate: true },
+);
 
 /**
  * 項次欄（唯讀，只負責顯示；項次一律由後端決定，送出的資料不含項次，後端也會忽略
@@ -299,7 +340,8 @@ watch([() => form.工作日期, () => props.item], updateDaySummary, { immediate
 
 const title = computed(() => {
   const subject = isLeaveMode.value ? '請假' : '工作項目';
-  return props.item ? `編輯${subject}` : `新增${subject}`;
+  if (props.item) return `編輯${subject}`;
+  return copying.value ? `複製${subject}` : `新增${subject}`;
 });
 
 /**
