@@ -419,6 +419,12 @@ const sortedItems = computed(() =>
       * {
         max-width: 100%;
       }
+
+      // 表頭跟內容一樣置左（使用者決定），蓋過上面表頭共用的置中
+      .work-item-table__row--header & {
+        justify-content: flex-start;
+        text-align: start;
+      }
     }
 
     &--status {
@@ -497,6 +503,12 @@ const sortedItems = computed(() =>
       @media (min-width: 768px) {
         order: 3;
       }
+
+      // 表頭跟內容一樣置左（使用者決定），蓋過上面表頭共用的置中
+      .work-item-table__row--header & {
+        justify-content: flex-start;
+        text-align: start;
+      }
     }
 
     &--detail {
@@ -519,6 +531,12 @@ const sortedItems = computed(() =>
         -webkit-line-clamp: 3;
         font-size: inherit;
         color: inherit;
+      }
+
+      // 表頭跟內容一樣置左（使用者決定），蓋過上面表頭共用的置中
+      .work-item-table__row--header & {
+        justify-content: flex-start;
+        text-align: start;
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
