@@ -428,11 +428,9 @@ const sortedItems = computed(() =>
       border-bottom-left-radius: 0;
       box-shadow: inset 3px 0 0 var(--color-red-600);
 
+      // 只取消手機版加的左邊框；不能用 border: inherit，會連列的 border-bottom 一起清掉
       @media (min-width: 768px) {
-        border: inherit;
-        border-left: inherit;
-        border-top-left-radius: inherit;
-        border-bottom-left-radius: inherit;
+        border-left: none;
         box-shadow: inset 4px 0 0 var(--color-red-600);
       }
     }
@@ -445,11 +443,9 @@ const sortedItems = computed(() =>
       border-bottom-left-radius: 0;
       box-shadow: inset 3px 0 0 var(--color-teal-600);
 
+      // 只取消手機版加的左邊框；不能用 border: inherit，會連列的 border-bottom 一起清掉
       @media (min-width: 768px) {
-        border: inherit;
-        border-left: inherit;
-        border-top-left-radius: inherit;
-        border-bottom-left-radius: inherit;
+        border-left: none;
         box-shadow: inset 4px 0 0 var(--color-teal-600);
       }
     }
