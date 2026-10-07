@@ -502,11 +502,16 @@ const confirmDelete = async (): Promise<void> => {
     }
   }
 
+  // 手機、平板：三顆動作按鈕只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），文字收起來，
+  // 按鈕名稱靠 aria-label、滑過靠 title；桌面（≥ 1024px）才顯示圖示＋文字（使用者決定）
   &__add-btn {
     display: inline-flex;
     gap: 4px;
     align-items: center;
-    padding: 6px 12px;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
     font-size: 14px;
     font-weight: 600;
     color: var(--color-black-000);
@@ -557,15 +562,6 @@ const confirmDelete = async (): Promise<void> => {
       height: 16px;
     }
 
-    // 平板（768–1023px）DateNav 一行放不下，三顆動作按鈕只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），
-    // 文字收起來，按鈕名稱靠 aria-label、滑過靠 title；手機、桌面維持圖示＋文字（使用者決定）
-    @media (min-width: 768px) {
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      padding: 0;
-    }
-
     @media (min-width: 1024px) {
       width: auto;
       height: auto;
@@ -574,9 +570,7 @@ const confirmDelete = async (): Promise<void> => {
   }
 
   &__add-btn-label {
-    @media (min-width: 768px) {
-      display: none;
-    }
+    display: none;
 
     @media (min-width: 1024px) {
       display: inline;
