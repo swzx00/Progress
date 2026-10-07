@@ -1,3 +1,5 @@
+import schema from '../../shared/validation-schema.json';
+
 export interface WorkItem {
   id: string;
   項次: number;
@@ -40,6 +42,16 @@ export const STATUS_KEYS: Record<Status, string> = {
   暫緩: 'paused',
 };
 
+/**
+ * 請假紀錄的狀態（規則在 shared/validation-schema.json 的 leave）。刻意不放進 STATUS_OPTIONS：
+ * 一般工作紀錄的狀態下拉選單不能選到它，請假只能從「請假」按鈕開的表單建立
+ */
+export const LEAVE_STATUS = schema.leave.status;
+
+export const isLeaveItem = (item: Pick<WorkItem, '狀態'>): boolean => item.狀態 === LEAVE_STATUS;
+
 // Sheet 裡的狀態是純文字，可能出現清單外的值（舊資料、手動輸入），查不到回傳 undefined
-export const getStatusKey = (status: string): string | undefined =>
-  Object.hasOwn(STATUS_KEYS, status) ? STATUS_KEYS[status as Status] : undefined;
+export const getStatusKey = (status: string): string | undefined => {
+  if (status === LEAVE_STATUS) return 'leave';
+  return Object.hasOwn(STATUS_KEYS, status) ? STATUS_KEYS[status as Status] : undefined;
+};

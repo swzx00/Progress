@@ -6,10 +6,14 @@ import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchNextIndex } from '@/composables/useWorkItems';
-import { STATUS_OPTIONS, type WorkItem } from '@/types/work-item';
+import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import {
+  LEAVE_FIXED_VALUES,
+  LEAVE_RULES,
+  LEAVE_TYPES,
   WORK_ITEM_RULES,
   dateInputRange,
+  validateLeave,
   validateWorkItem,
   type WorkItemErrors,
   type WorkItemFieldName,
@@ -22,12 +26,25 @@ const props = withDefaults(
     saving?: boolean;
     /** 新增時「工作日期」的預設值：使用者在 DateNav 選到的那天 */
     defaultDate?: string;
+    /** 新增請假（從「請假」按鈕開啟）；編輯時看 item 本身是不是請假紀錄，不看這個 */
+    leave?: boolean;
   }>(),
   {
     saving: false,
     defaultDate: undefined,
+    leave: false,
   },
 );
+
+/**
+ * 請假模式：只顯示工作日期、假別、請假時數、備註四個欄位，其餘欄位送出時一律寫入
+ * 固定值（LEAVE_FIXED_VALUES）。請假跟工作紀錄共用同一個 Drawer，未儲存確認、
+ * 送出中遮罩、項次顯示等行為都一樣
+ */
+// 新增時可以在表單上方切換「工作項目／請假」，初始值看是從哪個按鈕開啟的；
+// 表單每次開啟都重新掛載（HomeView 用 v-if），所以只需要在這裡取一次初始值
+const creatingLeave = ref(props.leave);
+const isLeaveMode = computed(() => (props.item ? isLeaveItem(props.item) : creatingLeave.value));
 
 const emit = defineEmits<{
   save: [payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>];
@@ -47,17 +64,23 @@ const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人�
 const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱));
 const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo));
 const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
+const leaveTypeOptions = toSelectOptions(LEAVE_TYPES);
 
 // 預設值來自 shared/validation-schema.json
 const DEFAULT_HOURS = Number(WORK_ITEM_RULES.今日工時.default);
 const DEFAULT_PROGRESS = Number(WORK_ITEM_RULES.完成度.default);
 const DEFAULT_STATUS = String(WORK_ITEM_RULES.狀態.default);
+const DEFAULT_LEAVE_HOURS = Number(LEAVE_RULES.今日工時.default);
 
 const workDateRange = dateInputRange('工作日期');
 const deadlineRange = dateInputRange('預計期限');
 
 // 必填標示（紅色＊）跟著 schema 的 required 走，改規則時標示會自動同步
 const isRequired = (field: WorkItemFieldName): boolean => WORK_ITEM_RULES[field].required;
+const isLeaveRequired = (field: keyof typeof LEAVE_RULES): boolean => LEAVE_RULES[field].required;
+
+const validate = (values: WorkItemFormValues): WorkItemErrors =>
+  isLeaveMode.value ? validateLeave(values) : validateWorkItem(values);
 
 const form = reactive<WorkItemFormValues>({
   工作日期: toDateString(new Date()),
@@ -78,7 +101,7 @@ const form = reactive<WorkItemFormValues>({
  * 「選了一個空的值」，placeholder 就不見了。表單內部（驗證、送出、快照比對）維持用空字串
  * 代表「沒選」，只在跟 NSelect 交接的這一層互轉。多選的專案 Repo 是空陣列，本來就正常顯示。
  */
-const selectModel = (field: '交辦單位' | '交辦人員' | '專案名稱' | '狀態') =>
+const selectModel = (field: '交辦單位' | '交辦人員' | '專案名稱' | '狀態' | '工作目標') =>
   computed<string | null>({
     get: () => form[field] || null,
     set: (value) => {
@@ -90,6 +113,8 @@ const unitModel = selectModel('交辦單位');
 const assigneeModel = selectModel('交辦人員');
 const projectModel = selectModel('專案名稱');
 const statusModel = selectModel('狀態');
+// 請假模式的假別存在「工作目標」
+const leaveTypeModel = selectModel('工作目標');
 
 const resetForm = (item: WorkItem | null | undefined): void => {
   form.工作日期 = item?.工作日期 ?? props.defaultDate ?? toDateString(new Date());
@@ -104,6 +129,11 @@ const resetForm = (item: WorkItem | null | undefined): void => {
   form.完成度 = item?.完成度 ?? DEFAULT_PROGRESS;
   // 既有紀錄的狀態可能是空的（舊資料），編輯時一樣預設帶「待辦」（使用者決定）
   form.狀態 = item?.狀態 || DEFAULT_STATUS;
+  if (isLeaveMode.value) {
+    // 請假的固定欄位不顯示在表單上，送出時再補；這裡只設定請假自己的預設值
+    form.今日工時 = item?.今日工時 ?? DEFAULT_LEAVE_HOURS;
+    form.狀態 = LEAVE_STATUS;
+  }
   errors.value = {};
   submitAttempted = false;
   snapshot.value = JSON.stringify(form);
@@ -121,7 +151,7 @@ let submitAttempted = false;
 watch(
   form,
   () => {
-    if (submitAttempted) errors.value = validateWorkItem(form);
+    if (submitAttempted) errors.value = validate(form);
   },
   { deep: true },
 );
@@ -172,6 +202,43 @@ const onDiscardDialogAfterLeave = (): void => {
   emit('cancel');
 };
 
+/**
+ * 新增時切換「工作項目／請假」（編輯既有紀錄不能切換，也不顯示切換按鈕，使用者決定）：
+ * 切換後保留工作日期，其他欄位整份重設成該模式的預設值。請假的固定值（人事室、休假…）
+ * 不存在表單欄位裡，送出時才補，所以切換不會有殘留；反過來切回工作項目時，狀態（休假→待辦）
+ * 跟工時預設（8→0）也靠重設處理。
+ * 除了工作日期以外有填任何內容，就先跳確認，避免不小心清掉
+ */
+const switchConfirmOpen = ref(false);
+
+const withoutDate = (json: string): string => JSON.stringify({ ...JSON.parse(json), 工作日期: '' });
+
+const hasEnteredContent = computed(
+  () => withoutDate(JSON.stringify(form)) !== withoutDate(snapshot.value),
+);
+
+const applyModeSwitch = (): void => {
+  const date = form.工作日期;
+  creatingLeave.value = !creatingLeave.value;
+  // 快照維持「預設值＋原本的預設日期」，改過的日期關閉時仍會被視為未儲存的修改
+  resetForm(null);
+  form.工作日期 = date;
+};
+
+const requestModeSwitch = (toLeave: boolean): void => {
+  if (props.item || props.saving || toLeave === creatingLeave.value) return;
+  if (hasEnteredContent.value) {
+    switchConfirmOpen.value = true;
+  } else {
+    applyModeSwitch();
+  }
+};
+
+const confirmModeSwitch = (): void => {
+  switchConfirmOpen.value = false;
+  applyModeSwitch();
+};
+
 watch(() => props.item, resetForm, { immediate: true });
 
 /**
@@ -204,15 +271,30 @@ const updateIndexValue = async (): Promise<void> => {
 
 watch([() => form.工作日期, () => props.item], updateIndexValue, { immediate: true });
 
-const title = computed(() => (props.item ? '編輯工作項目' : '新增工作項目'));
+const title = computed(() => {
+  const subject = isLeaveMode.value ? '請假' : '工作項目';
+  return props.item ? `編輯${subject}` : `新增${subject}`;
+});
 
 const onSubmit = (): void => {
   // 按鈕停用只擋得住畫面操作，這裡再擋一次，避免重複送出兩筆
   if (props.saving) return;
   submitAttempted = true;
-  errors.value = validateWorkItem(form);
+  errors.value = validate(form);
   if (Object.keys(errors.value).length > 0) {
     void scrollToFirstError();
+    return;
+  }
+  if (isLeaveMode.value) {
+    emit('save', {
+      ...LEAVE_FIXED_VALUES,
+      專案Repo: [...LEAVE_FIXED_VALUES.專案Repo],
+      工作日期: form.工作日期,
+      工作目標: form.工作目標,
+      處理內容: form.處理內容.trim(),
+      今日工時: form.今日工時 === '' ? DEFAULT_LEAVE_HOURS : form.今日工時,
+      狀態: LEAVE_STATUS,
+    });
     return;
   }
   // 文字欄位去掉前後空白；選填數字欄位清空（空字串）時用預設值
@@ -249,6 +331,29 @@ const onSubmit = (): void => {
         </button>
       </div>
 
+      <div v-if="!item" class="work-item-form__mode" role="group" aria-label="紀錄類型">
+        <button
+          type="button"
+          class="work-item-form__mode-btn"
+          :class="{ 'work-item-form__mode-btn--active': !isLeaveMode }"
+          :aria-pressed="!isLeaveMode"
+          :disabled="saving"
+          @click="requestModeSwitch(false)"
+        >
+          工作項目
+        </button>
+        <button
+          type="button"
+          class="work-item-form__mode-btn"
+          :class="{ 'work-item-form__mode-btn--active': isLeaveMode }"
+          :aria-pressed="isLeaveMode"
+          :disabled="saving"
+          @click="requestModeSwitch(true)"
+        >
+          請假
+        </button>
+      </div>
+
       <form
         id="work-item-form-body"
         ref="formEl"
@@ -262,7 +367,7 @@ const onSubmit = (): void => {
             :class="{ 'work-item-form__field--invalid': errors.工作日期 }"
           >
             <span class="work-item-form__label">
-              工作日期
+              {{ isLeaveMode ? LEAVE_RULES.工作日期.label : '工作日期' }}
               <span
                 v-if="isRequired('工作日期')"
                 class="work-item-form__required"
@@ -293,7 +398,72 @@ const onSubmit = (): void => {
           </div>
         </div>
 
-        <div class="work-item-form__row">
+        <template v-if="isLeaveMode">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.工作目標 }"
+          >
+            <span class="work-item-form__label">
+              {{ LEAVE_RULES.工作目標.label }}
+              <span
+                v-if="isLeaveRequired('工作目標')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <NSelect
+              v-model:value="leaveTypeModel"
+              :options="leaveTypeOptions"
+              :status="errors.工作目標 ? 'error' : undefined"
+              placeholder="請選擇假別"
+              :disabled="saving"
+            />
+            <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
+          </label>
+
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.今日工時 }"
+          >
+            <span class="work-item-form__label">
+              {{ LEAVE_RULES.今日工時.label }}
+              <span
+                v-if="isLeaveRequired('今日工時')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <input
+              v-model.number="form.今日工時"
+              type="number"
+              placeholder="請填寫請假時數"
+              :min="LEAVE_RULES.今日工時.min"
+              :max="LEAVE_RULES.今日工時.max"
+              :step="LEAVE_RULES.今日工時.step"
+              :disabled="saving"
+            />
+            <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
+          </label>
+
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.處理內容 }"
+          >
+            {{ LEAVE_RULES.處理內容.label }}
+            <textarea
+              v-model="form.處理內容"
+              rows="2"
+              placeholder="請填寫請假備註"
+              :maxlength="LEAVE_RULES.處理內容.maxLength"
+              :disabled="saving"
+            />
+            <span v-if="errors.處理內容" class="work-item-form__error">{{ errors.處理內容 }}</span>
+          </label>
+        </template>
+
+        <div v-if="!isLeaveMode" class="work-item-form__row">
           <label
             class="work-item-form__field"
             :class="{ 'work-item-form__field--invalid': errors.交辦單位 }"
@@ -345,6 +515,7 @@ const onSubmit = (): void => {
         </div>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.專案名稱 }"
         >
@@ -367,6 +538,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.專案Repo }"
         >
@@ -385,6 +557,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.工作目標 }"
         >
@@ -406,6 +579,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.處理內容 }"
         >
@@ -421,6 +595,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.今日工時 }"
         >
@@ -438,6 +613,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.完成度 }"
         >
@@ -455,6 +631,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.預計期限 }"
         >
@@ -471,6 +648,7 @@ const onSubmit = (): void => {
         </label>
 
         <label
+          v-if="!isLeaveMode"
           class="work-item-form__field"
           :class="{ 'work-item-form__field--invalid': errors.狀態 }"
         >
@@ -521,6 +699,19 @@ const onSubmit = (): void => {
         danger
         @confirm="confirmDiscard"
         @cancel="discardConfirmOpen = false"
+      />
+    </Transition>
+
+    <Transition name="confirm-dialog">
+      <ConfirmDialog
+        v-if="switchConfirmOpen"
+        :title="isLeaveMode ? '要改填工作項目嗎？' : '要改填請假嗎？'"
+        message="切換後，除了日期以外已填寫的內容都會清空。"
+        confirm-label="切換"
+        cancel-label="繼續編輯"
+        danger
+        @confirm="confirmModeSwitch"
+        @cancel="switchConfirmOpen = false"
       />
     </Transition>
   </div>
@@ -587,6 +778,45 @@ const onSubmit = (): void => {
     &:disabled {
       cursor: not-allowed;
       opacity: 0.5;
+    }
+  }
+
+  // 新增時的「工作項目／請假」兩段式切換
+  &__mode {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin: 12px 16px;
+    background: var(--color-black-050);
+    border: 1px solid var(--color-black-100);
+    border-radius: 8px;
+
+    @media (min-width: 768px) {
+      margin: 16px 24px;
+    }
+
+    &-btn {
+      flex: 1;
+      padding: 6px 12px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--color-black-500);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+
+      &--active {
+        font-weight: 600;
+        color: var(--color-blue-700);
+        background: var(--color-black-000);
+        box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
     }
   }
 

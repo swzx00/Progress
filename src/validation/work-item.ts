@@ -23,7 +23,7 @@ export type WorkItemErrors = Partial<Record<WorkItemFieldName, string>>;
 
 interface FieldRule {
   label: string;
-  kind: 'date' | 'select' | 'tags' | 'text' | 'number' | 'status';
+  kind: 'date' | 'select' | 'tags' | 'text' | 'number' | 'status' | 'leaveType';
   required: boolean;
   default?: number | string;
   maxLength?: number;
@@ -38,6 +38,19 @@ interface FieldRule {
 
 /** 規則來源是 shared/validation-schema.json（前後端共用的唯一事實來源），這裡只負責套用 */
 export const WORK_ITEM_RULES = schema.fields as Record<WorkItemFieldName, FieldRule>;
+
+/** 請假表單的欄位規則：請假只用到這四個欄位，其餘欄位寫入固定值（LEAVE_FIXED_VALUES） */
+type LeaveFieldName = '工作日期' | '工作目標' | '處理內容' | '今日工時';
+export const LEAVE_RULES = schema.leave.fields as Record<LeaveFieldName, FieldRule>;
+
+/** 假別可選值，存在「工作目標」欄位 */
+export const LEAVE_TYPES: string[] = schema.leave.types;
+
+/** 請假列固定寫入的值（後端也會強制覆蓋），不會寫回「選項清單」 */
+export const LEAVE_FIXED_VALUES = schema.leave.fixed as Pick<
+  WorkItemFormValues,
+  '交辦單位' | '交辦人員' | '專案名稱' | '專案Repo' | '預計期限'
+> & { 完成度: number };
 
 /** <input type="date"> 的 min/max 屬性值，限制日期選擇器可選的年份範圍 */
 export const dateInputRange = (field: '工作日期' | '預計期限'): { min: string; max: string } => {
@@ -113,6 +126,9 @@ const validateStatus = (rule: FieldRule, value: string): string | undefined => {
   return (STATUS_OPTIONS as readonly string[]).includes(value) ? undefined : `請選擇${rule.label}`;
 };
 
+const validateLeaveType = (rule: FieldRule, value: string): string | undefined =>
+  LEAVE_TYPES.includes(value) ? undefined : `請選擇${rule.label}`;
+
 const validateField = (
   rule: FieldRule,
   value: WorkItemFormValues[WorkItemFieldName],
@@ -126,9 +142,21 @@ const validateField = (
       return validateDate(rule, value as string);
     case 'status':
       return validateStatus(rule, value as string);
+    case 'leaveType':
+      return validateLeaveType(rule, value as string);
     default:
       return validateText(rule, value as string);
   }
+};
+
+/** 請假表單驗證，只檢查請假用到的四個欄位，回傳格式同 validateWorkItem */
+export const validateLeave = (values: WorkItemFormValues): WorkItemErrors => {
+  const errors: WorkItemErrors = {};
+  (Object.keys(LEAVE_RULES) as LeaveFieldName[]).forEach((field) => {
+    const message = validateField(LEAVE_RULES[field], values[field]);
+    if (message) errors[field] = message;
+  });
+  return errors;
 };
 
 /** 回傳每個欄位的錯誤訊息，沒有錯誤的欄位不會出現在結果裡（全部通過時是空物件） */
