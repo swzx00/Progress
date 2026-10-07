@@ -42,24 +42,35 @@ const formOpen = ref(false);
 const editingItem = ref<WorkItem | null>(null);
 // 新增時開的是請假表單還是工作紀錄表單；編輯時表單自己看紀錄的狀態判斷
 const creatingLeave = ref(false);
+// 複製：用這筆紀錄預填新增表單（存檔走新增，原紀錄不動）
+const copySource = ref<WorkItem | null>(null);
 const saving = ref(false);
 
 const { showToast } = useToast();
 
 const openCreateForm = (): void => {
   editingItem.value = null;
+  copySource.value = null;
   creatingLeave.value = false;
   formOpen.value = true;
 };
 
 const openLeaveForm = (): void => {
   editingItem.value = null;
+  copySource.value = null;
   creatingLeave.value = true;
   formOpen.value = true;
 };
 
 const openEditForm = (item: WorkItem): void => {
   editingItem.value = item;
+  copySource.value = null;
+  formOpen.value = true;
+};
+
+const openCopyForm = (item: WorkItem): void => {
+  editingItem.value = null;
+  copySource.value = item;
   formOpen.value = true;
 };
 
@@ -203,6 +214,7 @@ const confirmDelete = async (): Promise<void> => {
       :viewing-today="isViewingToday"
       :day-off-label="dayOffLabel"
       @edit="openEditForm"
+      @copy="openCopyForm"
       @delete="openDeleteConfirm"
     />
 
@@ -213,6 +225,7 @@ const confirmDelete = async (): Promise<void> => {
         :saving="saving"
         :default-date="selectedDate"
         :leave="creatingLeave"
+        :copy-source="copySource"
         @save="onSave"
         @cancel="closeForm"
       />

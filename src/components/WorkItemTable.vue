@@ -20,6 +20,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   edit: [item: WorkItem];
+  copy: [item: WorkItem];
   delete: [item: WorkItem];
 }>();
 
@@ -162,6 +163,13 @@ const sortedItems = computed(() =>
           @click="emit('edit', item)"
         >
           編輯
+        </button>
+        <button
+          type="button"
+          class="work-item-table__action-btn work-item-table__action-btn--copy"
+          @click="emit('copy', item)"
+        >
+          複製
         </button>
         <button
           type="button"
@@ -883,6 +891,19 @@ const sortedItems = computed(() =>
         color: var(--color-black-000);
         background: var(--color-blue-700);
         border: 1px solid var(--color-blue-700);
+      }
+    }
+
+    // 複製：中性灰，跟編輯（藍）、刪除（紅）區分
+    &--copy {
+      color: var(--color-black-600);
+      background: var(--color-black-000);
+      border: 1px solid var(--color-black-300);
+
+      &:hover {
+        color: var(--color-black-000);
+        background: var(--color-black-600);
+        border: 1px solid var(--color-black-600);
       }
     }
 
