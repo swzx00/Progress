@@ -40,12 +40,21 @@ const optionsManagerOpen = ref(false);
 
 const formOpen = ref(false);
 const editingItem = ref<WorkItem | null>(null);
+// 新增時開的是請假表單還是工作紀錄表單；編輯時表單自己看紀錄的狀態判斷
+const creatingLeave = ref(false);
 const saving = ref(false);
 
 const { showToast } = useToast();
 
 const openCreateForm = (): void => {
   editingItem.value = null;
+  creatingLeave.value = false;
+  formOpen.value = true;
+};
+
+const openLeaveForm = (): void => {
+  editingItem.value = null;
+  creatingLeave.value = true;
   formOpen.value = true;
 };
 
@@ -150,6 +159,32 @@ const confirmDelete = async (): Promise<void> => {
 
     <DateNav v-model="selectedDate" :total-hours="totalHours">
       <template v-if="isAuthorized" #actions>
+        <button
+          type="button"
+          class="home-view__add-btn home-view__add-btn--leave"
+          @click="openLeaveForm"
+        >
+          <!-- 圖示：Lucide calendar-minus（https://lucide.dev，ISC 授權） -->
+          <svg
+            class="home-view__add-btn-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M8 2v4" />
+            <path d="M16 2v4" />
+            <rect width="18" height="18" x="3" y="4" rx="2" />
+            <path d="M3 10h18" />
+            <path d="M10 16h4" />
+          </svg>
+          請假
+        </button>
         <button type="button" class="home-view__add-btn" @click="openCreateForm">＋ 新增</button>
       </template>
     </DateNav>
@@ -176,6 +211,7 @@ const confirmDelete = async (): Promise<void> => {
         :item="editingItem"
         :saving="saving"
         :default-date="selectedDate"
+        :leave="creatingLeave"
         @save="onSave"
         @cancel="closeForm"
       />
@@ -312,6 +348,9 @@ const confirmDelete = async (): Promise<void> => {
   }
 
   &__add-btn {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
     padding: 6px 12px;
     font-size: 14px;
     font-weight: 600;
@@ -319,8 +358,22 @@ const confirmDelete = async (): Promise<void> => {
     white-space: nowrap;
     cursor: pointer;
     background: var(--color-blue-500);
-    border: none;
+
+    // 基底也留 1px 框線（跟底色同色），「＋ 新增」才會跟有框線的請假按鈕一樣高
+    border: 1px solid var(--color-blue-500);
     border-radius: 6px;
+
+    // 請假是次要入口：白底＋主色框線，跟主要的「＋ 新增」做出主次區別
+    &--leave {
+      color: var(--color-blue-500);
+      background: var(--color-black-000);
+    }
+
+    &-icon {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+    }
   }
 
   // 轉圈＋文字的樣式在 AppLoading 裡，這裡只管它在頁面上佔的空間

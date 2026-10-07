@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { getStatusKey, isOverdue, type WorkItem } from '@/types/work-item';
+import { getStatusKey, isLeaveItem, isOverdue, type WorkItem } from '@/types/work-item';
 
 const props = withDefaults(
   defineProps<{
@@ -89,7 +89,10 @@ const sortedItems = computed(() =>
       v-for="item in sortedItems"
       :key="item.id"
       class="work-item-table__row"
-      :class="{ 'work-item-table__row--overdue': isOverdue(item, today) }"
+      :class="{
+        'work-item-table__row--overdue': isOverdue(item, today),
+        'work-item-table__row--leave': isLeaveItem(item),
+      }"
       role="row"
     >
       <div class="work-item-table__cell work-item-table__cell--index" role="cell">
@@ -112,12 +115,18 @@ const sortedItems = computed(() =>
         ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
       </div>
 
+      <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
       <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
         <span class="work-item-table__assignee-stacked">
           <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
-          <span class="work-item-table__assignee-person">{{ item.交辦人員 }}</span>
+          <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person">{{
+            item.交辦人員
+          }}</span>
         </span>
-        <span class="work-item-table__assignee-inline"
+        <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline">{{
+          item.交辦單位
+        }}</span>
+        <span v-else class="work-item-table__assignee-inline"
           >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
         >
       </div>
@@ -336,6 +345,23 @@ const sortedItems = computed(() =>
         box-shadow: inset 4px 0 0 var(--color-red-600);
       }
     }
+
+    // 請假列：文字與進度條用 teal 色系，左側標線同逾期樣式但用 teal（使用者決定）
+    &--leave {
+      color: var(--color-teal-800);
+      border-left: 1px solid var(--color-teal-600);
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      box-shadow: inset 3px 0 0 var(--color-teal-600);
+
+      @media (min-width: 768px) {
+        border: inherit;
+        border-left: inherit;
+        border-top-left-radius: inherit;
+        border-bottom-left-radius: inherit;
+        box-shadow: inset 4px 0 0 var(--color-teal-600);
+      }
+    }
   }
 
   &__cell {
@@ -425,6 +451,15 @@ const sortedItems = computed(() =>
         color: inherit;
       }
 
+      // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
+      .work-item-table__row--leave & {
+        color: var(--color-teal-700);
+
+        @media (min-width: 768px) {
+          color: inherit;
+        }
+      }
+
       .work-item-table__assignee-stacked {
         display: none;
 
@@ -485,6 +520,15 @@ const sortedItems = computed(() =>
         font-size: inherit;
         color: inherit;
       }
+
+      // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
+      .work-item-table__row--leave & {
+        color: var(--color-teal-700);
+
+        @media (min-width: 768px) {
+          color: inherit;
+        }
+      }
     }
 
     &--progress {
@@ -502,6 +546,15 @@ const sortedItems = computed(() =>
         font-size: inherit;
         color: inherit;
       }
+
+      // 請假列：手機的完成度文字改成 teal（桌面繼承整列的 teal-800）
+      .work-item-table__row--leave & {
+        color: var(--color-teal-800);
+
+        @media (min-width: 768px) {
+          color: inherit;
+        }
+      }
     }
 
     &--hours {
@@ -517,6 +570,15 @@ const sortedItems = computed(() =>
         font-size: inherit;
         color: inherit;
       }
+
+      // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
+      .work-item-table__row--leave & {
+        color: var(--color-teal-700);
+
+        @media (min-width: 768px) {
+          color: inherit;
+        }
+      }
     }
 
     &--due {
@@ -531,6 +593,15 @@ const sortedItems = computed(() =>
         width: 100%;
         font-size: inherit;
         color: inherit;
+      }
+
+      // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
+      .work-item-table__row--leave & {
+        color: var(--color-teal-700);
+
+        @media (min-width: 768px) {
+          color: inherit;
+        }
       }
     }
 
@@ -699,6 +770,17 @@ const sortedItems = computed(() =>
       }
     }
 
+    // 請假（休假）：teal 色系，跟整列請假的文字/進度條一致
+    &--leave {
+      color: var(--color-teal-800);
+      background: var(--color-teal-000);
+
+      @media (min-width: 768px) {
+        color: var(--color-teal-800);
+        background: transparent;
+      }
+    }
+
     // 放在所有狀態修飾符之後，color: inherit 才蓋得過各狀態的顏色
     @media (min-width: 768px) {
       padding: 0;
@@ -740,9 +822,17 @@ const sortedItems = computed(() =>
     background: var(--color-blue-100);
     border-radius: 999px;
 
+    .work-item-table__row--leave & {
+      background: var(--color-teal-100);
+    }
+
     &-bar {
       height: 100%;
       background: var(--color-blue-500);
+
+      .work-item-table__row--leave & {
+        background: var(--color-teal-500);
+      }
     }
 
     &-text {

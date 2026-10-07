@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw';
 
-import type { WorkItem, WorkItemOptions } from '@/types/work-item';
+import schema from '../../shared/validation-schema.json';
+
+import { isLeaveItem, type WorkItem, type WorkItemOptions } from '@/types/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/');
@@ -93,6 +95,21 @@ let options: WorkItemOptions = {
   專案Repo: ['AAA', 'BBBB', 'member-web'],
 };
 
+// 請假列的固定欄位一律由後端覆蓋（跟 Code.gs 的 applyLeaveFixedValues_ 同一套規則）
+const applyLeaveFixedValues = <T extends Partial<WorkItem>>(item: T): T =>
+  isLeaveItem(item as WorkItem)
+    ? { ...item, ...schema.leave.fixed, 專案Repo: [...schema.leave.fixed.專案Repo] }
+    : item;
+
+// 請假的固定值（人事室、--、休假）不寫回選項清單，避免出現在一般工作紀錄的下拉選單
+const syncOptions = (item: WorkItem): void => {
+  if (isLeaveItem(item)) return;
+  addOptionIfNew('交辦單位', item.交辦單位);
+  addOptionIfNew('交辦人員', item.交辦人員);
+  addOptionIfNew('專案名稱', item.專案名稱);
+  item.專案Repo.forEach((repo) => addOptionIfNew('專案Repo', repo));
+};
+
 const addOptionIfNew = (category: keyof WorkItemOptions, value: string): void => {
   if (!value) return;
   if (!options[category].includes(value)) {
@@ -175,16 +192,13 @@ export const handlers = [
 
     if (body.action === 'create') {
       const created: WorkItem = {
-        ...body.item,
+        ...applyLeaveFixedValues(body.item),
         id: crypto.randomUUID(),
         項次: getNextDailyIndex(body.item.工作日期),
         已刪除: false,
       };
       items = [...items, created];
-      addOptionIfNew('交辦單位', created.交辦單位);
-      addOptionIfNew('交辦人員', created.交辦人員);
-      addOptionIfNew('專案名稱', created.專案名稱);
-      created.專案Repo.forEach((repo) => addOptionIfNew('專案Repo', repo));
+      syncOptions(created);
       return HttpResponse.json({ item: created });
     }
 
@@ -195,9 +209,10 @@ export const handlers = [
         // 項次一律由後端決定：工作日期沒改沿用原本的項次，改到別天就在新的那天重新編號
         const nextDate = body.item.工作日期 ?? item.工作日期;
         const 項次 = nextDate === item.工作日期 ? item.項次 : getNextDailyIndex(nextDate);
-        updated = { ...item, ...body.item, 項次 };
+        updated = applyLeaveFixedValues({ ...item, ...body.item, 項次 });
         return updated;
       });
+      if (updated) syncOptions(updated);
       return HttpResponse.json({ item: updated });
     }
 
