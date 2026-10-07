@@ -163,7 +163,7 @@ const sortedItems = computed(() =>
       </div>
 
       <!--
-        操作欄：桌面是圖示按鈕橫排（滑過用 title 顯示文字提示），手機卡片是文字按鈕橫排。
+        操作欄（橫排）：手機卡片是文字按鈕，平板是圖示按鈕（滑過用 title 顯示文字提示），桌面是圖示＋文字。
         圖示：Lucide pencil／copy／trash-2（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
       -->
       <div v-if="editable" class="work-item-table__cell work-item-table__cell--actions" role="cell">
@@ -390,7 +390,7 @@ const sortedItems = computed(() =>
       @media (min-width: 1024px) {
         grid-template-columns:
           32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-          62px 48px 77px 58px 100px;
+          62px 48px 77px 58px 208px;
       }
     }
 
@@ -1125,7 +1125,7 @@ const sortedItems = computed(() =>
       }
     }
 
-    // 桌面：28px 正方形圖示按鈕，文字收起來（按鈕名稱靠 aria-label，滑過靠 title 顯示）
+    // 平板：28px 正方形圖示按鈕，文字收起來（按鈕名稱靠 aria-label，滑過靠 title 顯示）
     @media (min-width: 768px) {
       display: inline-flex;
       flex: none;
@@ -1135,15 +1135,24 @@ const sortedItems = computed(() =>
       height: 28px;
       padding: 0;
 
-      // 桌面 gap 4px＋8px＝12px
+      // 平板、桌面 gap 4px＋8px＝12px
       &--danger {
         margin-left: 8px;
       }
     }
+
+    // 桌面：圖示＋文字橫排（使用者決定），按鈕寬度隨內容
+    @media (min-width: 1024px) {
+      gap: 4px;
+      width: auto;
+      padding: 0 8px;
+    }
   }
 
+  // 圖示：手機不顯示（文字按鈕），平板、桌面顯示
   &__action-icon {
     display: none;
+    flex: none;
     width: 16px;
     height: 16px;
 
@@ -1152,9 +1161,14 @@ const sortedItems = computed(() =>
     }
   }
 
+  // 文字：手機、桌面顯示，平板收起來（只顯示圖示）
   &__action-label {
     @media (min-width: 768px) {
       display: none;
+    }
+
+    @media (min-width: 1024px) {
+      display: inline;
     }
   }
 
