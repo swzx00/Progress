@@ -134,6 +134,13 @@ export function useWorkItems() {
     postAction(idToken, { action: 'create', item: toApiItem(item) });
 
   /**
+   * 一次新增多筆（「複製本日」用）：後端全部驗證通過才寫入，任何一筆不合格或當天工時合計
+   * 超過上限就整批退回、不寫入任何一筆。項次由後端依陣列順序照每日編號規則接續
+   */
+  const batchCreateItems = (idToken: string, items: CreateInput[]): Promise<void> =>
+    postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem) });
+
+  /**
    * originalDate：這筆紀錄「修改前」的工作日期，用來換算它原本在哪個月份分頁，
    * 後端才找得到列。item.工作日期 可能跟 originalDate 不同（使用者把工作日期改到別的月份），
    * 這種情況後端會從舊分頁刪除、在新分頁新增。
@@ -154,5 +161,14 @@ export function useWorkItems() {
   const deleteItem = (idToken: string, id: string, originalDate: string): Promise<void> =>
     postAction(idToken, { action: 'delete', id, originalDate: toApiDate(originalDate) });
 
-  return { items, loading, error, fetchByDate, createItem, updateItem, deleteItem };
+  return {
+    items,
+    loading,
+    error,
+    fetchByDate,
+    createItem,
+    batchCreateItems,
+    updateItem,
+    deleteItem,
+  };
 }
