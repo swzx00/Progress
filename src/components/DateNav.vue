@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import { NDatePicker } from 'naive-ui';
 
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
+import { DAILY_HOURS_WARN } from '@/validation/work-item';
 
 const props = defineProps<{
   modelValue: string;
@@ -24,6 +25,11 @@ const shift = (days: number): void => {
 
 const todayStr = computed(() => toDateString(new Date()));
 const isToday = computed(() => props.modelValue === todayStr.value);
+
+// 每日工時警示門檻（shared/validation-schema.json 的 dailyHours.warn），合計超過才換成紅字（剛好等於不算超過）
+const isOverHoursLimit = computed(
+  () => props.totalHours !== undefined && props.totalHours > DAILY_HOURS_WARN,
+);
 
 const goToday = (): void => {
   emit('update:modelValue', todayStr.value);
@@ -100,7 +106,11 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       🏮 {{ dayOffLabel }}
     </span>
     <div class="date-nav__trailing">
-      <span v-if="totalHours !== undefined" class="date-nav__total">
+      <span
+        v-if="totalHours !== undefined"
+        class="date-nav__total"
+        :class="{ 'date-nav__total--over': isOverHoursLimit }"
+      >
         今日工時合計：{{ totalHours }}hr
       </span>
       <!-- 今天時只是狀態標示（不可操作），用 span 而不是 disabled 按鈕 -->
@@ -234,5 +244,10 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   font-size: 13px;
   color: var(--color-black-500);
   white-space: nowrap;
+
+  // 超過每日工時上限：只換文字顏色（使用者決定，不用膠囊）
+  &--over {
+    color: var(--color-red-700);
+  }
 }
 </style>

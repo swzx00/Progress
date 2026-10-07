@@ -52,6 +52,19 @@ export const LEAVE_FIXED_VALUES = schema.leave.fixed as Pick<
   '交辦單位' | '交辦人員' | '專案名稱' | '專案Repo' | '預計期限'
 > & { 完成度: number };
 
+/** 每日工時合計：超過 WARN 時 DateNav 顯示紅字，超過 MAX 時不能存（後端也會擋） */
+export const DAILY_HOURS_WARN: number = schema.dailyHours.warn;
+export const DAILY_HOURS_MAX: number = schema.dailyHours.max;
+
+// 時數都是 0.25 的倍數，四捨五入到小數兩位避免浮點誤差（例如 0.30000000000000004）
+const roundHours = (n: number): number => Math.round(n * 100) / 100;
+
+/** otherHours：當天其他紀錄的工時合計；hours：這筆填的工時（Code.gs、MSW 的訊息格式相同） */
+export const dailyHoursMessage = (otherHours: number, hours: number): string => {
+  const exceeded = roundHours(otherHours + hours - DAILY_HOURS_MAX);
+  return `當天工時合計不可超過 ${DAILY_HOURS_MAX} 小時（其他紀錄已 ${roundHours(otherHours)} 小時，已超出${exceeded}小時）`;
+};
+
 /** <input type="date"> 的 min/max 屬性值，限制日期選擇器可選的年份範圍 */
 export const dateInputRange = (field: '工作日期' | '預計期限'): { min: string; max: string } => {
   const rule = WORK_ITEM_RULES[field];

@@ -87,14 +87,29 @@ const requestItemsByDate = async (date: string): Promise<WorkItem[]> => {
     }));
 };
 
+export interface DaySummary {
+  /** 預計項次 */
+  nextIndex: number;
+  /** 當天其他紀錄（排除 excludeId）的今日工時合計 */
+  otherHours: number;
+}
+
 /**
- * 預計項次：某一天未刪除紀錄的最大項次 + 1，跟 Code.gs 的 getNextDailyIndex_ 同一套規則
- * （改其中一邊要一起改）。只是給表單顯示的參考值，實際項次由後端寫入當下決定。
- * 不會動到 useWorkItems() 的 items 狀態，表格正在顯示的資料不受影響。
+ * 表單用的當天摘要，一次查詢算出兩個值（不會動到 useWorkItems() 的 items 狀態）：
+ * - 預計項次：當天未刪除紀錄的最大項次 + 1，跟 Code.gs 的 getNextDailyIndex_ 同一套規則。
+ *   只是給表單顯示的參考值，實際項次由後端寫入當下決定
+ * - 其他紀錄工時合計：排除 excludeId（編輯時是自己），跟 Code.gs 的 getDayHoursExcluding_
+ *   同一套規則，給表單檢查每日工時上限
+ * 改其中一邊要一起改。
  */
-export const fetchNextIndex = async (date: string): Promise<number> => {
+export const fetchDaySummary = async (date: string, excludeId?: string): Promise<DaySummary> => {
   const dayItems = await requestItemsByDate(date);
-  return Math.max(0, ...dayItems.map((item) => item.項次)) + 1;
+  return {
+    nextIndex: Math.max(0, ...dayItems.map((item) => item.項次)) + 1,
+    otherHours: dayItems
+      .filter((item) => item.id !== excludeId)
+      .reduce((sum, item) => sum + (Number(item.今日工時) || 0), 0),
+  };
 };
 
 export function useWorkItems() {

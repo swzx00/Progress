@@ -5,13 +5,15 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
-import { fetchNextIndex } from '@/composables/useWorkItems';
+import { fetchDaySummary } from '@/composables/useWorkItems';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import {
+  DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
   LEAVE_RULES,
   LEAVE_TYPES,
   WORK_ITEM_RULES,
+  dailyHoursMessage,
   dateInputRange,
   validateLeave,
   validateWorkItem,
@@ -79,8 +81,28 @@ const deadlineRange = dateInputRange('預計期限');
 const isRequired = (field: WorkItemFieldName): boolean => WORK_ITEM_RULES[field].required;
 const isLeaveRequired = (field: keyof typeof LEAVE_RULES): boolean => LEAVE_RULES[field].required;
 
-const validate = (values: WorkItemFormValues): WorkItemErrors =>
-  isLeaveMode.value ? validateLeave(values) : validateWorkItem(values);
+/**
+ * 當天其他紀錄（編輯時排除自己）的今日工時合計，由下方 updateDaySummary 查詢。
+ * 查詢中或失敗時是 null：即時驗證先不檢查每日上限，送出時 onSubmit 會補查，查不到就擋下
+ */
+const otherHours = ref<number | null>(null);
+
+const hoursOf = (values: WorkItemFormValues): number => {
+  if (values.今日工時 !== '') return values.今日工時;
+  return isLeaveMode.value ? DEFAULT_LEAVE_HOURS : DEFAULT_HOURS;
+};
+
+const validate = (values: WorkItemFormValues): WorkItemErrors => {
+  const result = isLeaveMode.value ? validateLeave(values) : validateWorkItem(values);
+  // 欄位本身已經有錯（例如超過單筆上限）就先顯示那個，不疊加每日合計的訊息
+  if (!result.今日工時 && otherHours.value !== null) {
+    const hours = hoursOf(values);
+    if (otherHours.value + hours > DAILY_HOURS_MAX) {
+      result.今日工時 = dailyHoursMessage(otherHours.value, hours);
+    }
+  }
+  return result;
+};
 
 const form = reactive<WorkItemFormValues>({
   工作日期: toDateString(new Date()),
@@ -149,7 +171,7 @@ const errors = ref<WorkItemErrors>({});
 let submitAttempted = false;
 
 watch(
-  form,
+  [form, otherHours],
   () => {
     if (submitAttempted) errors.value = validate(form);
   },
@@ -226,7 +248,9 @@ const applyModeSwitch = (): void => {
 };
 
 const requestModeSwitch = (toLeave: boolean): void => {
-  if (props.item || props.saving || toLeave === creatingLeave.value) return;
+  if (props.item || props.saving || checkingDayHours.value || toLeave === creatingLeave.value) {
+    return;
+  }
   if (hasEnteredContent.value) {
     switchConfirmOpen.value = true;
   } else {
@@ -246,44 +270,72 @@ watch(() => props.item, resetForm, { immediate: true });
  * 前端送來的值，就算用開發者工具改了欄位也不會影響 Sheet）：
  * - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
  * - 新增，或編輯時把工作日期改到別天：顯示那一天的預計項次
- * 查詢中或失敗時留空（顯示 placeholder「項次」）。連續改日期時只採用最後一次查詢的結果，
- * 避免較早的回應晚到、蓋掉新的值。
+ * 查詢中或失敗時留空（顯示 placeholder「項次」）。
+ * 同一次查詢也算出當天其他紀錄的工時合計（otherHours），編輯且日期沒改時也要查。
+ * 連續改日期時只採用最後一次查詢的結果，避免較早的回應晚到、蓋掉新的值。
  */
 const indexValue = ref<number | null>(null);
-let latestIndexRequest = 0;
+let latestDayRequest = 0;
 
-const updateIndexValue = async (): Promise<void> => {
-  const requestId = ++latestIndexRequest;
+const updateDaySummary = async (): Promise<void> => {
+  const requestId = ++latestDayRequest;
   const date = form.工作日期;
-  if (props.item && date === props.item.工作日期) {
-    indexValue.value = props.item.項次;
-    return;
-  }
-  indexValue.value = null;
+  // 編輯且工作日期沒改：沿用這筆紀錄自己的項次
+  const ownIndex = props.item && date === props.item.工作日期 ? props.item.項次 : null;
+  indexValue.value = ownIndex;
+  otherHours.value = null;
   if (!date) return;
   try {
-    const nextIndex = await fetchNextIndex(date);
-    if (requestId === latestIndexRequest) indexValue.value = nextIndex;
+    const summary = await fetchDaySummary(date, props.item?.id);
+    if (requestId !== latestDayRequest) return;
+    if (ownIndex === null) indexValue.value = summary.nextIndex;
+    otherHours.value = summary.otherHours;
   } catch {
-    // 查不到就維持空白，不影響存檔（實際項次本來就是後端寫入時才決定）
+    // 查不到就維持空白，不影響存檔（實際項次與每日工時上限都由後端寫入時把關）
   }
 };
 
-watch([() => form.工作日期, () => props.item], updateIndexValue, { immediate: true });
+watch([() => form.工作日期, () => props.item], updateDaySummary, { immediate: true });
 
 const title = computed(() => {
   const subject = isLeaveMode.value ? '請假' : '工作項目';
   return props.item ? `編輯${subject}` : `新增${subject}`;
 });
 
-const onSubmit = (): void => {
+/**
+ * 送出前補查當天工時合計的期間（「儲存」按鈕顯示「檢查中…」並停用）。
+ * 跟父層的 saving（已送出、等後端回應）是不同階段，分開管理
+ */
+const checkingDayHours = ref(false);
+
+const onSubmit = async (): Promise<void> => {
   // 按鈕停用只擋得住畫面操作，這裡再擋一次，避免重複送出兩筆
-  if (props.saving) return;
+  if (props.saving || checkingDayHours.value) return;
   submitAttempted = true;
   errors.value = validate(form);
   if (Object.keys(errors.value).length > 0) {
     void scrollToFirstError();
     return;
+  }
+  // 送出前一定要先算出當天合計：還沒查到（查詢中或先前失敗）就當場再查一次，
+  // 查不到就擋下，不放行（後端也會檢查）
+  if (otherHours.value === null) {
+    checkingDayHours.value = true;
+    try {
+      await updateDaySummary();
+    } finally {
+      checkingDayHours.value = false;
+    }
+    if (otherHours.value === null) {
+      errors.value = { ...errors.value, 今日工時: '無法確認當天工時合計，請稍後再試' };
+      void scrollToFirstError();
+      return;
+    }
+    errors.value = validate(form);
+    if (Object.keys(errors.value).length > 0) {
+      void scrollToFirstError();
+      return;
+    }
   }
   if (isLeaveMode.value) {
     emit('save', {
@@ -337,7 +389,7 @@ const onSubmit = (): void => {
           class="work-item-form__mode-btn"
           :class="{ 'work-item-form__mode-btn--active': !isLeaveMode }"
           :aria-pressed="!isLeaveMode"
-          :disabled="saving"
+          :disabled="saving || checkingDayHours"
           @click="requestModeSwitch(false)"
         >
           工作項目
@@ -347,7 +399,7 @@ const onSubmit = (): void => {
           class="work-item-form__mode-btn"
           :class="{ 'work-item-form__mode-btn--active': isLeaveMode }"
           :aria-pressed="isLeaveMode"
-          :disabled="saving"
+          :disabled="saving || checkingDayHours"
           @click="requestModeSwitch(true)"
         >
           請假
@@ -677,9 +729,9 @@ const onSubmit = (): void => {
           type="submit"
           form="work-item-form-body"
           class="work-item-form__btn work-item-form__btn--primary"
-          :disabled="saving"
+          :disabled="saving || checkingDayHours"
         >
-          {{ saving ? '儲存中…' : '儲存' }}
+          {{ saving ? '儲存中…' : checkingDayHours ? '檢查中…' : '儲存' }}
         </button>
       </div>
     </div>
