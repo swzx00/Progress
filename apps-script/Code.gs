@@ -584,6 +584,7 @@ function doPost(e) {
     if (body.action === 'batchCreate') return handleBatchCreate_(body.items, body.replace === true);
     if (body.action === 'update') return handleUpdate_(body.id, body.originalDate, body.item);
     if (body.action === 'delete') return handleDelete_(body.id, body.originalDate);
+    if (body.action === 'reorder') return handleReorder_(body.date, body.ids);
     if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
     if (body.action === 'renameOption') {
       return handleRenameOption_(body.category, body.oldValue, body.newValue);
@@ -791,6 +792,49 @@ function handleUpdate_(id, originalDate, itemPatch) {
   syncOptionsFromItem_(merged);
 
   return jsonOutput_({ item: merged });
+}
+
+// 調整某一天的項次順序（前端上下移、拖曳用）：ids 是那天所有未刪除紀錄（含請假）依新順序排列的 id，
+// 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少），不一致代表資料已被別處改過，整批退回、
+// 不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動（已刪除的本來就不佔項次）
+function handleReorder_(date, ids) {
+  if (!date || !API_DATE_PATTERN.test(String(date))) {
+    return jsonOutput_({ error: '工作日期格式不正確' });
+  }
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return jsonOutput_({ error: '沒有要排序的紀錄' });
+  }
+
+  var sheet = getSpreadsheet_().getSheetByName(getMonthKey_(date));
+  if (!sheet) {
+    return jsonOutput_({ error: '找不到月份分頁' });
+  }
+  var colMap = getColumnMap_(sheet);
+  var lastRow = sheet.getLastRow();
+  var values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+
+  var rowById = {}; // id -> 實際列號
+  values.forEach(function (row, i) {
+    var item = rowToItem_(colMap, row);
+    if (item.工作日期 === date && !item.已刪除) rowById[item[ID_KEY]] = i + 2;
+  });
+
+  var unique = {};
+  var valid =
+    ids.length === Object.keys(rowById).length &&
+    ids.every(function (id) {
+      if (unique[id] || !rowById[id]) return false;
+      unique[id] = true;
+      return true;
+    });
+  if (!valid) {
+    return jsonOutput_({ error: '紀錄已變更，請重新整理後再排序' });
+  }
+
+  ids.forEach(function (id, i) {
+    sheet.getRange(rowById[id], colMap.項次).setValue(i + 1);
+  });
+  return jsonOutput_({ ok: true });
 }
 
 function handleDelete_(id, originalDate) {
