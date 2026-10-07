@@ -153,11 +153,13 @@ const sortedItems = computed(() =>
 
       <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
         <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
-        }}<span class="work-item-table__mobile-label">hr</span>
+        }}<span class="work-item-table__mobile-label work-item-table__mobile-label--unit">hr</span>
       </div>
 
       <div class="work-item-table__cell work-item-table__cell--due" role="cell">
-        <span class="work-item-table__mobile-label">期限：</span>{{ formatDate(item.預計期限) }}
+        <!-- 沒有預計期限時不顯示「期限：」標籤（使用者決定） -->
+        <span v-if="item.預計期限" class="work-item-table__mobile-label">期限：</span
+        >{{ formatDate(item.預計期限) }}
       </div>
 
       <!--
@@ -354,14 +356,15 @@ const sortedItems = computed(() =>
     border: 1px solid var(--color-black-200);
     border-radius: 8px;
 
-    // 平板（768–1023px）：完成度、今日工時、預計期限三欄合併成一欄（第 6 欄），由上而下疊成三小行，
-    // 其他欄位跨滿三行（各欄的 grid-row／grid-column 寫在下方 &__cell 各自的區塊）；
+    // 平板（768–1023px）：完成度、今日工時、預計期限三欄合併成一欄（第 6 欄），分成上下兩小行：
+    // 上行完成度，下行工時置左、期限置右；其他欄位跨滿兩行（各欄的 grid-row／grid-column 寫在下方
+    // &__cell 各自的區塊）；
     // 桌面（≥ 1024px）才恢復一欄一個欄位（使用者決定，平板寬度原本放不下）
     @media (min-width: 768px) {
       display: grid;
       grid-template-columns:
         32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-        110px 58px;
+        120px 58px;
       gap: 2px 8px;
       padding: 8px 32px;
       font-size: 14px;
@@ -381,7 +384,7 @@ const sortedItems = computed(() =>
       @media (min-width: 768px) {
         grid-template-columns:
           32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-          110px 58px 100px;
+          120px 58px 100px;
       }
 
       @media (min-width: 1024px) {
@@ -474,7 +477,7 @@ const sortedItems = computed(() =>
 
       @media (min-width: 768px) {
         display: flex;
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 1;
         order: 0;
       }
@@ -505,7 +508,7 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 3;
         order: 2;
         font-size: inherit;
@@ -538,7 +541,7 @@ const sortedItems = computed(() =>
 
       @media (min-width: 768px) {
         flex-direction: column;
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 7;
         align-items: center;
         order: 8;
@@ -559,7 +562,7 @@ const sortedItems = computed(() =>
       color: var(--color-black-500);
 
       @media (min-width: 768px) {
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 2;
         order: 1;
         margin-top: inherit;
@@ -617,7 +620,7 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 4;
         order: 3;
       }
@@ -650,7 +653,7 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 5;
         order: 4;
         -webkit-line-clamp: 3;
@@ -719,11 +722,12 @@ const sortedItems = computed(() =>
       font-size: 12px;
       color: var(--color-black-500);
 
+      // 平板：合併欄下行的左邊
       @media (min-width: 768px) {
         grid-row: 2;
         grid-column: 6;
+        justify-self: start;
         order: 5;
-        width: 100%;
         font-size: inherit;
         color: inherit;
       }
@@ -731,6 +735,29 @@ const sortedItems = computed(() =>
       @media (min-width: 1024px) {
         grid-row: auto;
         grid-column: auto;
+        justify-self: auto;
+        width: 100%;
+      }
+
+      // 表頭：平板只留這一格，用 ::after 補上「/預計期限」，跟「預計期限」表頭合成一行（那格在平板隱藏）
+      .work-item-table__row--header & {
+        @media (min-width: 768px) {
+          justify-self: center;
+          font-size: 13px;
+
+          &::after {
+            content: '/預計期限';
+          }
+        }
+
+        @media (min-width: 1024px) {
+          justify-self: auto;
+          font-size: inherit;
+
+          &::after {
+            content: none;
+          }
+        }
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
@@ -750,11 +777,12 @@ const sortedItems = computed(() =>
       font-size: 12px;
       color: var(--color-black-500);
 
+      // 平板：合併欄下行的右邊
       @media (min-width: 768px) {
-        grid-row: 3;
+        grid-row: 2;
         grid-column: 6;
+        justify-self: end;
         order: 7;
-        width: 100%;
         font-size: inherit;
         color: inherit;
       }
@@ -762,6 +790,19 @@ const sortedItems = computed(() =>
       @media (min-width: 1024px) {
         grid-row: auto;
         grid-column: auto;
+        justify-self: auto;
+        width: 100%;
+      }
+
+      // 表頭：平板併進「今日工時」那格（見上方 &--hours），這格先隱藏
+      .work-item-table__row--header & {
+        @media (min-width: 768px) {
+          display: none;
+        }
+
+        @media (min-width: 1024px) {
+          display: flex;
+        }
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
@@ -784,7 +825,7 @@ const sortedItems = computed(() =>
       border-top: 1px solid var(--color-black-200);
 
       @media (min-width: 768px) {
-        grid-row: 1 / span 3;
+        grid-row: 1 / span 2;
         grid-column: 8;
         gap: 4px;
         justify-content: center;
@@ -808,9 +849,8 @@ const sortedItems = computed(() =>
       display: none;
     }
 
-    // 平板三欄合一時，工時、期限沒有各自的表頭可對照，沿用手機的「工時：」「期限：」標籤
-    .work-item-table__cell--hours &,
-    .work-item-table__cell--due & {
+    // 單位（hr）：平板合併欄不顯示「工時：」「期限：」標籤，但保留 hr 單位（使用者決定）；桌面有表頭，不顯示
+    &--unit {
       @media (min-width: 768px) {
         display: inline;
       }
