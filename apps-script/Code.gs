@@ -87,6 +87,10 @@ var LEAVE_RULES = {
   },
 };
 
+// 同一工作日期所有未刪除紀錄（工作＋請假）的今日工時合計上限，超過就不能存。
+// 手動同步自 shared/validation-schema.json 的 dailyHours.max
+var DAILY_HOURS_MAX = 24;
+
 // ===== Sheet 共用工具 =====
 
 function getSheetId_() {
@@ -285,7 +289,7 @@ function findRowById_(sheet, colMap, id) {
 
 // 項次是「每天」從 1 開始的流水號：同一工作日期、未刪除紀錄的最大項次 + 1。
 // 用最大值不用筆數，刪掉中間某筆（例如剩 1、3）後新增才不會撞號。
-// 前端 useWorkItems.ts 的 fetchNextIndex 用同一套規則算預計項次，改這裡要一起改。
+// 前端 useWorkItems.ts 的 fetchDaySummary 用同一套規則算預計項次，改這裡要一起改。
 function getNextDailyIndex_(sheet, colMap, date) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 1;
@@ -296,6 +300,35 @@ function getNextDailyIndex_(sheet, colMap, date) {
     if (item.工作日期 === date && !item.已刪除 && item.項次 > max) max = item.項次;
   });
   return max + 1;
+}
+
+// 某一工作日期、未刪除、id 不等於 excludeId 的今日工時合計（編輯時排除自己）。
+// 前端 useWorkItems.ts 的 fetchDaySummary 用同一套規則算 otherHours，改這裡要一起改。
+function getDayHoursExcluding_(sheet, colMap, date, excludeId) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var total = 0;
+  values.forEach(function (row) {
+    var item = rowToItem_(colMap, row);
+    if (item.工作日期 === date && !item.已刪除 && item[ID_KEY] !== excludeId) {
+      total += Number(item.今日工時) || 0;
+    }
+  });
+  return total;
+}
+
+// 時數都是 0.25 的倍數，四捨五入到小數兩位避免浮點誤差
+function roundHours_(n) {
+  return Math.round(n * 100) / 100;
+}
+
+// 訊息格式跟前端 src/validation/work-item.ts 的 dailyHoursMessage 相同，改一邊要一起改
+function dailyHoursError_(otherHours, hours) {
+  return (
+    '當天工時合計不可超過 ' + DAILY_HOURS_MAX + ' 小時（其他紀錄已 ' + roundHours_(otherHours) +
+    ' 小時，已超出' + roundHours_(otherHours + hours - DAILY_HOURS_MAX) + '小時）'
+  );
 }
 
 // ===== ID Token 驗證 =====
@@ -574,6 +607,12 @@ function handleCreate_(item) {
   var colMap = getColumnMap_(sheet);
   var lastRow = sheet.getLastRow();
 
+  var dayHours = getDayHoursExcluding_(sheet, colMap, item.工作日期, null);
+  var itemHours = Number(item.今日工時) || 0;
+  if (dayHours + itemHours > DAILY_HOURS_MAX) {
+    return jsonOutput_({ error: dailyHoursError_(dayHours, itemHours) });
+  }
+
   // 項次一律由後端決定，前端就算送了也會被這裡覆蓋
   var created = Object.assign({}, item, {
     id: Utilities.getUuid(),
@@ -621,8 +660,18 @@ function handleUpdate_(id, originalDate, itemPatch) {
   }
 
   var newMonthKey = getMonthKey_(merged.工作日期);
+  var sameMonth = newMonthKey === oldMonthKey;
 
-  if (newMonthKey === oldMonthKey) {
+  // 每日工時合計：用目標月份分頁算（跨月要在刪舊列之前檢查，超過就什麼都不動）
+  var targetSheet = sameMonth ? oldSheet : getOrCreateMonthSheet_(newMonthKey);
+  var targetColMap = sameMonth ? oldColMap : getColumnMap_(targetSheet);
+  var dayHours = getDayHoursExcluding_(targetSheet, targetColMap, merged.工作日期, id);
+  var mergedHours = Number(merged.今日工時) || 0;
+  if (dayHours + mergedHours > DAILY_HOURS_MAX) {
+    return jsonOutput_({ error: dailyHoursError_(dayHours, mergedHours) });
+  }
+
+  if (sameMonth) {
     // 同月份換天：這列自己還是舊日期，不會被算進新日期的最大項次
     if (dateChanged) merged.項次 = getNextDailyIndex_(oldSheet, oldColMap, merged.工作日期);
     var row = itemToRow_(oldColMap, oldSheet.getLastColumn(), merged);
@@ -630,8 +679,8 @@ function handleUpdate_(id, originalDate, itemPatch) {
   } else {
     // 工作日期被改到別的月份：舊分頁刪掉這列、新分頁新增一列，確保一筆紀錄只存在一個分頁
     oldSheet.deleteRow(rowIndex);
-    var newSheet = getOrCreateMonthSheet_(newMonthKey);
-    var newColMap = getColumnMap_(newSheet);
+    var newSheet = targetSheet;
+    var newColMap = targetColMap;
     merged.項次 = getNextDailyIndex_(newSheet, newColMap, merged.工作日期);
     var newLastRow = newSheet.getLastRow();
     var newRow = itemToRow_(newColMap, newSheet.getLastColumn(), merged);
