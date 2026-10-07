@@ -690,19 +690,20 @@ const sortedItems = computed(() =>
       font-size: 14px;
       color: var(--color-blue-800);
 
+      // 平板：合併欄上行，進度條跟百分比左右並排（同手機，使用者決定）；桌面才改成上下疊
       @media (min-width: 768px) {
-        flex-direction: column;
         grid-row: 1;
         grid-column: 6;
-        gap: 2px;
         order: 6;
         font-size: inherit;
         color: inherit;
       }
 
       @media (min-width: 1024px) {
+        flex-direction: column;
         grid-row: auto;
         grid-column: auto;
+        gap: 2px;
       }
 
       // 請假列：手機的完成度文字改成 teal（桌面繼承整列的 teal-800）
@@ -1063,12 +1064,13 @@ const sortedItems = computed(() =>
       }
     }
 
+    // 百分比：手機、平板固定 46px 靠右（每列進度條等長，放得下「12.25%」）；桌面才改成置中
     &-text {
       flex: 0 0 46px;
       width: 46px;
       text-align: end;
 
-      @media (min-width: 768px) {
+      @media (min-width: 1024px) {
         flex: unset;
         width: fit-content;
         text-align: center;
