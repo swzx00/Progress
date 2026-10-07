@@ -48,6 +48,11 @@
     },
     "狀態": { "label": "狀態", "kind": "status", "required": true, "default": "待辦" }
   },
+  "dailyHours": {
+    "$comment": "同一工作日期所有未刪除紀錄（工作＋請假）的今日工時合計。warn：合計超過就把 DateNav 的「今日工時合計」換成紅字；max：合計超過就不能存（前端表單跟後端 Code.gs 都擋，Code.gs 的 DAILY_HOURS_MAX 手動同步）。",
+    "warn": 8,
+    "max": 24
+  },
   "leave": {
     "$comment": "請假紀錄跟工作紀錄寫在同一個月份分頁、計入每日工時合計，用「狀態」等於 status 來區分。fixed 是請假列固定寫入的值（後端一律覆蓋，前端送什麼都不算數），這些值不會寫回「選項清單」，也不會出現在一般工作紀錄的下拉選單。假別存在「工作目標」、備註存在「處理內容」、請假時數存在「今日工時」。apps-script/Code.gs 的 LEAVE_RULES 手動同步。",
     "status": "休假",

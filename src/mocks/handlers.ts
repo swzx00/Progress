@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw';
 import schema from '../../shared/validation-schema.json';
 
 import { isLeaveItem, type WorkItem, type WorkItemOptions } from '@/types/work-item';
+import { dailyHoursMessage } from '@/validation/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10).replaceAll('-', '/');
@@ -87,6 +88,30 @@ let items: WorkItem[] = [
 // getNextDailyIndex_ 同一套規則）。用最大值不用筆數，刪掉中間某筆後才不會撞號
 const getNextDailyIndex = (date: string): number =>
   Math.max(0, ...items.filter((i) => i.工作日期 === date && !i.已刪除).map((i) => i.項次)) + 1;
+
+// 當天未刪除、排除 excludeId（編輯時是自己）的今日工時合計（跟 Code.gs 的
+// getDayHoursExcluding_ 同一套規則）
+const getDayHoursExcluding = (date: string, excludeId?: string): number =>
+  items
+    .filter((i) => i.工作日期 === date && !i.已刪除 && i.id !== excludeId)
+    .reduce((sum, i) => sum + (Number(i.今日工時) || 0), 0);
+
+// 只模擬工時相關的後端檢查：請假時數上限、每日工時合計上限
+const validateHours = (
+  item: Partial<WorkItem>,
+  date: string,
+  excludeId?: string,
+): string | undefined => {
+  const hours = Number(item.今日工時) || 0;
+  if (isLeaveItem(item as WorkItem) && hours > schema.leave.fields.今日工時.max) {
+    return `請假時數不可超過 ${schema.leave.fields.今日工時.max} 小時`;
+  }
+  const otherHours = getDayHoursExcluding(date, excludeId);
+  if (otherHours + hours > schema.dailyHours.max) {
+    return dailyHoursMessage(otherHours, hours);
+  }
+  return undefined;
+};
 
 let options: WorkItemOptions = {
   交辦單位: ['資訊部', '業務部', '行銷部', '人資部'],
@@ -191,6 +216,8 @@ export const handlers = [
     }
 
     if (body.action === 'create') {
+      const hoursError = validateHours(body.item, body.item.工作日期);
+      if (hoursError) return HttpResponse.json({ error: hoursError });
       const created: WorkItem = {
         ...applyLeaveFixedValues(body.item),
         id: crypto.randomUUID(),
@@ -203,6 +230,12 @@ export const handlers = [
     }
 
     if (body.action === 'update') {
+      const existing = items.find((item) => item.id === body.id);
+      if (existing) {
+        const merged = { ...existing, ...body.item };
+        const hoursError = validateHours(merged, merged.工作日期, existing.id);
+        if (hoursError) return HttpResponse.json({ error: hoursError });
+      }
       let updated: WorkItem | undefined;
       items = items.map((item) => {
         if (item.id !== body.id) return item;
