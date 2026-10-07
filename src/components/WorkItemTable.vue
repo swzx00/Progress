@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { VueDraggable } from 'vue-draggable-plus';
+import { nextTick, reactive, ref, watch } from 'vue';
+import { VueDraggable, type SortableEvent } from 'vue-draggable-plus';
 
+import ClampText from '@/components/ClampText.vue';
 import { getStatusKey, isLeaveItem, isOverdue, type WorkItem } from '@/types/work-item';
 
 const props = withDefaults(
@@ -61,6 +62,60 @@ const emitOrder = (): void => {
     rows.value.map((row) => row.id),
   );
 };
+
+/**
+ * 文字刪節（工作目標、處理內容、專案名稱/Repo）：收合時截斷，被截斷的欄位下方出現「▾ 展開」，
+ * 點任一個整列都不截斷，同樣位置變「▴ 收合」，點任一個整列收回（使用者決定）。
+ * 點列本身不展開；展開狀態不存檔，換日期（列的 id 不在了）就收回；開始拖曳時自動收合
+ */
+type ClampField = 'title' | 'target' | 'detail';
+const overflowMap = reactive<Record<string, Partial<Record<ClampField, boolean>>>>({});
+const expandedIds = ref<Set<string>>(new Set());
+
+const setOverflow = (id: string, field: ClampField, value: boolean): void => {
+  overflowMap[id] = { ...overflowMap[id], [field]: value };
+};
+const hasOverflow = (id: string, field: ClampField): boolean => !!overflowMap[id]?.[field];
+const isExpanded = (id: string): boolean => expandedIds.value.has(id);
+
+const collapseRow = (id: string): void => {
+  if (!expandedIds.value.has(id)) return;
+  const next = new Set(expandedIds.value);
+  next.delete(id);
+  expandedIds.value = next;
+};
+
+const toggleRow = async (id: string, event: MouseEvent): Promise<void> => {
+  if (!isExpanded(id)) {
+    expandedIds.value = new Set(expandedIds.value).add(id);
+    return;
+  }
+  const row = (event.currentTarget as HTMLElement).closest<HTMLElement>('.work-item-table__row');
+  collapseRow(id);
+  // 收合後這一列如果捲出畫面上緣，自動捲回來，避免畫面跳走找不到剛剛那一列
+  await nextTick();
+  if (row && row.getBoundingClientRect().top < 0) {
+    row.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+};
+
+// 換日期（或紀錄被刪除）後，不在畫面上的列不再保留展開狀態
+watch(
+  () => props.items,
+  (items) => {
+    const ids = new Set(items.map((item) => item.id));
+    expandedIds.value = new Set([...expandedIds.value].filter((id) => ids.has(id)));
+  },
+);
+
+// 開始拖曳時，那一列如果是展開的就先收合，避免拖著很高的列
+const onDragStart = (event: SortableEvent): void => {
+  const id = event.item.dataset.id;
+  if (id) collapseRow(id);
+};
+
+const titleFullText = (item: WorkItem): string =>
+  [item.專案名稱, item.專案Repo.map((repo) => `#${repo}`).join(' ')].filter(Boolean).join('\n');
 
 // 上移／下移：跟相鄰那筆交換位置
 const moveRow = (index: number, direction: -1 | 1): void => {
@@ -131,6 +186,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       :force-fallback="true"
       fallback-class="work-item-table__row--dragging"
       ghost-class="work-item-table__row--ghost"
+      @start="onDragStart"
       @update="emitOrder"
     >
       <div
@@ -140,7 +196,9 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         :class="{
           'work-item-table__row--overdue': isOverdue(item, today),
           'work-item-table__row--leave': isLeaveItem(item),
+          'work-item-table__row--expanded': isExpanded(item.id),
         }"
+        :data-id="item.id"
         role="row"
       >
         <!-- 項次：平板、桌面在數字上下放上移／下移（圖示：Lucide chevron-up／chevron-down，ISC 授權） -->
@@ -197,12 +255,31 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--title" role="cell">
-          <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
-          <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
-            <span v-for="repo in item.專案Repo" :key="repo" class="work-item-table__repo-tag"
-              >#{{ repo }}</span
-            >
-          </div>
+          <ClampText
+            :full-text="titleFullText(item)"
+            :expanded="isExpanded(item.id)"
+            @overflow="setOverflow(item.id, 'title', $event)"
+          >
+            <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
+            <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
+              <span
+                v-for="repo in item.專案Repo"
+                :key="repo"
+                class="work-item-table__repo-tag"
+                data-ellipsis
+                >#{{ repo }}</span
+              >
+            </div>
+          </ClampText>
+          <button
+            v-if="hasOverflow(item.id, 'title')"
+            type="button"
+            class="work-item-table__expand-btn"
+            :aria-expanded="isExpanded(item.id)"
+            @click="toggleRow(item.id, $event)"
+          >
+            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
+          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--status" role="cell">
@@ -260,11 +337,40 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--target" role="cell">
-          {{ item.工作目標 }}
+          <ClampText
+            :full-text="item.工作目標"
+            :expanded="isExpanded(item.id)"
+            @overflow="setOverflow(item.id, 'target', $event)"
+            >{{ item.工作目標 }}</ClampText
+          >
+          <button
+            v-if="hasOverflow(item.id, 'target')"
+            type="button"
+            class="work-item-table__expand-btn"
+            :aria-expanded="isExpanded(item.id)"
+            @click="toggleRow(item.id, $event)"
+          >
+            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
+          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
-          <span class="work-item-table__mobile-label">處理內容：</span>{{ item.處理內容 }}
+          <ClampText
+            :full-text="item.處理內容"
+            :expanded="isExpanded(item.id)"
+            @overflow="setOverflow(item.id, 'detail', $event)"
+            ><span class="work-item-table__mobile-label">處理內容：</span
+            >{{ item.處理內容 }}</ClampText
+          >
+          <button
+            v-if="hasOverflow(item.id, 'detail')"
+            type="button"
+            class="work-item-table__expand-btn"
+            :aria-expanded="isExpanded(item.id)"
+            @click="toggleRow(item.id, $event)"
+          >
+            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
+          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
@@ -613,6 +719,22 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       background: var(--color-black-000);
     }
 
+    // 展開中：疊一層淡色底。用 isolation 建立堆疊脈絡、::before 放 z-index: -1，色塊會蓋在列原本的
+    // 底色（斑馬紋、今天、放假）上、文字下面，不用跟各種底色規則比權重
+    &--expanded {
+      isolation: isolate;
+
+      &::before {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        content: '';
+        background: color-mix(in srgb, var(--color-blue-500) 6%, transparent);
+        border-radius: inherit;
+      }
+    }
+
     // 拖曳中留在原位的佔位列
     &--ghost {
       opacity: 0.4;
@@ -690,24 +812,20 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       }
     }
 
+    // 工作目標、處理內容、專案名稱/Repo 的截斷交給 ClampText，儲存格本身不再設 line-clamp
     &--title {
-      display: -webkit-box;
       flex: 1 1 0;
-      flex-flow: column wrap;
+      flex-direction: column;
       gap: 2px;
       align-items: flex-start;
       align-self: center;
       order: 0;
       width: auto;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      -webkit-line-clamp: 5;
       font-size: 18px;
       font-weight: 500;
       line-height: 1.6;
       word-break: break-all;
-      -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
         grid-row: 1 / span 2;
@@ -809,17 +927,14 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     }
 
     &--target {
-      display: -webkit-box;
+      flex-direction: column;
+      align-items: flex-start;
       align-self: center;
       justify-content: flex-start;
       order: 3;
       width: 100%;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      -webkit-line-clamp: 5;
       word-break: break-all;
-      -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
         grid-row: 1 / span 2;
@@ -840,25 +955,21 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     }
 
     &--detail {
-      display: -webkit-box;
+      flex-direction: column;
+      align-items: flex-start;
       align-self: center;
       justify-content: flex-start;
       order: 4;
       width: 100%;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      -webkit-line-clamp: 5;
       font-size: 14px;
       color: var(--color-black-500);
       word-break: break-all;
-      -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
         grid-row: 1 / span 2;
         grid-column: 5;
         order: 4;
-        -webkit-line-clamp: 3;
         font-size: inherit;
         color: inherit;
       }
@@ -1074,6 +1185,31 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     }
   }
 
+  // 「▾ 展開／▴ 收合」：連結樣式（主色文字、沒有外框），跟有框的編輯／複製／刪除按鈕區分；
+  // 手機點擊範圍至少 32px 高
+  &__expand-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--color-blue-700);
+    cursor: pointer;
+    background: none;
+    border: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    @media (min-width: 768px) {
+      min-height: 0;
+      padding: 2px 0;
+    }
+  }
+
   &__repo-tag {
     display: inline-block;
     width: fit-content;
@@ -1099,6 +1235,13 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       color: var(--color-red-400);
       background: var(--color-red-000);
       border: 1px solid var(--color-red-400);
+    }
+
+    // 展開中：完整顯示，超長的換行並改成圓角矩形（多行時 999px 圓角會變成扁橢圓）
+    .work-item-table__row--expanded & {
+      max-width: 100%;
+      white-space: normal;
+      border-radius: 8px;
     }
   }
 
