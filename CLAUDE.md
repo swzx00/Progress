@@ -230,7 +230,12 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 暫緩和「今天剛好放假」都是 `--color-yellow-800`，兩者語意不同但同色；非今天的放假日是 orange，不會跟暫緩撞色。之後如果要區分，改其中一處用的色階即可，不用新增自訂 token
   - class modifier 需要英文 key，對應表是 `types/work-item.ts` 的 `STATUS_KEYS`（型別綁 `STATUS_OPTIONS`，新增狀態漏寫對應會直接型別錯誤）；Sheet 的狀態是純文字，可能出現清單外的值，`getStatusKey()` 查不到回傳 `undefined`，這時只套基本樣式（深灰膠囊），不會壞掉；狀態為空則不顯示膠囊
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
-- **`DateNav` 跑版處理**（使用者決定）：`DateNav` 所有寬度都固定兩列：第一列是動作按鈕（`actions` slot 包在 `date-nav__actions` 裡，放在 template 最前面，`flex: 1 0 100%` 佔滿整列寬度、靠右），沒傳 slot（未登入）時整列不渲染；第二列是日期切換（⏮ ◀ 日期選擇器 ▶ ⏭）、放假徽章、工時合計、今天／回到今天，放不下時（例如手機）自己自動換行。手機、平板（< 1024px）時右側三顆動作按鈕（複製本日、請假、＋ 新增）只顯示圖示（32px 正方形，跟 `DateNav` 的按鈕同高），文字（`home-view__add-btn-label`）收起來，按鈕名稱靠 `aria-label`、滑過靠 `title`（手機沒有 hover，看不到提示）；桌面（≥ 1024px）才顯示圖示＋文字。「＋ 新增」的「＋」改成行內 SVG 的 Lucide `plus` 圖示（ISC 授權），文字只剩「新增」
+- **`DateNav` 版面**（使用者決定）：
+  - 桌面、平板（≥ 768px）兩列：第一列是動作按鈕（`actions` slot 包在 `date-nav__actions` 裡，`flex: 1 0 100%` 佔滿整列寬度）靠右；第二列左邊是日期切換（`date-nav__switcher`：⏮ ◀ 日期選擇器 ▶ ⏭），右邊是 `date-nav__status`（放假徽章／工時合計＋今天／回到今天），放不下時 `date-nav__status` 換到下一行並靠右
+  - 手機（< 768px）三列：動作按鈕（三顆平均分配整列寬度）→ 日期切換（撐滿整列，⏮ 最左、⏭ 最右，日期選擇器填滿中間）→ 左邊放假徽章／工時合計、右邊今天／回到今天
+  - 放假徽章跟工時合計同一個區塊（`date-nav__info`）：放假而且當天沒有紀錄時只顯示放假徽章、不顯示工時合計；放假但有紀錄（例如加班）時兩個都顯示。`DateNav` 用 `hasItems` prop 判斷（`HomeView` 傳 `items.length > 0`）
+  - 沒傳 `actions` slot（未登入）時第一列不渲染
+  - 動作按鈕（`HomeView.vue` 的 `home-view__add-btn`）依斷點切換：手機只顯示文字、不顯示圖示；平板只顯示圖示（32px 正方形，跟 `DateNav` 的按鈕同高），文字收起來，按鈕名稱靠 `aria-label`、滑過靠 `title`；桌面（≥ 1024px）圖示＋文字。「＋ 新增」的「＋」是行內 SVG 的 Lucide `plus` 圖示（ISC 授權），文字是「新增」
 - **`DateNav` 右側動作按鈕的 hover**（使用者決定，`HomeView.vue` 的 `home-view__add-btn`）：實心底的「＋ 新增」滑過變深（`blue-500` → `blue-700`）；框線按鈕滑過改成淡色底＋深一階的文字與框線——請假 `teal-050` 底／`teal-800`，複製本日 `black-050` 底／`black-700`
 - **複製**（使用者決定）：欄位規則集中在 `src/utils/copy-work-item.ts` 的 `buildCopyPayload`，單項複製跟複製本日共用，改一處兩邊一起生效；項次一律由後端照新日期的每日編號規則接續
 - **操作欄**（使用者決定）：按鈕一律橫排，顏色維持編輯藍／複製灰／刪除紅，依斷點切換呈現方式——手機卡片是文字按鈕（三顆平分整列寬度、圖示隱藏）；平板是 28px 正方形圖示按鈕（Lucide `pencil`／`copy`／`trash-2`，行內 SVG、ISC 授權），文字收起來，按鈕名稱靠 `aria-label`、滑過用 `title` 顯示文字提示；桌面（≥ 1024px）是圖示＋文字。刪除是破壞性動作，跟前面的按鈕間距拉開到 12px（桌面、平板、手機都是，其他按鈕之間維持原本的 gap），避免誤按。操作欄寬度：平板 100px、桌面 208px
