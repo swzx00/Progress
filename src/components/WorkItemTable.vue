@@ -26,6 +26,10 @@ const emit = defineEmits<{
 
 const formatDate = (date: string): string => date.replaceAll('-', '/');
 
+// 完成度可以是 0.25 的倍數：照實際值顯示、不補多餘的 0（70 → 70、12.5 → 12.5、12.25 → 12.25），
+// 四捨五入到小數兩位避免浮點誤差
+const formatProgress = (value: number): string => String(Math.round(value * 100) / 100);
+
 const statusClass = (status: string): string | undefined => {
   const key = getStatusKey(status);
   return key ? `work-item-table__status--${key}` : undefined;
@@ -144,7 +148,7 @@ const sortedItems = computed(() =>
         <div class="work-item-table__progress">
           <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
         </div>
-        <span class="work-item-table__progress-text">{{ item.完成度 }}%</span>
+        <span class="work-item-table__progress-text">{{ formatProgress(item.完成度) }}%</span>
       </div>
 
       <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
