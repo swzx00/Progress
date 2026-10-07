@@ -271,7 +271,7 @@ const confirmDelete = async (): Promise<void> => {
             />
             <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" />
           </svg>
-          <span class="home-view__add-btn-label">複製本日</span>
+          複製本日
         </button>
         <button
           type="button"
@@ -300,7 +300,7 @@ const confirmDelete = async (): Promise<void> => {
             />
             <path d="M6 2v2" />
           </svg>
-          <span class="home-view__add-btn-label">請假</span>
+          請假
         </button>
         <button
           type="button"
@@ -325,7 +325,7 @@ const confirmDelete = async (): Promise<void> => {
             <path d="M5 12h14" />
             <path d="M12 5v14" />
           </svg>
-          <span class="home-view__add-btn-label">新增</span>
+          新增
         </button>
       </template>
     </DateNav>
@@ -502,10 +502,7 @@ const confirmDelete = async (): Promise<void> => {
     }
   }
 
-  // 三顆動作按鈕依斷點切換（使用者決定）：
-  // - 手機：圖示＋文字，三顆平均分配整列寬度
-  // - 平板：只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），按鈕名稱靠 aria-label、滑過靠 title
-  // - 桌面（≥ 1024px）：圖示＋文字
+  // 三顆動作按鈕一律圖示＋文字（使用者決定）：手機三顆平均分配整列寬度，平板、桌面寬度隨內容
   &__add-btn {
     display: inline-flex;
     flex: 1 1 0;
@@ -565,25 +562,6 @@ const confirmDelete = async (): Promise<void> => {
 
     @media (min-width: 768px) {
       flex: none;
-      width: 32px;
-      height: 32px;
-      padding: 0;
-    }
-
-    @media (min-width: 1024px) {
-      width: auto;
-      height: auto;
-      padding: 6px 12px;
-    }
-  }
-
-  &__add-btn-label {
-    @media (min-width: 768px) {
-      display: none;
-    }
-
-    @media (min-width: 1024px) {
-      display: inline;
     }
   }
 
