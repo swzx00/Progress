@@ -581,6 +581,7 @@ function doPost(e) {
     }
 
     if (body.action === 'create') return handleCreate_(body.item);
+    if (body.action === 'batchCreate') return handleBatchCreate_(body.items);
     if (body.action === 'update') return handleUpdate_(body.id, body.originalDate, body.item);
     if (body.action === 'delete') return handleDelete_(body.id, body.originalDate);
     if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
@@ -626,6 +627,79 @@ function handleCreate_(item) {
   syncOptionsFromItem_(created);
 
   return jsonOutput_({ item: created });
+}
+
+// 一次新增多筆（前端「複製本日」用）：全部先驗證，任何一筆不合格、或任何一天的工時合計
+// （既有紀錄＋這批）超過 DAILY_HOURS_MAX，就整批退回、不寫入任何一筆。
+// 項次依陣列順序、照每日編號規則接續；新值同步寫回選項清單（請假列一樣略過）。
+function handleBatchCreate_(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return jsonOutput_({ error: '沒有要新增的紀錄' });
+  }
+
+  var prepared = items.map(function (item) {
+    return applyLeaveFixedValues_(item);
+  });
+  var errors = [];
+  prepared.forEach(function (item, i) {
+    var itemErrors = validateItem_(item);
+    if (itemErrors.length > 0) errors.push('第 ' + (i + 1) + ' 筆：' + itemErrors.join('、'));
+  });
+  if (errors.length > 0) {
+    return jsonOutput_({ error: errors.join('；') });
+  }
+
+  // 依工作日期分組：每天各自檢查工時合計，月份分頁共用同一份 sheet/colMap，最後一次寫入
+  var sheets = {}; // monthKey -> { sheet, colMap, rows }
+  var days = {}; // 工作日期 -> { target, hours, nextIndex }
+  prepared.forEach(function (item) {
+    var date = item.工作日期;
+    if (!days[date]) {
+      var monthKey = getMonthKey_(date);
+      if (!sheets[monthKey]) {
+        var sheet = getOrCreateMonthSheet_(monthKey);
+        sheets[monthKey] = { sheet: sheet, colMap: getColumnMap_(sheet), rows: [] };
+      }
+      days[date] = { target: sheets[monthKey], hours: 0, nextIndex: 0 };
+    }
+    days[date].hours += Number(item.今日工時) || 0;
+  });
+
+  var dates = Object.keys(days);
+  for (var i = 0; i < dates.length; i++) {
+    var day = days[dates[i]];
+    var dayHours = getDayHoursExcluding_(day.target.sheet, day.target.colMap, dates[i], null);
+    if (dayHours + day.hours > DAILY_HOURS_MAX) {
+      return jsonOutput_({ error: dailyHoursError_(dayHours, day.hours) });
+    }
+    day.nextIndex = getNextDailyIndex_(day.target.sheet, day.target.colMap, dates[i]);
+  }
+
+  var created = prepared.map(function (item) {
+    var day = days[item.工作日期];
+    var createdItem = Object.assign({}, item, {
+      id: Utilities.getUuid(),
+      項次: day.nextIndex,
+      已刪除: false,
+    });
+    day.nextIndex += 1;
+    var target = day.target;
+    target.rows.push(itemToRow_(target.colMap, target.sheet.getLastColumn(), createdItem));
+    return createdItem;
+  });
+
+  Object.keys(sheets).forEach(function (monthKey) {
+    var target = sheets[monthKey];
+    if (target.rows.length === 0) return;
+    var startRow = target.sheet.getLastRow() + 1;
+    target.sheet
+      .getRange(startRow, 1, target.rows.length, target.rows[0].length)
+      .setValues(target.rows);
+  });
+
+  created.forEach(syncOptionsFromItem_);
+
+  return jsonOutput_({ items: created });
 }
 
 function handleUpdate_(id, originalDate, itemPatch) {
