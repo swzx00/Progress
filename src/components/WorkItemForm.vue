@@ -396,7 +396,7 @@ const onSubmit = async (): Promise<void> => {
         </button>
         <button
           type="button"
-          class="work-item-form__mode-btn"
+          class="work-item-form__mode-btn work-item-form__mode-btn--leave"
           :class="{ 'work-item-form__mode-btn--active': isLeaveMode }"
           :aria-pressed="isLeaveMode"
           :disabled="saving || checkingDayHours"
@@ -863,6 +863,11 @@ const onSubmit = async (): Promise<void> => {
         color: var(--color-blue-700);
         background: var(--color-black-000);
         box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+      }
+
+      // 「請假」那一段選到時用 teal，跟請假按鈕、表格請假列同一個色系
+      &--leave.work-item-form__mode-btn--active {
+        color: var(--color-teal-700);
       }
 
       &:disabled {

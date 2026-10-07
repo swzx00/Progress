@@ -164,7 +164,7 @@ const confirmDelete = async (): Promise<void> => {
           class="home-view__add-btn home-view__add-btn--leave"
           @click="openLeaveForm"
         >
-          <!-- 圖示：Lucide calendar-minus（https://lucide.dev，ISC 授權） -->
+          <!-- 圖示：Lucide coffee（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
           <svg
             class="home-view__add-btn-icon"
             xmlns="http://www.w3.org/2000/svg"
@@ -177,11 +177,12 @@ const confirmDelete = async (): Promise<void> => {
             aria-hidden="true"
             focusable="false"
           >
-            <path d="M8 2v4" />
-            <path d="M16 2v4" />
-            <rect width="18" height="18" x="3" y="4" rx="2" />
-            <path d="M3 10h18" />
-            <path d="M10 16h4" />
+            <path d="M10 2v2" />
+            <path d="M14 2v2" />
+            <path
+              d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"
+            />
+            <path d="M6 2v2" />
           </svg>
           請假
         </button>
@@ -363,10 +364,12 @@ const confirmDelete = async (): Promise<void> => {
     border: 1px solid var(--color-blue-500);
     border-radius: 6px;
 
-    // 請假是次要入口：白底＋主色框線，跟主要的「＋ 新增」做出主次區別
+    // 請假是次要入口：白底＋框線，跟主要的「＋ 新增」做出主次區別。色系用 teal，跟表格請假列一致；
+    // 14px 文字在白底要 4.5:1 對比，teal-500／600 不夠，用 teal-700（使用者決定）
     &--leave {
-      color: var(--color-blue-500);
+      color: var(--color-teal-700);
       background: var(--color-black-000);
+      border-color: var(--color-teal-700);
     }
 
     &-icon {
