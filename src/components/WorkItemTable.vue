@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, watch } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
 
 import { getStatusKey, isLeaveItem, isOverdue, type WorkItem } from '@/types/work-item';
 
@@ -11,10 +12,13 @@ const props = withDefaults(
     viewingToday?: boolean;
     // 對應 useTaiwanHolidays 的 getDayOffLabel()，工作日回傳 null
     dayOffLabel?: string | null;
+    /** 項次調整存檔中：暫時停用拖曳與上移／下移 */
+    reordering?: boolean;
   }>(),
   {
     editable: false,
     viewingToday: false,
+    reordering: false,
   },
 );
 
@@ -22,6 +26,8 @@ const emit = defineEmits<{
   edit: [item: WorkItem];
   copy: [item: WorkItem];
   delete: [item: WorkItem];
+  /** 項次調整：那天所有紀錄（含請假）依新順序排列的 id，由使用端存檔 */
+  reorder: [ids: string[]];
 }>();
 
 const formatDate = (date: string): string => date.replaceAll('-', '/');
@@ -35,14 +41,35 @@ const statusClass = (status: string): string | undefined => {
   return key ? `work-item-table__status--${key}` : undefined;
 };
 
-const sortedItems = computed(() =>
-  [...props.items].sort((a, b) => {
-    const aOverdue = isOverdue(a, props.today);
-    const bOverdue = isOverdue(b, props.today);
-    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-    return a.項次 - b.項次;
-  }),
+/**
+ * 列的順序一律照項次（使用者決定：逾期不再自動排到最前面，只保留紅色標線與「逾期」標籤，
+ * 手動調整的順序才不會被打亂）。rows 是拖曳用的本地副本：拖曳時 VueDraggable 直接改它，
+ * 再把新順序 emit 給使用端存檔；使用端更新（或失敗還原）items 後，這裡跟著重新同步
+ */
+const rows = ref<WorkItem[]>([]);
+watch(
+  () => props.items,
+  (items) => {
+    rows.value = [...items].sort((a, b) => a.項次 - b.項次);
+  },
+  { immediate: true },
 );
+
+const emitOrder = (): void => {
+  emit(
+    'reorder',
+    rows.value.map((row) => row.id),
+  );
+};
+
+// 上移／下移：跟相鄰那筆交換位置
+const moveRow = (index: number, direction: -1 | 1): void => {
+  const target = index + direction;
+  if (props.reordering || target < 0 || target >= rows.value.length) return;
+  const ids = rows.value.map((row) => row.id);
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  emit('reorder', ids);
+};
 </script>
 
 <template>
@@ -90,164 +117,285 @@ const sortedItems = computed(() =>
       </div>
     </div>
 
-    <div
-      v-for="item in sortedItems"
-      :key="item.id"
-      class="work-item-table__row"
-      :class="{
-        'work-item-table__row--overdue': isOverdue(item, today),
-        'work-item-table__row--leave': isLeaveItem(item),
-      }"
-      role="row"
+    <!--
+      資料列可拖曳排序（vue-draggable-plus）：桌面直接拖，手機長按 300ms 才開始拖（避免跟捲動衝突）；
+      按鈕不觸發拖曳（filter），存檔中或唯讀時停用
+    -->
+    <VueDraggable
+      v-model="rows"
+      class="work-item-table__body"
+      :disabled="!editable || reordering"
+      :animation="150"
+      :delay="300"
+      :delay-on-touch-only="true"
+      filter="button"
+      :prevent-on-filter="false"
+      ghost-class="work-item-table__row--ghost"
+      @update="emitOrder"
     >
-      <div class="work-item-table__cell work-item-table__cell--index" role="cell">
-        {{ item.項次 }}
-      </div>
+      <div
+        v-for="(item, index) in rows"
+        :key="item.id"
+        class="work-item-table__row"
+        :class="{
+          'work-item-table__row--overdue': isOverdue(item, today),
+          'work-item-table__row--leave': isLeaveItem(item),
+        }"
+        role="row"
+      >
+        <!-- 項次：平板、桌面在數字上下放上移／下移（圖示：Lucide chevron-up／chevron-down，ISC 授權） -->
+        <div class="work-item-table__cell work-item-table__cell--index" role="cell">
+          <button
+            v-if="editable"
+            type="button"
+            class="work-item-table__move-btn"
+            title="上移"
+            aria-label="上移"
+            :disabled="reordering || index === 0"
+            @click="moveRow(index, -1)"
+          >
+            <svg
+              class="work-item-table__move-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m18 15-6-6-6 6" />
+            </svg>
+          </button>
+          <span>{{ item.項次 }}</span>
+          <button
+            v-if="editable"
+            type="button"
+            class="work-item-table__move-btn"
+            title="下移"
+            aria-label="下移"
+            :disabled="reordering || index === rows.length - 1"
+            @click="moveRow(index, 1)"
+          >
+            <svg
+              class="work-item-table__move-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        </div>
 
-      <div class="work-item-table__cell work-item-table__cell--title" role="cell">
-        <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
-        <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
-          <span v-for="repo in item.專案Repo" :key="repo" class="work-item-table__repo-tag"
-            >#{{ repo }}</span
+        <div class="work-item-table__cell work-item-table__cell--title" role="cell">
+          <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
+          <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
+            <span v-for="repo in item.專案Repo" :key="repo" class="work-item-table__repo-tag"
+              >#{{ repo }}</span
+            >
+          </div>
+        </div>
+
+        <div class="work-item-table__cell work-item-table__cell--status" role="cell">
+          <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)">{{
+            item.狀態
+          }}</span
+          ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
+        </div>
+
+        <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
+        <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
+          <span class="work-item-table__assignee-stacked">
+            <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
+            <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person">{{
+              item.交辦人員
+            }}</span>
+          </span>
+          <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline">{{
+            item.交辦單位
+          }}</span>
+          <span v-else class="work-item-table__assignee-inline"
+            >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
           >
         </div>
-      </div>
 
-      <div class="work-item-table__cell work-item-table__cell--status" role="cell">
-        <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)">{{
-          item.狀態
-        }}</span
-        ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
-      </div>
-
-      <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
-      <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
-        <span class="work-item-table__assignee-stacked">
-          <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
-          <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person">{{
-            item.交辦人員
-          }}</span>
-        </span>
-        <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline">{{
-          item.交辦單位
-        }}</span>
-        <span v-else class="work-item-table__assignee-inline"
-          >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
-        >
-      </div>
-
-      <div class="work-item-table__cell work-item-table__cell--target" role="cell">
-        {{ item.工作目標 }}
-      </div>
-
-      <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
-        <span class="work-item-table__mobile-label">處理內容：</span>{{ item.處理內容 }}
-      </div>
-
-      <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
-        <div class="work-item-table__progress">
-          <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
+        <div class="work-item-table__cell work-item-table__cell--target" role="cell">
+          {{ item.工作目標 }}
         </div>
-        <span class="work-item-table__progress-text">{{ formatProgress(item.完成度) }}%</span>
-      </div>
 
-      <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
-        <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
-        }}<span class="work-item-table__mobile-label work-item-table__mobile-label--unit">hr</span>
-      </div>
+        <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
+          <span class="work-item-table__mobile-label">處理內容：</span>{{ item.處理內容 }}
+        </div>
 
-      <div class="work-item-table__cell work-item-table__cell--due" role="cell">
-        <!-- 沒有預計期限時不顯示「期限：」標籤（使用者決定） -->
-        <span v-if="item.預計期限" class="work-item-table__mobile-label">期限：</span
-        >{{ formatDate(item.預計期限) }}
-      </div>
+        <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
+          <div class="work-item-table__progress">
+            <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
+          </div>
+          <span class="work-item-table__progress-text">{{ formatProgress(item.完成度) }}%</span>
+        </div>
 
-      <!--
+        <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
+          <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
+          }}<span class="work-item-table__mobile-label work-item-table__mobile-label--unit"
+            >hr</span
+          >
+        </div>
+
+        <div class="work-item-table__cell work-item-table__cell--due" role="cell">
+          <!-- 沒有預計期限時不顯示「期限：」標籤（使用者決定） -->
+          <span v-if="item.預計期限" class="work-item-table__mobile-label">期限：</span
+          >{{ formatDate(item.預計期限) }}
+        </div>
+
+        <!--
         操作欄（橫排）：手機卡片是文字按鈕，平板是圖示按鈕（滑過用 title 顯示文字提示），桌面是圖示＋文字。
         圖示：Lucide pencil／copy／trash-2（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
       -->
-      <div v-if="editable" class="work-item-table__cell work-item-table__cell--actions" role="cell">
-        <button
-          type="button"
-          class="work-item-table__action-btn work-item-table__action-btn--edit"
-          title="編輯"
-          aria-label="編輯"
-          @click="emit('edit', item)"
+        <div
+          v-if="editable"
+          class="work-item-table__cell work-item-table__cell--actions"
+          role="cell"
         >
-          <svg
-            class="work-item-table__action-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
+          <!-- 手機卡片沒有項次欄，上移／下移放在操作列最前面（平板、桌面隱藏，改用項次欄的） -->
+          <span class="work-item-table__move-group">
+            <button
+              type="button"
+              class="work-item-table__move-btn"
+              title="上移"
+              aria-label="上移"
+              :disabled="reordering || index === 0"
+              @click="moveRow(index, -1)"
+            >
+              <svg
+                class="work-item-table__move-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m18 15-6-6-6 6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="work-item-table__move-btn"
+              title="下移"
+              aria-label="下移"
+              :disabled="reordering || index === rows.length - 1"
+              @click="moveRow(index, 1)"
+            >
+              <svg
+                class="work-item-table__move-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </span>
+          <button
+            type="button"
+            class="work-item-table__action-btn work-item-table__action-btn--edit"
+            title="編輯"
+            aria-label="編輯"
+            @click="emit('edit', item)"
           >
-            <path
-              d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
-            />
-            <path d="m15 5 4 4" />
-          </svg>
-          <span class="work-item-table__action-label">編輯</span>
-        </button>
-        <button
-          type="button"
-          class="work-item-table__action-btn work-item-table__action-btn--copy"
-          title="複製"
-          aria-label="複製"
-          @click="emit('copy', item)"
-        >
-          <svg
-            class="work-item-table__action-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
+            <svg
+              class="work-item-table__action-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+              />
+              <path d="m15 5 4 4" />
+            </svg>
+            <span class="work-item-table__action-label">編輯</span>
+          </button>
+          <button
+            type="button"
+            class="work-item-table__action-btn work-item-table__action-btn--copy"
+            title="複製"
+            aria-label="複製"
+            @click="emit('copy', item)"
           >
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-          </svg>
-          <span class="work-item-table__action-label">複製</span>
-        </button>
-        <button
-          type="button"
-          class="work-item-table__action-btn work-item-table__action-btn--danger"
-          title="刪除"
-          aria-label="刪除"
-          @click="emit('delete', item)"
-        >
-          <svg
-            class="work-item-table__action-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
+            <svg
+              class="work-item-table__action-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+            <span class="work-item-table__action-label">複製</span>
+          </button>
+          <button
+            type="button"
+            class="work-item-table__action-btn work-item-table__action-btn--danger"
+            title="刪除"
+            aria-label="刪除"
+            @click="emit('delete', item)"
           >
-            <path d="M10 11v6" />
-            <path d="M14 11v6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-            <path d="M3 6h18" />
-            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-          <span class="work-item-table__action-label">刪除</span>
-        </button>
+            <svg
+              class="work-item-table__action-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M3 6h18" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            <span class="work-item-table__action-label">刪除</span>
+          </button>
+        </div>
       </div>
-    </div>
+    </VueDraggable>
 
-    <div v-if="sortedItems.length === 0" class="work-item-table__empty">
+    <div v-if="rows.length === 0" class="work-item-table__empty">
       <template v-if="dayOffLabel && viewingToday">今天放假呦！</template>
       <template v-else-if="dayOffLabel">這天放假呦！</template>
       <template v-else-if="viewingToday">今天還沒有紀錄</template>
@@ -269,6 +417,17 @@ const sortedItems = computed(() =>
     padding: 0;
   }
 
+  // 資料列的容器（拖曳排序的範圍）；表頭在它外面，所以資料列的 nth-child 從 1 開始算
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    @media (min-width: 768px) {
+      gap: 0;
+    }
+  }
+
   &--viewing-today {
     .work-item-table__row {
       border: 1px solid var(--color-blue-200);
@@ -284,11 +443,11 @@ const sortedItems = computed(() =>
         }
       }
 
-      &:not(.work-item-table__row--header):nth-child(even) {
+      &:not(.work-item-table__row--header):nth-child(odd) {
         background: var(--color-blue-050);
       }
 
-      &:not(.work-item-table__row--header):nth-child(odd) {
+      &:not(.work-item-table__row--header):nth-child(even) {
         background: var(--color-blue-000);
       }
     }
@@ -310,11 +469,11 @@ const sortedItems = computed(() =>
         }
       }
 
-      &:not(.work-item-table__row--header):nth-child(even) {
+      &:not(.work-item-table__row--header):nth-child(odd) {
         background: var(--color-orange-050);
       }
 
-      &:not(.work-item-table__row--header):nth-child(odd) {
+      &:not(.work-item-table__row--header):nth-child(even) {
         background: var(--color-orange-000);
       }
     }
@@ -335,11 +494,11 @@ const sortedItems = computed(() =>
           }
         }
 
-        &:not(.work-item-table__row--header):nth-child(even) {
+        &:not(.work-item-table__row--header):nth-child(odd) {
           background: var(--color-yellow-050);
         }
 
-        &:not(.work-item-table__row--header):nth-child(odd) {
+        &:not(.work-item-table__row--header):nth-child(even) {
           background: var(--color-yellow-000);
         }
       }
@@ -414,12 +573,17 @@ const sortedItems = computed(() =>
       }
     }
 
-    &:not(.work-item-table__row--header):nth-child(even) {
+    &:not(.work-item-table__row--header):nth-child(odd) {
       background: var(--color-black-050);
     }
 
-    &:not(.work-item-table__row--header):nth-child(odd) {
+    &:not(.work-item-table__row--header):nth-child(even) {
       background: var(--color-black-000);
+    }
+
+    // 拖曳中留在原位的佔位列
+    &--ghost {
+      opacity: 0.4;
     }
 
     &--overdue {
@@ -471,10 +635,13 @@ const sortedItems = computed(() =>
     &--index {
       display: none;
 
+      // 平板、桌面：上移／數字／下移 由上而下疊
       @media (min-width: 768px) {
         display: flex;
+        flex-direction: column;
         grid-row: 1 / span 2;
         grid-column: 1;
+        gap: 2px;
         order: 0;
       }
 
@@ -1146,6 +1313,54 @@ const sortedItems = computed(() =>
   }
 
   // 圖示：手機不顯示（文字按鈕），平板、桌面顯示
+  // 上移／下移：平板、桌面放在項次欄（數字上下），手機放在操作列最前面
+  &__move-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--color-black-600);
+    cursor: pointer;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-300);
+    border-radius: 6px;
+
+    &:hover:not(:disabled) {
+      color: var(--color-black-000);
+      background: var(--color-black-600);
+      border-color: var(--color-black-600);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+
+    @media (min-width: 768px) {
+      width: 24px;
+      height: 18px;
+      border-color: transparent;
+    }
+  }
+
+  &__move-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  &__move-group {
+    display: inline-flex;
+    flex: none;
+    gap: 8px;
+
+    @media (min-width: 768px) {
+      display: none;
+    }
+  }
+
   &__action-icon {
     display: none;
     flex: none;
