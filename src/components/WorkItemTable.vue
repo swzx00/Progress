@@ -350,12 +350,15 @@ const sortedItems = computed(() =>
     border: 1px solid var(--color-black-200);
     border-radius: 8px;
 
+    // 平板（768–1023px）：完成度、今日工時、預計期限三欄合併成一欄（第 6 欄），由上而下疊成三小行，
+    // 其他欄位跨滿三行（各欄的 grid-row／grid-column 寫在下方 &__cell 各自的區塊）；
+    // 桌面（≥ 1024px）才恢復一欄一個欄位（使用者決定，平板寬度原本放不下）
     @media (min-width: 768px) {
       display: grid;
       grid-template-columns:
         32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
-        62px 48px 77px 58px;
-      gap: 8px;
+        110px 58px;
+      gap: 2px 8px;
       padding: 8px 32px;
       font-size: 14px;
       border: none;
@@ -363,8 +366,21 @@ const sortedItems = computed(() =>
       border-radius: 0;
     }
 
+    @media (min-width: 1024px) {
+      grid-template-columns:
+        32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        62px 48px 77px 58px;
+      gap: 8px;
+    }
+
     .work-item-table--editable & {
       @media (min-width: 768px) {
+        grid-template-columns:
+          32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          110px 58px 100px;
+      }
+
+      @media (min-width: 1024px) {
         grid-template-columns:
           32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
           62px 48px 77px 58px 100px;
@@ -454,7 +470,14 @@ const sortedItems = computed(() =>
 
       @media (min-width: 768px) {
         display: flex;
+        grid-row: 1 / span 3;
+        grid-column: 1;
         order: 0;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
     }
 
@@ -478,10 +501,17 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
+        grid-row: 1 / span 3;
+        grid-column: 3;
         order: 2;
         font-size: inherit;
         font-weight: inherit;
         line-height: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       * {
@@ -504,8 +534,15 @@ const sortedItems = computed(() =>
 
       @media (min-width: 768px) {
         flex-direction: column;
+        grid-row: 1 / span 3;
+        grid-column: 7;
         align-items: center;
         order: 8;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
     }
 
@@ -518,11 +555,18 @@ const sortedItems = computed(() =>
       color: var(--color-black-500);
 
       @media (min-width: 768px) {
+        grid-row: 1 / span 3;
+        grid-column: 2;
         order: 1;
         margin-top: inherit;
         margin-bottom: inherit;
         font-size: inherit;
         color: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
@@ -569,7 +613,14 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
+        grid-row: 1 / span 3;
+        grid-column: 4;
         order: 3;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 表頭跟內容一樣置左（使用者決定），蓋過上面表頭共用的置中
@@ -595,10 +646,17 @@ const sortedItems = computed(() =>
       -webkit-box-orient: vertical;
 
       @media (min-width: 768px) {
+        grid-row: 1 / span 3;
+        grid-column: 5;
         order: 4;
         -webkit-line-clamp: 3;
         font-size: inherit;
         color: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 表頭跟內容一樣置左（使用者決定），蓋過上面表頭共用的置中
@@ -627,10 +685,17 @@ const sortedItems = computed(() =>
 
       @media (min-width: 768px) {
         flex-direction: column;
+        grid-row: 1;
+        grid-column: 6;
         gap: 2px;
         order: 6;
         font-size: inherit;
         color: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 請假列：手機的完成度文字改成 teal（桌面繼承整列的 teal-800）
@@ -651,10 +716,17 @@ const sortedItems = computed(() =>
       color: var(--color-black-500);
 
       @media (min-width: 768px) {
+        grid-row: 2;
+        grid-column: 6;
         order: 5;
         width: 100%;
         font-size: inherit;
         color: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
@@ -675,10 +747,17 @@ const sortedItems = computed(() =>
       color: var(--color-black-500);
 
       @media (min-width: 768px) {
+        grid-row: 3;
+        grid-column: 6;
         order: 7;
         width: 100%;
         font-size: inherit;
         color: inherit;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
 
       // 請假列：手機的次要灰字改成 teal（桌面繼承整列的 teal-800）
@@ -701,12 +780,19 @@ const sortedItems = computed(() =>
       border-top: 1px solid var(--color-black-200);
 
       @media (min-width: 768px) {
+        grid-row: 1 / span 3;
+        grid-column: 8;
         gap: 4px;
         justify-content: center;
         order: 9;
         padding-top: unset;
         margin-top: unset;
         border-top: none;
+      }
+
+      @media (min-width: 1024px) {
+        grid-row: auto;
+        grid-column: auto;
       }
     }
   }
@@ -716,6 +802,18 @@ const sortedItems = computed(() =>
 
     @media (min-width: 768px) {
       display: none;
+    }
+
+    // 平板三欄合一時，工時、期限沒有各自的表頭可對照，沿用手機的「工時：」「期限：」標籤
+    .work-item-table__cell--hours &,
+    .work-item-table__cell--due & {
+      @media (min-width: 768px) {
+        display: inline;
+      }
+
+      @media (min-width: 1024px) {
+        display: none;
+      }
     }
   }
 
