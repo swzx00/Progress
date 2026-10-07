@@ -116,6 +116,9 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       <!-- 今天時只是狀態標示（不可操作），用 span 而不是 disabled 按鈕 -->
       <span v-if="isToday" class="date-nav__today date-nav__today--current">今天</span>
       <button v-else type="button" class="date-nav__today" @click="goToday">回到今天</button>
+    </div>
+    <!-- 動作按鈕（複製本日、請假、新增）固定在第二列靠右（使用者決定）；沒傳 slot（未登入）時整列不渲染 -->
+    <div v-if="$slots.actions" class="date-nav__actions">
       <slot name="actions" />
     </div>
   </div>
@@ -129,7 +132,8 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   align-items: center;
   padding: 16px;
 
-  // 不強制一行：放不下時右側那組（工時合計、回到今天、動作按鈕）整組換到第二行並靠右（使用者決定）
+  // 固定兩列（所有寬度）：第一列日期切換、放假徽章、工時合計、今天／回到今天，放不下時自動換行；
+  // 第二列是動作按鈕（.date-nav__actions 佔滿整列寬度），靠右（使用者決定）
   @media (min-width: 768px) {
     padding: 16px 32px;
   }
@@ -238,6 +242,15 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   gap: 12px;
   align-items: center;
   margin-left: auto;
+}
+
+.date-nav__actions {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .date-nav__total {
