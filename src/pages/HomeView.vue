@@ -503,7 +503,7 @@ const confirmDelete = async (): Promise<void> => {
   }
 
   // 三顆動作按鈕依斷點切換（使用者決定）：
-  // - 手機：只顯示文字、不顯示圖示，三顆平均分配整列寬度
+  // - 手機：圖示＋文字，三顆平均分配整列寬度
   // - 平板：只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），按鈕名稱靠 aria-label、滑過靠 title
   // - 桌面（≥ 1024px）：圖示＋文字
   &__add-btn {
@@ -558,14 +558,9 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     &-icon {
-      display: none;
       flex: 0 0 auto;
       width: 16px;
       height: 16px;
-
-      @media (min-width: 768px) {
-        display: block;
-      }
     }
 
     @media (min-width: 768px) {
