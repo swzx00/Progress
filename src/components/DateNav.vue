@@ -9,6 +9,8 @@ import { DAILY_HOURS_WARN } from '@/validation/work-item';
 const props = defineProps<{
   modelValue: string;
   totalHours?: number;
+  /** 當天有沒有紀錄：放假且沒有紀錄時才隱藏工時合計（使用者決定） */
+  hasItems?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -27,6 +29,11 @@ const todayStr = computed(() => toDateString(new Date()));
 const isToday = computed(() => props.modelValue === todayStr.value);
 
 // 每日工時警示門檻（shared/validation-schema.json 的 dailyHours.warn），合計超過才換成紅字（剛好等於不算超過）
+// 放假徽章跟工時合計同一區塊：放假而且當天沒有紀錄時，只顯示放假徽章（使用者決定）
+const showTotal = computed(
+  () => props.totalHours !== undefined && !(dayOffLabel.value && !props.hasItems),
+);
+
 const isOverHoursLimit = computed(
   () => props.totalHours !== undefined && props.totalHours > DAILY_HOURS_WARN,
 );
@@ -65,58 +72,65 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 <template>
   <div class="date-nav">
-    <!-- 動作按鈕（複製本日、請假、新增）固定在第一列靠右（使用者決定）；沒傳 slot（未登入）時整列不渲染 -->
+    <!-- 動作按鈕（複製本日、請假、新增）固定在第一列：桌面、平板靠右，手機三顆平均分配整列寬度；
+         沒傳 slot（未登入）時整列不渲染（使用者決定） -->
     <div v-if="$slots.actions" class="date-nav__actions">
       <slot name="actions" />
     </div>
-    <button
-      type="button"
-      class="date-nav__btn"
-      aria-label="上一個工作日"
-      title="上一個工作日"
-      :disabled="prevWorkdayDisabled"
-      @click="jumpToWorkday(-1)"
-    >
-      ⏮
-    </button>
-    <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
-    <NDatePicker
-      class="date-nav__picker"
-      :class="{ 'date-nav__picker--today': isToday }"
-      :value="pickerValue"
-      type="date"
-      format="yyyy/MM/dd (EEEEE)"
-      :clearable="false"
-      :actions="['now']"
-      :first-day-of-week="6"
-      @update:value="onPickerUpdate"
-    />
-    <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">▶</button>
-    <button
-      type="button"
-      class="date-nav__btn"
-      aria-label="下一個工作日"
-      title="下一個工作日"
-      :disabled="nextWorkdayDisabled"
-      @click="jumpToWorkday(1)"
-    >
-      ⏭
-    </button>
-    <span
-      v-if="dayOffLabel"
-      class="date-nav__holiday-badge"
-      :class="{ 'date-nav__holiday-badge--today': isToday }"
-    >
-      🏮 {{ dayOffLabel }}
-    </span>
-    <div class="date-nav__trailing">
-      <span
-        v-if="totalHours !== undefined"
-        class="date-nav__total"
-        :class="{ 'date-nav__total--over': isOverHoursLimit }"
+    <!-- 日期切換：桌面、平板靠左；手機撐滿整列（⏮ 最左、⏭ 最右，日期選擇器填滿中間） -->
+    <div class="date-nav__switcher">
+      <button
+        type="button"
+        class="date-nav__btn"
+        aria-label="上一個工作日"
+        title="上一個工作日"
+        :disabled="prevWorkdayDisabled"
+        @click="jumpToWorkday(-1)"
       >
-        今日工時合計：{{ totalHours }}hr
-      </span>
+        ⏮
+      </button>
+      <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
+      <NDatePicker
+        class="date-nav__picker"
+        :class="{ 'date-nav__picker--today': isToday }"
+        :value="pickerValue"
+        type="date"
+        format="yyyy/MM/dd (EEEEE)"
+        :clearable="false"
+        :actions="['now']"
+        :first-day-of-week="6"
+        @update:value="onPickerUpdate"
+      />
+      <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">▶</button>
+      <button
+        type="button"
+        class="date-nav__btn"
+        aria-label="下一個工作日"
+        title="下一個工作日"
+        :disabled="nextWorkdayDisabled"
+        @click="jumpToWorkday(1)"
+      >
+        ⏭
+      </button>
+    </div>
+    <!-- 放假徽章＋工時合計（同一區塊）與今天：桌面、平板靠右；手機自成一列，左右對齊 -->
+    <div class="date-nav__status">
+      <div class="date-nav__info">
+        <span
+          v-if="dayOffLabel"
+          class="date-nav__holiday-badge"
+          :class="{ 'date-nav__holiday-badge--today': isToday }"
+        >
+          🏮 {{ dayOffLabel }}
+        </span>
+        <span
+          v-if="showTotal"
+          class="date-nav__total"
+          :class="{ 'date-nav__total--over': isOverHoursLimit }"
+        >
+          今日工時合計：{{ totalHours }}hr
+        </span>
+      </div>
       <!-- 今天時只是狀態標示（不可操作），用 span 而不是 disabled 按鈕 -->
       <span v-if="isToday" class="date-nav__today date-nav__today--current">今天</span>
       <button v-else type="button" class="date-nav__today" @click="goToday">回到今天</button>
@@ -132,8 +146,8 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   align-items: center;
   padding: 16px;
 
-  // 固定兩列（所有寬度）：第一列是動作按鈕（.date-nav__actions 佔滿整列寬度），靠右；
-  // 第二列日期切換、放假徽章、工時合計、今天／回到今天，放不下時自動換行（使用者決定）
+  // 桌面、平板兩列：第一列動作按鈕靠右；第二列日期切換靠左、放假徽章／工時合計＋今天靠右。
+  // 手機三列：動作按鈕、日期切換、放假徽章／工時合計＋今天，各自撐滿整列（使用者決定）
   @media (min-width: 768px) {
     padding: 16px 32px;
   }
@@ -181,9 +195,28 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   }
 }
 
+.date-nav__switcher {
+  display: flex;
+  flex: 1 0 100%;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+
+  @media (min-width: 768px) {
+    flex: none;
+    justify-content: flex-start;
+  }
+}
+
+// 手機：填滿 ⏮ ◀ 跟 ▶ ⏭ 中間剩下的寬度；桌面、平板固定 170px
 .date-nav__picker {
-  width: 170px;
-  max-width: calc(100% - (32px * 4) - (8px * 4));
+  flex: 1 1 auto;
+  min-width: 0;
+
+  @media (min-width: 768px) {
+    flex: none;
+    width: 170px;
+  }
 }
 
 /*
@@ -236,12 +269,25 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   border-color: var(--color-yellow-800);
 }
 
-.date-nav__trailing {
+.date-nav__status {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 0 100%;
   gap: 12px;
   align-items: center;
-  margin-left: auto;
+  justify-content: space-between;
+
+  @media (min-width: 768px) {
+    flex: none;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+}
+
+.date-nav__info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .date-nav__actions {
