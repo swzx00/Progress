@@ -115,14 +115,17 @@ src/
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
-    AppToast.vue          # 錯誤提示 Toast，畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
+    CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
+    AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
     ProjectAutocomplete.vue
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢，見下方「台灣國定假日顯示」
-    useToast.ts            # Toast 共用狀態（模組層級），showToast(message)／hideToast()
+    useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
+  utils/
+    copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
   validation/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
@@ -225,11 +228,17 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 暫緩和「今天剛好放假」都是 `--color-yellow-800`，兩者語意不同但同色；非今天的放假日是 orange，不會跟暫緩撞色。之後如果要區分，改其中一處用的色階即可，不用新增自訂 token
   - class modifier 需要英文 key，對應表是 `types/work-item.ts` 的 `STATUS_KEYS`（型別綁 `STATUS_OPTIONS`，新增狀態漏寫對應會直接型別錯誤）；Sheet 的狀態是純文字，可能出現清單外的值，`getStatusKey()` 查不到回傳 `undefined`，這時只套基本樣式（深灰膠囊），不會壞掉；狀態為空則不顯示膠囊
 - 新增/編輯用 Drawer 呈現，不整頁跳轉；刪除即使是軟刪除，也要跳確認對話框
-- **複製**（使用者決定）：操作欄「編輯／複製／刪除」（複製是中性灰按鈕），按「複製」用來源紀錄預填**新增**表單（`WorkItemForm` 的 `copySource` prop，標題「複製工作項目／複製請假」），存檔走 `create` 新增一筆，原紀錄不動；後端、MSW 不用另外處理
+- **複製**（使用者決定）：欄位規則集中在 `src/utils/copy-work-item.ts` 的 `buildCopyPayload`，單項複製跟複製本日共用，改一處兩邊一起生效；項次一律由後端照新日期的每日編號規則接續
+- **單項複製**：操作欄「編輯／複製／刪除」（複製是中性灰按鈕），按「複製」用來源紀錄預填**新增**表單（`WorkItemForm` 的 `copySource` prop，標題「複製工作項目／複製請假」），存檔走 `create` 新增一筆，原紀錄不動；後端、MSW 不用另外處理
   - 工作日期用 `DateNav` 目前選到的那天（不是來源紀錄的日期），項次照新增規則顯示那天的預計項次
   - 工作項目帶入交辦單位、交辦人員、專案名稱、專案 Repo、工作目標、預計期限、狀態、完成度；處理內容、今日工時是「當天」的內容，維持預設值（空白、0）
   - 請假紀錄也能複製：維持請假模式，帶入假別、請假時數、備註（固定值一樣送出時才補）
   - 未儲存確認的快照取預填後的狀態，打開沒改就關閉不跳確認；切換「工作項目／請假」時「有沒有填內容」是跟該模式的空白預設值（`blankSnapshot`）比，所以複製預填的內容也算，切換前會先確認
+- **複製本日**（使用者決定）：`DateNav` 右側「複製本日」按鈕（中性灰次要按鈕，跟表格的「複製」同色），登入且當天有紀錄才顯示；開 `CopyDayDialog` 選目標日期，預設下一個工作日（`findNextWorkday`，跳過週末與國定假日、補班日算工作日）
+  - 依原本項次順序複製當天全部紀錄（含請假），每筆照 `buildCopyPayload` 的規則，一次呼叫後端 `batchCreate`
+  - 前端先用 `fetchDaySummary` 估算目標日工時合計（既有紀錄＋這批），超過 24 小時就在對話框顯示錯誤「當天工時合計不可超過 24 小時（其他紀錄已 X 小時，已超出Y小時）」、不送出；查不到也擋下並提示稍後再試。後端 `batchCreate` 也會整批檢查，超過就整批退回、不寫入任何一筆
+  - 成功後關閉對話框、切到目標日期，用 success 樣式的 Toast 顯示「已複製 N 筆紀錄到 YYYY/MM/DD」；登入錯誤關閉對話框並登出，其他錯誤用 Toast 顯示、對話框維持開啟讓使用者換日期重試
+  - MSW 的 `batchCreate` 跟 `Code.gs` 同一套規則（整批檢查請假時數上限與每日合計，通過才寫入）
 - **表單關閉前的未儲存確認**：`WorkItemForm` 打開時存一份欄位快照，「✕」「取消」、點背景三個關閉入口都走 `requestClose()`，跟快照比對有差異才跳 `ConfirmDialog`（「要放棄變更嗎？」，按鈕「繼續編輯」／「放棄變更」），沒差異（含改了又改回原值）直接關閉。存檔成功、登入錯誤強制關閉是 `HomeView` 直接關，不經過這個確認
   - **關閉順序**：按「放棄變更」時先關確認對話框，等它的離場動畫播完（`Transition` 的 `@after-leave`）才 `emit('cancel')` 關表單；不能同時關，否則表單滑出時會把還沒消失的對話框一起帶走，順序看起來是反的（使用者要求）
 - **表單送出中（`saving`）防止重複送出**（使用者要求）：兩層一起做，不互相取代
@@ -272,7 +281,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **儲存失敗的處理**（`HomeView.vue` 的 `onSave`／`handleSaveError`）：不在頁面上顯示錯誤文字，一律用 `AppToast` 顯示錯誤訊息
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
-  - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`，螢幕閱讀器才唸得出來。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
+  - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）目前只有「複製本日」完成時用。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
   - 目前只有「儲存」接 Toast；刪除失敗（`confirmDelete`）、選項清單管理的錯誤還沒改成 Toast
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
