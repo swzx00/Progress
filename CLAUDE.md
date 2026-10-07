@@ -117,6 +117,7 @@ src/
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次，見「UI/UX 定案」
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
+    ClampText.vue         # 文字刪節：收合時截斷（手機 3 行、平板桌面 2 行），判斷是否真的被截斷，有滑鼠的裝置用 NTooltip 顯示全文；展開狀態由使用端控制，見「UI/UX 定案」的「文字刪節」
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
@@ -160,7 +161,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **Node 版本**：鎖定 `>=24.1.0`（`.nvmrc`、`package.json` 的 `engines`），並用 `.npmrc` 的 `engine-strict=true` 讓版本不符時直接擋下 `npm install`，避免換機器開發版本不一致
 - **套件管理工具**：僅使用 npm（`package.json` 的 `packageManager` 欄位已鎖定），不要混用 yarn/pnpm，避免 lockfile 衝突
 - **樣式語言**：採用 **SCSS**，元件的 `<style>` 一律加 `lang="scss"`（`<style scoped lang="scss">`），需要安裝 `sass` 作為 devDependency
-- **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤／日期選擇」這類自己刻成本高的互動元件才用 **Naive UI**（目前用到 `NSelect`、`NDatePicker`）。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.scss` 的色階（見下方「色彩 token：統一用色階，不分用途」）；同一個 `n-config-provider` 也帶入 `zhTW`/`dateZhTW` 兩個 locale（`:locale`/`:date-locale`），讓 Naive UI 元件顯示繁體中文。`NDatePicker` 的 `:first-day-of-week="6"` 讓月曆以星期日為一週第一天——這個 prop 的數值語意不直觀，**不是** date-fns 的 `getDay()`（星期日＝0）對應值：實測 naive-ui 內部排陣列的演算法後，`firstDayOfWeek=6` 才會排出「日一二三四五六」，`zhTW` locale 預設的 `firstDayOfWeek: 0` 反而是「一二三四五六日」（星期一開頭），所以這裡要明確覆寫、不能依賴 locale 預設值。其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
+- **UI 元件庫**：以自訂元件為主，僅在「可搜尋下拉選單／多選標籤／日期選擇」這類自己刻成本高的互動元件才用 **Naive UI**（目前用到 `NSelect`、`NDatePicker`、`NTooltip`（文字刪節的全文提示））。主題色透過 `App.vue` 的 `<n-config-provider :theme-overrides>` 對齊 `tokens.scss` 的色階（見下方「色彩 token：統一用色階，不分用途」）；同一個 `n-config-provider` 也帶入 `zhTW`/`dateZhTW` 兩個 locale（`:locale`/`:date-locale`），讓 Naive UI 元件顯示繁體中文。`NDatePicker` 的 `:first-day-of-week="6"` 讓月曆以星期日為一週第一天——這個 prop 的數值語意不直觀，**不是** date-fns 的 `getDay()`（星期日＝0）對應值：實測 naive-ui 內部排陣列的演算法後，`firstDayOfWeek=6` 才會排出「日一二三四五六」，`zhTW` locale 預設的 `firstDayOfWeek: 0` 反而是「一二三四五六日」（星期一開頭），所以這裡要明確覆寫、不能依賴 locale 預設值。其餘元件維持手刻 + CSS token，不整套套用 Naive UI 的視覺風格
 - **拖曳排序**：用 `vue-draggable-plus`（SortableJS 的 Vue 3 包裝）做表格資料列的拖曳，只用在「項次調整」，見下方「UI/UX 定案」
 - **`DateNav` 的日期選擇器**：曾經改用 `NPopover` 包 `NCalendar`，換取「月曆彈窗裡每一格都能標假日顏色」（`NDatePicker` 沒有 cell slot、格子沒暴露完整日期資料，做不到這件事），但 `NCalendar` 是整月網格＋沒有年份快速跳選，手機寬度下的 popover 版面調校成本明顯偏高，實際體驗評估後改回 `NDatePicker`，放棄「月曆格子內逐格標色」，改成 `format="yyyy/MM/dd (EEEEE)"`（date-fns 格式字串，`EEEEE` 是最短星期字樣，例如「五」）搭配旁邊一個獨立的假日名稱徽章（顏色見下方「UI/UX 定案」的「放假色」）
   - **`.date-nav__picker--today` 直接用 `:deep()` 改內部邊框/文字顏色**：原本刻意只用 `outline` 避免碰 Naive UI 內部 class，但後來確認「今天」狀態需要連文字顏色都變色，而 `NInput` 實際顯示文字/畫邊框的都是內部元素（不是我們拿到 class 的外層根節點），Naive UI 直接在那些內部元素自己身上設顏色（不是繼承外層），外層 class 單寫 `color`/`border-color` 沒有用，只能穿透進去改。既然文字非改內部不可，邊框也一併改成 `:deep()` 直接改 `border-color`，不再用 outline 這個「不用碰內部但視覺上是外圈另一條線」的折衷做法，兩者統一：
@@ -242,6 +243,13 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 動作按鈕（`HomeView.vue` 的 `home-view__add-btn`）所有寬度都是圖示＋文字：手機三顆平均分配整列寬度，平板、桌面寬度隨內容；按鈕另有 `aria-label`／`title`。「＋ 新增」的「＋」是行內 SVG 的 Lucide `plus` 圖示（ISC 授權），文字是「新增」
 - **`DateNav` 右側動作按鈕的 hover**（使用者決定，`HomeView.vue` 的 `home-view__add-btn`）：實心底的「＋ 新增」滑過變深（`blue-500` → `blue-700`）；框線按鈕滑過改成淡色底＋深一階的文字與框線——請假 `teal-050` 底／`teal-800`，複製本日 `black-050` 底／`black-700`
 - **複製**（使用者決定）：欄位規則集中在 `src/utils/copy-work-item.ts` 的 `buildCopyPayload`，單項複製跟複製本日共用，改一處兩邊一起生效；項次一律由後端照新日期的每日編號規則接續
+- **文字刪節**（使用者決定）：表格的工作目標、處理內容、專案名稱/Repo 收合時截斷，桌面、平板 2 行，手機 3 行（共用元件 `ClampText.vue`，儲存格本身不再設 `line-clamp`）
+  - 只有「真的被截斷」才算：`ClampText` 用 `ResizeObserver` 比較內容實際高度與顯示高度，子元素加 `data-ellipsis` 的（Repo 膠囊單行「…」截斷）寬度被截斷也算；視窗縮放、內容變動都會重新判斷
+  - 有滑鼠的裝置（`(hover: hover) and (pointer: fine)`）滑過被截斷的文字，用 `NTooltip` 顯示全文（延遲 0.3 秒、寬度上限 360px、內容保留換行，太長在框內捲動）；觸控裝置不做 tooltip。tooltip 只在收合狀態出現
+  - 每個被截斷的欄位下方出現「▾ 展開」（連結樣式：主色文字、沒有外框，跟有框的編輯／複製／刪除按鈕區分；手機點擊範圍至少 32px 高），點任一個**整列**都不截斷；展開後同樣位置變「▴ 收合」，點任一個整列收回。按鈕有 `aria-expanded`
+  - 點列本身不會展開（避免跟拖曳、上下移、操作按鈕誤觸）；展開中的列疊一層淡色底（`work-item-table__row--expanded` 的 `::before`，`color-mix` 的 `blue-500` 6%，搭配 `isolation: isolate` 讓色塊在原本底色上、文字下，不用跟斑馬紋／今天／放假的底色規則比權重）
+  - 收合後如果那一列的上緣已經捲出畫面，用 `scrollIntoView` 自動捲回；開始拖曳（`VueDraggable` 的 `start`）時展開中的列自動收合；展開狀態不存檔，換日期（列的 id 不在了）就收回
+  - Repo 膠囊展開時完整顯示（`max-width: 100%`、可換行），超長換行時圓角從 999px 改成 8px 的圓角矩形
 - **操作欄**（使用者決定）：按鈕一律橫排，顏色維持編輯藍／複製灰／刪除紅，依斷點切換呈現方式——手機卡片是文字按鈕（三顆平分整列寬度、圖示隱藏）；平板是 28px 正方形圖示按鈕（Lucide `pencil`／`copy`／`trash-2`，行內 SVG、ISC 授權），文字收起來，按鈕名稱靠 `aria-label`、滑過用 `title` 顯示文字提示；桌面（≥ 1024px）是圖示＋文字。刪除是破壞性動作，跟前面的按鈕間距拉開到 12px（桌面、平板、手機都是，其他按鈕之間維持原本的 gap），避免誤按。操作欄寬度：平板 100px、桌面 208px
 - **單項複製**：操作欄「編輯／複製／刪除」（複製是中性灰按鈕），按「複製」用來源紀錄預填**新增**表單（`WorkItemForm` 的 `copySource` prop，標題「複製工作項目／複製請假」），存檔走 `create` 新增一筆，原紀錄不動；後端、MSW 不用另外處理
   - 工作日期用 `DateNav` 目前選到的那天（不是來源紀錄的日期），項次照新增規則顯示那天的預計項次
