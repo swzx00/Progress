@@ -248,6 +248,8 @@ const confirmDelete = async (): Promise<void> => {
           v-if="canCopyDay"
           type="button"
           class="home-view__add-btn home-view__add-btn--copy-day"
+          title="複製本日"
+          aria-label="複製本日"
           @click="openCopyDay"
         >
           <!-- 圖示：Lucide files（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
@@ -269,11 +271,13 @@ const confirmDelete = async (): Promise<void> => {
             />
             <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" />
           </svg>
-          複製本日
+          <span class="home-view__add-btn-label">複製本日</span>
         </button>
         <button
           type="button"
           class="home-view__add-btn home-view__add-btn--leave"
+          title="請假"
+          aria-label="請假"
           @click="openLeaveForm"
         >
           <!-- 圖示：Lucide coffee（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
@@ -296,9 +300,33 @@ const confirmDelete = async (): Promise<void> => {
             />
             <path d="M6 2v2" />
           </svg>
-          請假
+          <span class="home-view__add-btn-label">請假</span>
         </button>
-        <button type="button" class="home-view__add-btn" @click="openCreateForm">＋ 新增</button>
+        <button
+          type="button"
+          class="home-view__add-btn"
+          title="新增"
+          aria-label="新增"
+          @click="openCreateForm"
+        >
+          <!-- 圖示：Lucide plus（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
+          <svg
+            class="home-view__add-btn-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
+          <span class="home-view__add-btn-label">新增</span>
+        </button>
       </template>
     </DateNav>
 
@@ -527,6 +555,31 @@ const confirmDelete = async (): Promise<void> => {
       flex: 0 0 auto;
       width: 16px;
       height: 16px;
+    }
+
+    // 平板（768–1023px）DateNav 一行放不下，三顆動作按鈕只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），
+    // 文字收起來，按鈕名稱靠 aria-label、滑過靠 title；手機、桌面維持圖示＋文字（使用者決定）
+    @media (min-width: 768px) {
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+    }
+
+    @media (min-width: 1024px) {
+      width: auto;
+      height: auto;
+      padding: 6px 12px;
+    }
+  }
+
+  &__add-btn-label {
+    @media (min-width: 768px) {
+      display: none;
+    }
+
+    @media (min-width: 1024px) {
+      display: inline;
     }
   }
 
