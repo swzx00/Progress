@@ -242,7 +242,7 @@ const confirmDelete = async (): Promise<void> => {
       <div v-else ref="signInButtonEl" class="home-view__signin"></div>
     </header>
 
-    <DateNav v-model="selectedDate" :total-hours="totalHours">
+    <DateNav v-model="selectedDate" :total-hours="totalHours" :has-items="items.length > 0">
       <template v-if="isAuthorized" #actions>
         <button
           v-if="canCopyDay"
@@ -502,16 +502,17 @@ const confirmDelete = async (): Promise<void> => {
     }
   }
 
-  // 手機、平板：三顆動作按鈕只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），文字收起來，
-  // 按鈕名稱靠 aria-label、滑過靠 title；桌面（≥ 1024px）才顯示圖示＋文字（使用者決定）
+  // 三顆動作按鈕依斷點切換（使用者決定）：
+  // - 手機：只顯示文字、不顯示圖示，三顆平均分配整列寬度
+  // - 平板：只顯示圖示（32px 正方形，跟 DateNav 的按鈕同高），按鈕名稱靠 aria-label、滑過靠 title
+  // - 桌面（≥ 1024px）：圖示＋文字
   &__add-btn {
     display: inline-flex;
+    flex: 1 1 0;
     gap: 4px;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
+    padding: 6px 12px;
     font-size: 14px;
     font-weight: 600;
     color: var(--color-black-000);
@@ -557,9 +558,21 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     &-icon {
+      display: none;
       flex: 0 0 auto;
       width: 16px;
       height: 16px;
+
+      @media (min-width: 768px) {
+        display: block;
+      }
+    }
+
+    @media (min-width: 768px) {
+      flex: none;
+      width: 32px;
+      height: 32px;
+      padding: 0;
     }
 
     @media (min-width: 1024px) {
@@ -570,7 +583,9 @@ const confirmDelete = async (): Promise<void> => {
   }
 
   &__add-btn-label {
-    display: none;
+    @media (min-width: 768px) {
+      display: none;
+    }
 
     @media (min-width: 1024px) {
       display: inline;
