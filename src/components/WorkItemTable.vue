@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, reactive, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import { VueDraggable, type SortableEvent } from 'vue-draggable-plus';
 
 import ClampText from '@/components/ClampText.vue';
@@ -64,18 +64,12 @@ const emitOrder = (): void => {
 };
 
 /**
- * 文字刪節（工作目標、處理內容、專案名稱/Repo）：收合時截斷，被截斷的欄位下方出現「▾ 展開」，
- * 點任一個整列都不截斷，同樣位置變「▴ 收合」，點任一個整列收回（使用者決定）。
+ * 文字刪節（工作目標、處理內容、專案名稱/Repo）：收合時截斷，被截斷的地方在最後一行尾端出現「…展開」
+ * （ClampText），點任一個整列都不截斷，每格全文的下一行出現「收合」，點任一個整列收回（使用者決定）。
  * 點列本身不展開；展開狀態不存檔，換日期（列的 id 不在了）就收回；開始拖曳時自動收合
  */
-type ClampField = 'title' | 'target' | 'detail';
-const overflowMap = reactive<Record<string, Partial<Record<ClampField, boolean>>>>({});
 const expandedIds = ref<Set<string>>(new Set());
 
-const setOverflow = (id: string, field: ClampField, value: boolean): void => {
-  overflowMap[id] = { ...overflowMap[id], [field]: value };
-};
-const hasOverflow = (id: string, field: ClampField): boolean => !!overflowMap[id]?.[field];
 const isExpanded = (id: string): boolean => expandedIds.value.has(id);
 
 const collapseRow = (id: string): void => {
@@ -90,7 +84,7 @@ const toggleRow = async (id: string, event: MouseEvent): Promise<void> => {
     expandedIds.value = new Set(expandedIds.value).add(id);
     return;
   }
-  const row = (event.currentTarget as HTMLElement).closest<HTMLElement>('.work-item-table__row');
+  const row = (event.target as HTMLElement).closest<HTMLElement>('.work-item-table__row');
   collapseRow(id);
   // 收合後這一列如果捲出畫面上緣，自動捲回來，避免畫面跳走找不到剛剛那一列
   await nextTick();
@@ -258,7 +252,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           <ClampText
             :full-text="titleFullText(item)"
             :expanded="isExpanded(item.id)"
-            @overflow="setOverflow(item.id, 'title', $event)"
+            @toggle="toggleRow(item.id, $event)"
           >
             <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
             <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
@@ -271,15 +265,6 @@ const moveRow = (index: number, direction: -1 | 1): void => {
               >
             </div>
           </ClampText>
-          <button
-            v-if="hasOverflow(item.id, 'title')"
-            type="button"
-            class="work-item-table__expand-btn"
-            :aria-expanded="isExpanded(item.id)"
-            @click="toggleRow(item.id, $event)"
-          >
-            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
-          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--status" role="cell">
@@ -340,37 +325,19 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           <ClampText
             :full-text="item.工作目標"
             :expanded="isExpanded(item.id)"
-            @overflow="setOverflow(item.id, 'target', $event)"
+            @toggle="toggleRow(item.id, $event)"
             >{{ item.工作目標 }}</ClampText
           >
-          <button
-            v-if="hasOverflow(item.id, 'target')"
-            type="button"
-            class="work-item-table__expand-btn"
-            :aria-expanded="isExpanded(item.id)"
-            @click="toggleRow(item.id, $event)"
-          >
-            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
-          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
           <ClampText
             :full-text="item.處理內容"
             :expanded="isExpanded(item.id)"
-            @overflow="setOverflow(item.id, 'detail', $event)"
+            @toggle="toggleRow(item.id, $event)"
             ><span class="work-item-table__mobile-label">處理內容：</span
             >{{ item.處理內容 }}</ClampText
           >
-          <button
-            v-if="hasOverflow(item.id, 'detail')"
-            type="button"
-            class="work-item-table__expand-btn"
-            :aria-expanded="isExpanded(item.id)"
-            @click="toggleRow(item.id, $event)"
-          >
-            {{ isExpanded(item.id) ? '▴ 收合' : '▾ 展開' }}
-          </button>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
@@ -543,6 +510,12 @@ const moveRow = (index: number, direction: -1 | 1): void => {
 
 <style scoped lang="scss">
 .work-item-table {
+  // 展開中的列（底色、框線）與「展開／收合」（文字、滑過）依色系的顏色，見 &__row--expanded 與 ClampText
+  --expand-bg: var(--color-black-100);
+  --expand-border: var(--color-black-300);
+  --expand-toggle: var(--color-blue-700);
+  --expand-toggle-hover: var(--color-blue-800);
+
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -566,6 +539,11 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   }
 
   &--viewing-today {
+    --expand-bg: var(--color-blue-100);
+    --expand-border: var(--color-blue-300);
+    --expand-toggle: var(--color-blue-700);
+    --expand-toggle-hover: var(--color-blue-800);
+
     .work-item-table__row {
       border: 1px solid var(--color-blue-200);
 
@@ -591,6 +569,11 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   }
 
   &--holiday {
+    --expand-bg: var(--color-orange-100);
+    --expand-border: var(--color-orange-300);
+    --expand-toggle: var(--color-orange-800);
+    --expand-toggle-hover: var(--color-orange-900);
+
     .work-item-table__row {
       color: var(--color-orange-1000);
       border: 1px solid var(--color-orange-200);
@@ -616,6 +599,11 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     }
 
     &.work-item-table--viewing-today {
+      --expand-bg: var(--color-yellow-100);
+      --expand-border: var(--color-yellow-300);
+      --expand-toggle: var(--color-yellow-800);
+      --expand-toggle-hover: var(--color-yellow-900);
+
       .work-item-table__row {
         color: var(--color-yellow-1000);
         border: 1px solid var(--color-yellow-200);
@@ -719,8 +707,10 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       background: var(--color-black-000);
     }
 
-    // 展開中：疊一層淡色底。用 isolation 建立堆疊脈絡、::before 放 z-index: -1，色塊會蓋在列原本的
-    // 底色（斑馬紋、今天、放假）上、文字下面，不用跟各種底色規則比權重
+    // 展開中（使用者決定）：底色與 2px 框線依各自色系（顏色是 --expand-* 變數，定義在 .work-item-table
+    // 的今天／放假修飾符與列的請假／逾期修飾符上，列自己的值優先）。用 isolation 建立堆疊脈絡、
+    // ::before 放 z-index: -1：色塊蓋在列原本的底色（斑馬紋、今天、放假）上、文字下面，框線畫在 ::before
+    // 上所以不影響排版；請假、逾期的左側標線也一起畫在 ::before 上，不會被色塊蓋掉
     &--expanded {
       isolation: isolate;
 
@@ -730,8 +720,14 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         z-index: -1;
         pointer-events: none;
         content: '';
-        background: color-mix(in srgb, var(--color-blue-500) 6%, transparent);
+        background: var(--expand-bg);
+        border: 2px solid var(--expand-border);
         border-radius: inherit;
+        box-shadow: inset 3px 0 0 var(--expand-marker, transparent);
+
+        @media (min-width: 768px) {
+          box-shadow: inset 4px 0 0 var(--expand-marker, transparent);
+        }
       }
     }
 
@@ -747,7 +743,14 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       opacity: 1;
     }
 
+    // 逾期、請假是列自己的屬性，展開時的顏色優先於今天／放假（使用者決定）
     &--overdue {
+      --expand-bg: var(--color-red-050);
+      --expand-border: var(--color-red-300);
+      --expand-toggle: var(--color-red-700);
+      --expand-toggle-hover: var(--color-red-800);
+      --expand-marker: var(--color-red-600);
+
       border-left: 1px solid var(--color-red-600);
       border-top-left-radius: 0;
       border-bottom-left-radius: 0;
@@ -762,6 +765,12 @@ const moveRow = (index: number, direction: -1 | 1): void => {
 
     // 請假列：文字與進度條用 teal 色系，左側標線同逾期樣式但用 teal（使用者決定）
     &--leave {
+      --expand-bg: var(--color-teal-050);
+      --expand-border: var(--color-teal-300);
+      --expand-toggle: var(--color-teal-700);
+      --expand-toggle-hover: var(--color-teal-800);
+      --expand-marker: var(--color-teal-600);
+
       color: var(--color-teal-800);
       border-left: 1px solid var(--color-teal-600);
       border-top-left-radius: 0;
@@ -1182,31 +1191,6 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       gap: 2px;
       align-items: flex-start;
       justify-content: flex-start;
-    }
-  }
-
-  // 「▾ 展開／▴ 收合」：連結樣式（主色文字、沒有外框），跟有框的編輯／複製／刪除按鈕區分；
-  // 手機點擊範圍至少 32px 高
-  &__expand-btn {
-    display: inline-flex;
-    align-items: center;
-    min-height: 32px;
-    padding: 0;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.4;
-    color: var(--color-blue-700);
-    cursor: pointer;
-    background: none;
-    border: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
-
-    @media (min-width: 768px) {
-      min-height: 0;
-      padding: 2px 0;
     }
   }
 
