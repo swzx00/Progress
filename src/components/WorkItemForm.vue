@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchDaySummary } from '@/composables/useWorkItems';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
@@ -62,7 +63,13 @@ const emit = defineEmits<{
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
-const { options, fetchOptions } = useOptions();
+const { options, loading: optionsLoading, error: optionsError, fetchOptions } = useOptions();
+
+// 選項還在讀（或讀取失敗）時，四個可搜尋下拉選單顯示載入中／失敗狀態，不再是看起來像沒資料的空清單
+const showOptionsState = computed(() => optionsLoading.value || !!optionsError.value);
+const retryOptions = (): void => {
+  void fetchOptions();
+};
 onMounted(fetchOptions);
 
 const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
@@ -585,10 +592,15 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="unitOptions"
+              :loading="optionsLoading"
               :status="errors.交辦單位 ? 'error' : undefined"
               placeholder="請選擇交辦單位"
               :disabled="saving"
-            />
+            >
+              <template v-if="showOptionsState" #empty>
+                <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+              </template>
+            </NSelect>
             <span v-if="errors.交辦單位" class="work-item-form__error">{{ errors.交辦單位 }}</span>
           </label>
           <label
@@ -609,10 +621,15 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="assigneeOptions"
+              :loading="optionsLoading"
               :status="errors.交辦人員 ? 'error' : undefined"
               placeholder="請選擇交辦人員"
               :disabled="saving"
-            />
+            >
+              <template v-if="showOptionsState" #empty>
+                <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+              </template>
+            </NSelect>
             <span v-if="errors.交辦人員" class="work-item-form__error">{{ errors.交辦人員 }}</span>
           </label>
         </div>
@@ -633,10 +650,15 @@ const onSubmit = async (): Promise<void> => {
             filterable
             tag
             :options="projectOptions"
+            :loading="optionsLoading"
             :status="errors.專案名稱 ? 'error' : undefined"
             placeholder="請選擇專案名稱"
             :disabled="saving"
-          />
+          >
+            <template v-if="showOptionsState" #empty>
+              <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+            </template>
+          </NSelect>
           <span v-if="errors.專案名稱" class="work-item-form__error">{{ errors.專案名稱 }}</span>
         </label>
 
@@ -652,10 +674,15 @@ const onSubmit = async (): Promise<void> => {
             multiple
             tag
             :options="repoOptions"
+            :loading="optionsLoading"
             :status="errors.專案Repo ? 'error' : undefined"
             placeholder="請選擇專案 Repo (選填)"
             :disabled="saving"
-          />
+          >
+            <template v-if="showOptionsState" #empty>
+              <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+            </template>
+          </NSelect>
           <span v-if="errors.專案Repo" class="work-item-form__error">{{ errors.專案Repo }}</span>
         </label>
 
