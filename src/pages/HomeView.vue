@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { NDropdown, type DropdownOption } from 'naive-ui';
 import { computed, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CopyDayDialog from '@/components/CopyDayDialog.vue';
+import DaySummaryModal from '@/components/DaySummaryModal.vue';
 import DateNav from '@/components/DateNav.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
@@ -50,6 +52,18 @@ const totalHours = computed(() =>
 );
 
 const optionsManagerOpen = ref(false);
+const daySummaryOpen = ref(false);
+
+// 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）
+type ToolKey = 'options' | 'daySummary';
+const toolOptions: DropdownOption[] = [
+  { label: '選項清單', key: 'options' },
+  { label: '本日總結', key: 'daySummary' },
+];
+const onToolSelect = (key: ToolKey): void => {
+  if (key === 'options') optionsManagerOpen.value = true;
+  else daySummaryOpen.value = true;
+};
 
 const formOpen = ref(false);
 const editingItem = ref<WorkItem | null>(null);
@@ -342,9 +356,24 @@ const onOptionsUnauthorized = (): void => {
       <div v-if="isAuthorized" class="home-view__account">
         <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
         <span class="home-view__email">{{ userEmail }}</span>
-        <button type="button" class="home-view__signout-btn" @click="optionsManagerOpen = true">
-          選項清單
-        </button>
+        <NDropdown trigger="click" :options="toolOptions" @select="onToolSelect">
+          <button type="button" class="home-view__signout-btn home-view__tools-btn">
+            工具
+            <!-- 下拉箭頭：Naive UI 下拉選單（NSelect）內建的 ChevronDown 圖示，MIT 授權 -->
+            <svg
+              class="home-view__tools-arrow"
+              viewBox="0 0 16 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M3.14645 5.64645C3.34171 5.45118 3.65829 5.45118 3.85355 5.64645L8 9.79289L12.1464 5.64645C12.3417 5.45118 12.6583 5.45118 12.8536 5.64645C13.0488 5.84171 13.0488 6.15829 12.8536 6.35355L8.35355 10.8536C8.15829 11.0488 7.84171 11.0488 7.64645 10.8536L3.14645 6.35355C2.95118 6.15829 2.95118 5.84171 3.14645 5.64645Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </NDropdown>
         <button type="button" class="home-view__signout-btn" @click="signOut">登出</button>
       </div>
       <div v-else-if="isLoggedIn" class="home-view__unauthorized">
@@ -521,6 +550,15 @@ const onOptionsUnauthorized = (): void => {
       />
     </Transition>
 
+    <Transition name="day-summary">
+      <DaySummaryModal
+        v-if="daySummaryOpen && isAuthorized"
+        :date="formatDisplayDate(selectedDate)"
+        :items="items"
+        @close="daySummaryOpen = false"
+      />
+    </Transition>
+
     <AppToast />
   </div>
 </template>
@@ -607,6 +645,17 @@ const onOptionsUnauthorized = (): void => {
     background: var(--color-black-000);
     border: 1px solid var(--color-black-100);
     border-radius: 6px;
+  }
+
+  &__tools-btn {
+    display: inline-flex;
+    gap: 2px;
+    align-items: center;
+  }
+
+  &__tools-arrow {
+    width: 14px;
+    height: 14px;
   }
 
   &__avatar {
