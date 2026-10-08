@@ -4,11 +4,11 @@ import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue
 
 /**
  * 文字刪節：收合時最多顯示 mobileLines（手機）／lines（平板、桌面）行，超過的部分截斷。
- * - 被截斷時，「…展開」接在最後一行的最後面（float 繞排：文字自動在按鈕前面斷開，不用拿底色去蓋文字，
- *   斑馬紋、今天、放假、請假等各種底色都不會穿幫）；展開後全文顯示，下一行出現「收合」（使用者決定）
+ * - 被截斷時，「…<展開>」接在最後一行的最後面（float 繞排：文字自動在按鈕前面斷開，不用拿底色去蓋文字，
+ *   斑馬紋、今天、放假、請假等各種底色都不會穿幫）；展開後全文顯示，下一行出現「<收合>」（按鈕文字含角括號，使用者決定）
  * - 展開／收合的狀態由使用端決定（expanded），按鈕只 emit toggle
  * - 按鈕顏色吃使用端設定的 CSS 變數 --expand-toggle／--expand-toggle-hover（依列的色系），
- *   沒設定時用主色 blue-700／blue-800
+ *   沒設定時用 black-700／black-800
  * - 有滑鼠的裝置（hover: hover、pointer: fine）滑過被截斷的文字，用 NTooltip 顯示全文
  *   （延遲 0.3 秒、寬度上限 360px）；觸控裝置不做 tooltip
  * - 子元素加 data-ellipsis 的（例如 Repo 膠囊單行「…」截斷），寬度被截斷也算被截斷
@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
               :aria-expanded="false"
               @click="emit('toggle', $event)"
             >
-              展開
+              &lt;展開&gt;
             </button></span
           >
           <slot />
@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
             :aria-expanded="true"
             @click="emit('toggle', $event)"
           >
-            收合
+            &lt;收合&gt;
           </button>
         </div>
       </div>
@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
     font: inherit;
     font-size: 0.875em;
     font-weight: 500;
-    color: var(--expand-toggle, var(--color-blue-700));
+    color: var(--expand-toggle, var(--color-black-700));
     cursor: pointer;
     background: none;
     border: none;
@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
     }
 
     &:hover {
-      color: var(--expand-toggle-hover, var(--color-blue-800));
+      color: var(--expand-toggle-hover, var(--color-black-800));
       text-decoration: underline;
     }
 

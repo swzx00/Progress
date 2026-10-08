@@ -513,8 +513,8 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   // 展開中的列（底色、框線）與「展開／收合」（文字、滑過）依色系的顏色，見 &__row--expanded 與 ClampText
   --expand-bg: var(--color-black-100);
   --expand-border: var(--color-black-300);
-  --expand-toggle: var(--color-blue-700);
-  --expand-toggle-hover: var(--color-blue-800);
+  --expand-toggle: var(--color-black-700);
+  --expand-toggle-hover: var(--color-black-800);
 
   display: flex;
   flex-direction: column;
