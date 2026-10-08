@@ -12,6 +12,7 @@ import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
 import WorkItemTable from '@/components/WorkItemTable.vue';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
+import { useOptions } from '@/composables/useOptions';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { useToast } from '@/composables/useToast';
 import { ApiError, fetchDaySummary, useWorkItems } from '@/composables/useWorkItems';
@@ -74,6 +75,8 @@ const copySource = ref<WorkItem | null>(null);
 const saving = ref(false);
 
 const { showToast } = useToast();
+// 存檔成功後更新交辦單位 ↔ 交辦人員的最近搭配，下次開表單不用重新讀選項清單就能推薦
+const { rememberPairs } = useOptions();
 
 const openCreateForm = (): void => {
   editingItem.value = null;
@@ -130,6 +133,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
     } else {
       await createItem(idToken.value, payload);
     }
+    rememberPairs([payload]);
     await fetchByDate(selectedDate.value);
     formOpen.value = false;
   } catch (e) {
@@ -193,6 +197,7 @@ const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> =
   copyingDay.value = true;
   try {
     await batchCreateItems(idToken.value, payloads, replace);
+    rememberPairs(payloads);
     copyDayOpen.value = false;
     copyDayReplaceTarget.value = null;
     if (selectedDate.value === targetDate) {

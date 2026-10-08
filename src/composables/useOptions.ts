@@ -1,10 +1,13 @@
 import { ref } from 'vue';
 
 import { ApiError, type ApiErrorCode } from '@/composables/useWorkItems';
-import type { WorkItemOptions } from '@/types/work-item';
+import type { RecentPair, RecentPairs, WorkItem, WorkItemOptions } from '@/types/work-item';
+import { applyRecentPair, emptyRecentPairs } from '@/utils/recent-pairing';
 
 interface DoGetOptionsResponse {
   options: WorkItemOptions;
+  /** 舊版後端沒有這個欄位，沒有就當作沒有推薦 */
+  recentPairs?: RecentPairs;
   error?: string;
 }
 
@@ -22,9 +25,31 @@ const API_BASE_URL = shouldUseDevProxy
   : import.meta.env.VITE_APPS_SCRIPT_URL;
 
 const options = ref<WorkItemOptions | null>(null);
+/** 交辦單位 ↔ 交辦人員的最近搭配（下拉選單推薦用），日期轉成前端內部的 YYYY-MM-DD */
+const recentPairs = ref<RecentPairs>(emptyRecentPairs());
 const loading = ref(false);
 const error = ref<string | null>(null);
 let fetchPromise: Promise<void> | null = null;
+
+// API 的日期是 YYYY/MM/DD，前端內部一律 YYYY-MM-DD（跟 useWorkItems.ts 的 fromApiDate 相同）
+const toIsoRecentPairs = (pairs: RecentPairs | undefined): RecentPairs => {
+  if (!pairs) return emptyRecentPairs();
+  const convert = (map: Record<string, RecentPair>): Record<string, RecentPair> =>
+    Object.fromEntries(
+      Object.entries(map).map(([key, pair]) => [
+        key,
+        { ...pair, date: pair.date.replaceAll('/', '-') },
+      ]),
+    );
+  return { 交辦單位: convert(pairs.交辦單位), 交辦人員: convert(pairs.交辦人員) };
+};
+
+/** 存檔成功後用剛存的紀錄更新本地推薦（比現有的新才覆蓋），不用重新讀選項清單 */
+const rememberPairs = (
+  items: Pick<WorkItem, '工作日期' | '交辦單位' | '交辦人員' | '狀態'>[],
+): void => {
+  recentPairs.value = items.reduce(applyRecentPair, recentPairs.value);
+};
 
 const fetchOptions = async (): Promise<void> => {
   if (options.value) return;
@@ -42,6 +67,7 @@ const fetchOptions = async (): Promise<void> => {
         throw new Error(data.error);
       }
       options.value = data.options;
+      recentPairs.value = toIsoRecentPairs(data.recentPairs);
     } catch (e) {
       error.value = e instanceof Error ? e.message : '讀取選項清單時發生未知錯誤';
     } finally {
@@ -102,5 +128,15 @@ const deleteOption = async (
 };
 
 export function useOptions() {
-  return { options, loading, error, fetchOptions, addOption, renameOption, deleteOption };
+  return {
+    options,
+    recentPairs,
+    loading,
+    error,
+    fetchOptions,
+    rememberPairs,
+    addOption,
+    renameOption,
+    deleteOption,
+  };
 }

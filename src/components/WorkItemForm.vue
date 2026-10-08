@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { NSelect, type SelectOption } from 'naive-ui';
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, nextTick, onMounted, reactive, ref, watch, type VNode } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
 import { useOptions } from '@/composables/useOptions';
-import { vAutoResize } from '@/directives/auto-resize';
 import { fetchDaySummary } from '@/composables/useWorkItems';
+import { vAutoResize } from '@/directives/auto-resize';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
+import { withRecentFirst } from '@/utils/recent-pairing';
 import {
   DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
@@ -64,7 +65,13 @@ const emit = defineEmits<{
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
-const { options, loading: optionsLoading, error: optionsError, fetchOptions } = useOptions();
+const {
+  options,
+  recentPairs,
+  loading: optionsLoading,
+  error: optionsError,
+  fetchOptions,
+} = useOptions();
 
 // 選項還在讀（或讀取失敗）時，四個可搜尋下拉選單顯示載入中／失敗狀態，不再是看起來像沒資料的空清單
 const showOptionsState = computed(() => optionsLoading.value || !!optionsError.value);
@@ -76,8 +83,41 @@ onMounted(fetchOptions);
 const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
   (values ?? []).map((value) => ({ label: value, value }));
 
-const unitOptions = computed(() => toSelectOptions(options.value?.交辦單位));
-const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人員));
+// 交辦單位 ↔ 交辦人員：已選了一邊，另一邊的下拉選單把「近一個月最近一次搭配」的值排最上面並標「最近」
+// （使用者決定：只推薦一個、另一邊空的時候不自動填入）
+const unitOptions = computed(() =>
+  markRecent(
+    withRecentFirst(
+      options.value?.交辦單位 ?? [],
+      recentPairs.value.交辦人員[form.交辦人員.trim()]?.value,
+    ),
+  ),
+);
+const assigneeOptions = computed(() =>
+  markRecent(
+    withRecentFirst(
+      options.value?.交辦人員 ?? [],
+      recentPairs.value.交辦單位[form.交辦單位.trim()]?.value,
+    ),
+  ),
+);
+
+/**
+ * 推薦的選項：淡藍底（option 的 class）＋右側「最近」標籤。
+ * 用 render-option 在選項外包一層放標籤，不用 render-label：render-label 也會套用到輸入框裡已選的值，
+ * 選了推薦值時輸入框會跟著出現「最近」。下拉選單是 Naive UI teleport 到 body 的，不吃 scoped 樣式，
+ * 這幾個 class 都在 style 裡用 :global 寫
+ */
+const RECENT_OPTION_CLASS = 'work-item-form-recent-option';
+const markRecent = (list: SelectOption[]): SelectOption[] =>
+  list.map((option) => (option.recent ? { ...option, class: RECENT_OPTION_CLASS } : option));
+const renderRecentOption = ({ node, option }: { node: VNode; option: SelectOption }): VNode =>
+  option.recent
+    ? h('div', { class: 'work-item-form-recent-wrap' }, [
+        node,
+        h('span', { class: 'work-item-form-recent-tag', 'aria-hidden': 'true' }, '最近'),
+      ])
+    : node;
 const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱));
 const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo));
 const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
@@ -594,6 +634,7 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="unitOptions"
+              :render-option="renderRecentOption"
               :loading="optionsLoading"
               :status="errors.交辦單位 ? 'error' : undefined"
               placeholder="請選擇交辦單位"
@@ -623,6 +664,7 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="assigneeOptions"
+              :render-option="renderRecentOption"
               :loading="optionsLoading"
               :status="errors.交辦人員 ? 'error' : undefined"
               placeholder="請選擇交辦人員"
@@ -1093,6 +1135,40 @@ const onSubmit = async (): Promise<void> => {
 
   &__required {
     color: var(--color-red-600);
+  }
+
+  // 交辦單位／交辦人員下拉選單的「最近」推薦：選單 teleport 到 body，要用 :global。
+  // 底色畫在 Naive UI 選項自己用來畫底色的 ::before 上，滑過、已選取時維持 Naive UI 原本的顏色
+  :global(
+    .n-base-select-option.work-item-form-recent-option:not(
+        .n-base-select-option--pending,
+        .n-base-select-option--selected
+      )::before
+  ) {
+    background-color: var(--color-blue-050);
+  }
+
+  // 右側留位置給「最近」標籤（已選取時 Naive UI 的勾勾也在右側，標籤放在勾勾左邊）
+  :global(.n-base-select-option.work-item-form-recent-option) {
+    padding-right: 76px;
+  }
+
+  :global(.work-item-form-recent-wrap) {
+    position: relative;
+  }
+
+  :global(.work-item-form-recent-tag) {
+    position: absolute;
+    top: 50%;
+    right: 36px;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--color-blue-700);
+    pointer-events: none;
+    background: var(--color-blue-100);
+    border-radius: 999px;
+    transform: translateY(-50%);
   }
 
   &__footer {
