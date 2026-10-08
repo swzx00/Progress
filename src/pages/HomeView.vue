@@ -285,16 +285,43 @@ const closeDeleteConfirm = (): void => {
   deleteTarget.value = null;
 };
 
+/**
+ * 刪除失敗比照儲存，一律用 Toast 提示：
+ * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED）：關閉確認對話框並強制登出，回到唯讀模式
+ * - 其他錯誤（找不到紀錄、網路錯誤等）：確認對話框維持開啟，讓使用者直接重試或取消
+ */
+const handleDeleteUnauthorized = (message: string): void => {
+  deleteTarget.value = null;
+  showToast(message);
+  signOut();
+};
+
 const confirmDelete = async (): Promise<void> => {
-  if (!deleteTarget.value || !idToken.value) return;
+  if (!deleteTarget.value) return;
+  if (!idToken.value) {
+    handleDeleteUnauthorized('尚未登入，無法刪除');
+    return;
+  }
   deleting.value = true;
   try {
     await deleteItem(idToken.value, deleteTarget.value.id, deleteTarget.value.工作日期);
+    deleteTarget.value = null;
     await fetchByDate(selectedDate.value);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') {
+      handleDeleteUnauthorized(e.message);
+      return;
+    }
+    showToast(e instanceof Error ? e.message : '刪除時發生未知錯誤');
   } finally {
     deleting.value = false;
-    deleteTarget.value = null;
   }
+};
+
+/** 選項清單管理遇到登入錯誤：關閉 Modal 並強制登出（錯誤訊息已由 Modal 用 Toast 顯示） */
+const onOptionsUnauthorized = (): void => {
+  optionsManagerOpen.value = false;
+  signOut();
 };
 </script>
 
@@ -490,6 +517,7 @@ const confirmDelete = async (): Promise<void> => {
         v-if="optionsManagerOpen && isAuthorized && idToken"
         :id-token="idToken"
         @close="optionsManagerOpen = false"
+        @unauthorized="onOptionsUnauthorized"
       />
     </Transition>
 

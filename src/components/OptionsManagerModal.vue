@@ -3,6 +3,8 @@ import { ref } from 'vue';
 
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
+import { useToast } from '@/composables/useToast';
+import { ApiError } from '@/composables/useWorkItems';
 import type { WorkItemOptions } from '@/types/work-item';
 
 const props = defineProps<{
@@ -11,6 +13,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  /** 登入錯誤（例如 token 過期）：由使用端關閉 Modal 並登出 */
+  unauthorized: [];
 }>();
 
 const CATEGORIES: (keyof WorkItemOptions)[] = ['交辦單位', '交辦人員', '專案名稱', '專案Repo'];
@@ -23,7 +27,21 @@ void fetchOptions();
 const selectedCategory = ref<keyof WorkItemOptions | null>(null);
 
 const busy = ref(false);
-const actionError = ref<string | null>(null);
+const deleteTarget = ref<string | null>(null);
+
+const { showToast } = useToast();
+
+/**
+ * 新增／重新命名／刪除失敗一律用 Toast 提示（比照工作紀錄的儲存）：
+ * 登入錯誤交給使用端關閉 Modal 並登出；其他錯誤 Modal 維持原狀，讓使用者修正後重試
+ */
+const handleActionError = (e: unknown, fallback: string): void => {
+  showToast(e instanceof Error ? e.message : fallback);
+  if (e instanceof ApiError && e.code === 'UNAUTHORIZED') {
+    deleteTarget.value = null;
+    emit('unauthorized');
+  }
+};
 
 const newValueDrafts = ref<Record<keyof WorkItemOptions, string>>({
   交辦單位: '',
@@ -37,14 +55,12 @@ const editingDraft = ref('');
 
 const openCategory = (category: keyof WorkItemOptions): void => {
   selectedCategory.value = category;
-  actionError.value = null;
 };
 
 const backToCategoryList = (): void => {
   selectedCategory.value = null;
   editingValue.value = null;
   editingDraft.value = '';
-  actionError.value = null;
 };
 
 const startEdit = (value: string): void => {
@@ -65,12 +81,11 @@ const submitEdit = async (oldValue: string): Promise<void> => {
     return;
   }
   busy.value = true;
-  actionError.value = null;
   try {
     await renameOption(props.idToken, selectedCategory.value, oldValue, newValue);
     cancelEdit();
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '重新命名失敗';
+    handleActionError(e, '重新命名失敗');
   } finally {
     busy.value = false;
   }
@@ -82,18 +97,15 @@ const submitAdd = async (): Promise<void> => {
   const value = newValueDrafts.value[category].trim();
   if (!value) return;
   busy.value = true;
-  actionError.value = null;
   try {
     await addOption(props.idToken, category, value);
     newValueDrafts.value[category] = '';
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '新增失敗';
+    handleActionError(e, '新增失敗');
   } finally {
     busy.value = false;
   }
 };
-
-const deleteTarget = ref<string | null>(null);
 
 const openDeleteConfirm = (value: string): void => {
   deleteTarget.value = value;
@@ -102,12 +114,11 @@ const openDeleteConfirm = (value: string): void => {
 const confirmDelete = async (): Promise<void> => {
   if (!deleteTarget.value || !selectedCategory.value) return;
   busy.value = true;
-  actionError.value = null;
   try {
     await deleteOption(props.idToken, selectedCategory.value, deleteTarget.value);
     deleteTarget.value = null;
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '刪除失敗';
+    handleActionError(e, '刪除失敗');
   } finally {
     busy.value = false;
   }
@@ -258,10 +269,6 @@ const confirmDelete = async (): Promise<void> => {
             新增
           </button>
         </div>
-
-        <p v-if="actionError" class="options-manager__status options-manager__status--error">
-          {{ actionError }}
-        </p>
       </div>
     </Transition>
 

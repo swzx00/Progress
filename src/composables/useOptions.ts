@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 
+import { ApiError, type ApiErrorCode } from '@/composables/useWorkItems';
 import type { WorkItemOptions } from '@/types/work-item';
 
 interface DoGetOptionsResponse {
@@ -10,6 +11,7 @@ interface DoGetOptionsResponse {
 interface DoPostOptionsResponse {
   options?: WorkItemOptions;
   error?: string;
+  code?: ApiErrorCode;
 }
 
 // 跟 useWorkItems.ts 同一套規則：本機關掉 MSW 時走 dev server proxy 繞開 CORS，
@@ -63,7 +65,8 @@ const postOptionAction = async (idToken: string, payload: object): Promise<WorkI
   });
   const data = (await res.json()) as DoPostOptionsResponse;
   if (data.error || !data.options) {
-    throw new Error(data.error ?? '選項清單更新失敗');
+    // 跟 useWorkItems.ts 的 postAction 一樣丟帶 code 的 ApiError，呼叫端才分得出登入錯誤
+    throw new ApiError(data.error ?? '選項清單更新失敗', data.code);
   }
   return data.options;
 };
