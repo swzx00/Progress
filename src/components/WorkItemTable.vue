@@ -252,6 +252,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           <ClampText
             :full-text="titleFullText(item)"
             :expanded="isExpanded(item.id)"
+            :inline-toggle="false"
             @toggle="toggleRow(item.id, $event)"
           >
             <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>

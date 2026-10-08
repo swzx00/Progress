@@ -12,6 +12,8 @@ import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue
  * - 有滑鼠的裝置（hover: hover、pointer: fine）滑過被截斷的文字，用 NTooltip 顯示全文
  *   （延遲 0.3 秒、寬度上限 360px）；觸控裝置不做 tooltip
  * - 子元素加 data-ellipsis 的（例如 Repo 膠囊單行「…」截斷），寬度被截斷也算被截斷
+ * - inlineToggle 為 false 時（專案名稱/Repo：膠囊本身已經有「…」），不加「…」也不接在行尾，
+ *   「<展開>」直接放在截斷內容的下一行（使用者決定）
  */
 const props = withDefaults(
   defineProps<{
@@ -23,11 +25,14 @@ const props = withDefaults(
     lines?: number;
     /** 手機收合時的行數 */
     mobileLines?: number;
+    /** 「…<展開>」接在最後一行尾端（true），或「<展開>」放在截斷內容的下一行（false） */
+    inlineToggle?: boolean;
   }>(),
   {
     expanded: false,
     lines: 2,
     mobileLines: 3,
+    inlineToggle: true,
   },
 );
 
@@ -100,12 +105,12 @@ onBeforeUnmount(() => {
     <template #trigger>
       <div
         class="clamp-text"
-        :class="{ 'clamp-text--expanded': expanded }"
+        :class="{ 'clamp-text--expanded': expanded, 'clamp-text--block-toggle': !inlineToggle }"
         :style="{ '--clamp-lines': lines, '--clamp-mobile-lines': mobileLines }"
       >
         <div ref="body" class="clamp-text__body">
           <!-- 收合且被截斷：浮在最後一行右側，文字會在它前面斷開 -->
-          <span v-if="clamped && !expanded" class="clamp-text__more"
+          <span v-if="inlineToggle && clamped && !expanded" class="clamp-text__more"
             >…<button
               type="button"
               class="clamp-text__toggle"
@@ -126,6 +131,16 @@ onBeforeUnmount(() => {
             &lt;收合&gt;
           </button>
         </div>
+        <!-- 不接在行尾的模式：收合時「<展開>」放在截斷內容的下一行（在 __body 外面才不會被截掉） -->
+        <button
+          v-if="!inlineToggle && clamped && !expanded"
+          type="button"
+          class="clamp-text__toggle clamp-text__toggle--collapse"
+          :aria-expanded="false"
+          @click="emit('toggle', $event)"
+        >
+          &lt;展開&gt;
+        </button>
       </div>
     </template>
     <div class="clamp-text__tooltip">{{ fullText }}</div>
@@ -187,12 +202,24 @@ onBeforeUnmount(() => {
       text-decoration: underline;
     }
 
-    // 收合：展開後全文的下一行
+    // 獨立一行的按鈕（展開後的收合、Repo 欄的展開）：寬度跟著文字走，不要被撐滿整欄
+    // （Repo 欄的展開在 flex column 裡，預設 align-items: stretch 會把按鈕拉滿）
     &--collapse {
       display: block;
+      align-self: flex-start;
+      width: fit-content;
       margin-top: 2px;
       margin-left: 0;
     }
+  }
+
+  // 不接在行尾：內容與「<展開>」上下排，也不需要把按鈕推到最後一行的佔位
+  &--block-toggle {
+    flex-direction: column;
+  }
+
+  &--block-toggle &__body::before {
+    display: none;
   }
 
   &--expanded &__body {
