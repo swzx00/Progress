@@ -136,6 +136,8 @@ src/
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢，見下方「台灣國定假日顯示」
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
+  directives/
+    auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
   utils/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
@@ -316,6 +318,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 第一次按「儲存」才開始顯示錯誤；之後每次修改即時重新驗證，修正後錯誤馬上消失
   - 錯誤呈現：欄位下方紅字（`--color-red-600`）＋欄位框變紅（原生欄位用 `.work-item-form__field--invalid`，`NSelect` 用 `status="error"`），並捲動到第一個錯誤欄位、聚焦其中的輸入框
   - textarea 另外設了 `maxlength`，打字時就擋在上限，不用等送出
+  - **textarea 高度自適應**（使用者決定）：工作目標、處理內容（含請假備註）用 `src/directives/auto-resize.ts` 的 `v-auto-resize`，高度跟著內容長高、縮回，最小維持 `rows="2"`，沒有上限（Drawer 本身會捲動），因此拿掉手動拉高（`resize: none`）。輸入、帶入資料（元件重新渲染）、寬度改變（`ResizeObserver`，只在寬度變時重算）都會重新計算
 - **儲存失敗的處理**（`HomeView.vue` 的 `onSave`／`handleSaveError`）：不在頁面上顯示錯誤文字，一律用 `AppToast` 顯示錯誤訊息
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
