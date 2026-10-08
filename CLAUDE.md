@@ -76,7 +76,7 @@
 
 **doGet(e)**
 - 接受 `date` 參數（`YYYY/MM/DD`，例如 `2026/09/17`，見上方「日期欄位格式」），後端自動換算對應月份分頁，只回傳當天且「已刪除≠TRUE」的列
-- 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentPairs }`：`recentPairs` 是交辦單位 ↔ 交辦人員的最近搭配（`getRecentPairs_`，見「UI/UX 定案」的「交辦單位 ↔ 交辦人員推薦」）
+- 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見「UI/UX 定案」的「表單的推薦與預填」
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
 **前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
@@ -141,7 +141,7 @@ src/
   utils/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
-    recent-pairing.ts      # 交辦單位 ↔ 交辦人員最近搭配：整理（buildRecentPairs／applyRecentPair）與下拉選項排序（withRecentFirst）
+    recent-history.ts      # 近期紀錄：下拉推薦（recentUnit／recentAssignee／recentProject／recentRepos／withRecentFirst）、工作目標預填（targetKey／recentByTarget）、存檔後更新（upsertRecentItems）
   validation/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
@@ -313,11 +313,32 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 日期欄維持原生 `<input type="date">`（使用者決定，手機用系統原生滾輪）：原生日期欄會忽略 `placeholder`，空白時顯示的是瀏覽器自己的「年／月／日」，所以「預計期限」的 placeholder 實際上看不到，屬已知限制
   - 送出時文字欄位去掉前後空白
   - **選項清單載入中／失敗**（使用者決定）：交辦單位、交辦人員、專案名稱、專案 Repo 的選項是打開表單時才讀（`useOptions` 的 `fetchOptions`），真後端慢的時候清單會是空的。這四個 `NSelect` 在載入中時設 `loading`（欄位右側轉圈），打開下拉時 `empty` slot 放 `OptionsDropdownState`：轉圈（`AppLoading`）＋下方「選項載入中」；讀取失敗時顯示「選項清單載入失敗」＋「重新載入」（再呼叫一次 `fetchOptions`）。只在載入中或失敗時才放這個 slot，載入完成後沒有符合的選項時維持 Naive UI 原本的空狀態；可輸入新值（`tag`）的功能載入中照常可用
-  - **交辦單位 ↔ 交辦人員推薦**（使用者決定）：已選了交辦單位，打開交辦人員下拉時，把「近一個月最近一次搭配」的那一個值排在最上面並 highlight（淡藍 `blue-050` 底＋右側 `blue-100` 底／`blue-700` 字的「最近」膠囊標籤），其餘照原本順序、不重複出現；反過來（已選交辦人員 → 交辦單位）也一樣。只推薦一個，另一邊是空的時**不自動填入**
-    - 資料：後端 `getRecentPairs_` 掃近 `RECENT_PAIR_DAYS`（30）天的月份分頁（最多跨兩個分頁），排除請假，每個交辦單位只記最近一次搭配的交辦人員、反之亦然；「最近」比較工作日期，同一天再比項次。跟著 `type=options` 一起回傳，不多打 API；前端 `useOptions` 的 `recentPairs` 保存（日期轉成 `YYYY-MM-DD`）。規則在 `src/utils/recent-pairing.ts`（MSW 也用這份），`Code.gs` 手動同步，改一邊要一起改
-    - 推薦的值必須還在選項清單裡才顯示（被刪掉的選項不推薦）；舊版後端沒有 `recentPairs` 時就是沒有推薦，下拉照常可用
-    - 新增／編輯存檔成功、複製本日成功後，`HomeView` 呼叫 `rememberPairs` 用剛存的紀錄更新本地推薦（比現有的新才覆蓋），不用重新讀選項清單
-    - 呈現：`WorkItemForm` 的 `unitOptions`／`assigneeOptions` 用 `withRecentFirst` 排序，推薦選項加 class 畫底色；「最近」標籤用 `NSelect` 的 `render-option` 在選項外包一層加上，**不用 `render-label`**（它也會套用到輸入框裡已選的值，選了推薦值時輸入框會跟著出現「最近」）。下拉選單 teleport 到 body，不吃 scoped 樣式，這幾個 class 用 `:global` 寫；底色畫在 Naive UI 選項自己的 `::before` 上，滑過、已選取時維持 Naive UI 原本的顏色
+  - **表單的推薦與預填**（使用者決定，規則集中在 `src/utils/recent-history.ts`）
+    - **資料來源：近期紀錄 `recentItems`**
+      - 後端 `getRecentItems_` 撈近 `RECENT_DAYS`（30）天的紀錄：工作日期 ≥ 今天往前 30 天，最多跨兩個月份分頁（cutoff 所在月份到本月），排除請假與已刪除。只回傳推薦／預填用得到的欄位（id、工作日期、項次、交辦單位、交辦人員、專案名稱、專案 Repo、工作目標、預計期限、完成度、狀態），跟著 `doGet type=options` 一起回傳，不多打 API
+      - 後端只負責撈資料，「最近一筆」怎麼找、怎麼推薦都在前端；天數與排除請假的規則前端 `RECENT_DAYS`／`filterRecentItems` 跟 `Code.gs` 要一致（手動同步），MSW 用 `filterRecentItems`
+      - 前端 `useOptions` 的 `recentItems` 保存（工作日期、預計期限轉成 `YYYY-MM-DD`），跟選項清單一樣一個工作階段只讀一次
+      - 存檔成功後 `HomeView` 呼叫 `rememberItems` 補上剛存的紀錄（`upsertRecentItems`）：編輯帶 id、取代原本那筆；新增、複製本日沒有 id，直接加入；請假略過。所以不用重新整理就能推薦／預填剛存的內容
+      - 舊版後端沒有 `recentItems` 時視為空陣列：沒有推薦、不預填，表單照常可用
+    - **「最近一筆」的定義**：工作日期新的優先，同一天項次大的優先；剛存檔、還沒有項次的視為當天最新
+    - **下拉推薦**（交辦單位 ↔ 交辦人員、專案名稱 ↔ 專案 Repo）：已選了一邊，打開另一邊的下拉時，把最近一筆搭配的值排在最上面並 highlight，其餘照原本順序、不重複出現。只推薦、**不自動填入**
+      - 已選交辦單位 → 交辦人員：交辦單位相同的最近一筆的交辦人員（`recentAssignee`）；反過來已選交辦人員 → 交辦單位（`recentUnit`）
+      - 已選專案名稱 → 專案 Repo：專案名稱相同的最近一筆的 Repo，可能有多個，**全部**推薦（`recentRepos`）
+      - 已選專案 Repo → 專案名稱：Repo 包含已選的**任一個**的最近一筆的專案名稱（`recentProject`）
+      - 推薦的值必須還在選項清單裡才顯示（從選項清單刪掉的值不推薦）
+      - 呈現：淡藍 `blue-050` 底＋右側 `blue-100` 底／`blue-700` 字的「最近」膠囊標籤。`WorkItemForm` 的四個 `*Options` computed 用 `withRecentFirst` 排序、`markRecent` 加 class 畫底色；標籤用 `NSelect` 的 `render-option` 在選項外包一層加上，**不用 `render-label`**（它也會套用到輸入框裡已選的值，選了推薦值時輸入框會跟著出現「最近」）。下拉選單 teleport 到 body，不吃 scoped 樣式，這幾個 class 用 `:global` 寫；底色畫在 Naive UI 選項自己的 `::before` 上，滑過、已選取時維持 Naive UI 原本的顏色
+    - **填完工作目標後預填**（`WorkItemForm` 的 `prefillFromTarget`）
+      - 只在**新增工作項目**時；編輯、單項複製、請假都不預填
+      - 時機：工作目標輸入框離開焦點（blur），不是每打一個字就觸發
+      - 找哪一筆：近期紀錄裡工作目標「相同」的最近一筆（`recentByTarget`）。相同的定義（`targetKey`）：工作目標開頭有單號（`#` 或 `T` 加 4–5 位數字，同本日總結的 `extractTaskCode`）就比單號，例如「#12345 登入頁」與「#12345 登入頁修正」算同一筆；沒有單號才比整段文字（去前後空白）。找不到就什麼都不做
+      - 帶入規則（不會蓋掉使用者已經填的值）：
+        - 預計期限：表單還是空白、來源有值才帶入
+        - 完成度：表單還是 0（或清空）、來源不是 0 才帶入
+        - 狀態：表單還是預設的「待辦」、來源不是待辦且在固定選項內才帶入
+        - 交辦單位、交辦人員：兩個**都空**才一起帶入，填了其中一個就都不動
+        - 專案名稱、專案 Repo：兩個**都空**才一起帶入，規則同上
+      - 有帶入任何欄位，就在工作目標下方用 `blue-700` 小字提示「已依 YYYY/MM/DD 的紀錄帶入：預計期限、完成度…」（`work-item-form__hint`，`role="status"`）；表單重設時清掉。預填會讓表單跟打開時的快照不同，關閉時照常跳「要放棄變更嗎？」
+      - 推薦與預填的關係：預填是直接寫入欄位；下拉推薦只排序、不寫入。預填後打開下拉，仍會依已填的值顯示推薦
   - **單選 `NSelect` 的 placeholder**：`NSelect` 只有值是 `null` 時才顯示 placeholder，空字串會被當成「選了一個空的值」而不顯示。表單內部（驗證、送出、快照比對）維持用空字串代表「沒選」，交辦單位／交辦人員／專案名稱／狀態綁定 `NSelect` 時經過 `selectModel()` 這層 computed 互轉（`'' ↔ null`）；多選的專案 Repo 是空陣列，本來就正常
   - 必填欄位的名稱後面加紅色「＊」（`--color-red-600`，`aria-hidden`），是否顯示由 `isRequired(field)` 讀 schema 的 `required` 決定，不寫死在 template；欄位名稱跟＊包在 `.work-item-form__label` 裡（label 是 flex column，不包的話＊會被擠到下一行）
 - **表單驗證**（`src/validation/work-item.ts` 的 `validateWorkItem`）：`<form novalidate>` 關掉瀏覽器內建驗證，全部欄位統一走自訂驗證（交辦單位、狀態等是 `NSelect`，不是原生欄位，內建 `required` 檢查不到）
@@ -467,7 +488,7 @@ npm run format     # Prettier 格式化 src/
 - ~~重新部署 `Code.gs`（刪除改成搬到「已刪除紀錄」分頁、寫入後月份分頁自動排序）。部署後在編輯器的「執行」選單依序手動執行一次 `moveDeletedRows()`（把舊的「已刪除＝TRUE」列搬到「已刪除紀錄」分頁）、`sortMonthSheets()`（把現有月份分頁照工作日期、項次排序），兩個重複執行都沒有副作用~~（已完成，2026-10-08 部署並執行 `moveDeletedRows()`、`sortMonthSheets()`）
 - ~~重新部署 `Code.gs`（選項清單每欄連續存放、值當文字比對）。部署後在編輯器的「執行」選單手動執行一次 `compactOptionsSheet()`，把「選項清單」每一欄往上補齊、去掉重複值（例如重複的「11111」）。部署前真後端新增選項仍會寫在整張分頁的最後一列、純數字的選項仍刪不掉／改不了~~（已完成，2026-10-08 部署並執行 `compactOptionsSheet()`）
 - ~~重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回~~（已完成）
-- 重新部署 `Code.gs`（`type=options` 多回傳交辦單位 ↔ 交辦人員的最近搭配 `recentPairs`）。部署前表單下拉選單不會有「最近」推薦，其他功能不受影響
+- 重新部署 `Code.gs`（`type=options` 多回傳近 30 天的近期紀錄 `recentItems`）。部署前表單下拉選單不會有「最近」推薦、填完工作目標也不會預填，其他功能不受影響
 
 ---
 
