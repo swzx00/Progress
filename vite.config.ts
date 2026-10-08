@@ -66,5 +66,27 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
+    build: {
+      rolldownOptions: {
+        output: {
+          // 第三方套件拆成獨立檔案：單一檔案不超過 500 kB 警告門檻，
+          // 而且套件沒升級時檔名（hash）不變，改專案程式碼後瀏覽器仍可沿用快取
+          codeSplitting: {
+            groups: [
+              // Naive UI 連同它依賴的日期、工具函式庫會超過 500 kB，所以相依套件另外拆一包。
+              // 預設會把群組的相依一起收進去，所以用 priority 讓 Vue、相依套件先被各自的群組認領
+              { name: 'vendor-naive-ui', test: /node_modules\/naive-ui\//, priority: 1 },
+              {
+                name: 'vendor-naive-ui-deps',
+                test: /node_modules\/(vueuc|vooks|css-render|@css-render|seemly|evtd|treemate|vdirs|date-fns|date-fns-tz|lodash-es|async-validator|@juggle)\//,
+                priority: 2,
+              },
+              { name: 'vendor-vue', test: /node_modules\/(@vue|vue|vue-router)\//, priority: 3 },
+              { name: 'vendor-sortable', test: /node_modules\/(sortablejs|vue-draggable-plus)\// },
+            ],
+          },
+        },
+      },
+    },
   };
 });
