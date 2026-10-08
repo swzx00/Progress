@@ -13,6 +13,10 @@
 
 var OWNER_EMAIL = 'swzx00@gmail.com';
 var OPTIONS_SHEET_NAME = '選項清單';
+// 刪除的紀錄整列搬到這個分頁封存（月份分頁只留有效資料，方便直接把 Sheet 給別人看），
+// 欄位是月份分頁的欄位去掉「已刪除」、最後多一欄「刪除時間」
+var DELETED_SHEET_NAME = '已刪除紀錄';
+var DELETED_AT_HEADER = '刪除時間';
 var OPTION_CATEGORIES = ['交辦單位', '交辦人員', '專案名稱', '專案Repo'];
 var MONTH_SHEET_HEADERS = [
   'ID',
@@ -132,6 +136,113 @@ function getOrCreateMonthSheet_(monthKey) {
   return sheet;
 }
 
+function isMonthSheet_(sheet) {
+  return /^\d{4}-\d{2}$/.test(sheet.getName());
+}
+
+function getOrCreateDeletedSheet_() {
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(DELETED_SHEET_NAME);
+  if (!sheet) {
+    var headers = MONTH_SHEET_HEADERS.filter(function (h) {
+      return h !== '已刪除';
+    }).concat([DELETED_AT_HEADER]);
+    sheet = ss.insertSheet(DELETED_SHEET_NAME);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    var colMap = getColumnMap_(sheet);
+    applyDateColumnFormat_(sheet, colMap);
+    sheet
+      .getRange(2, colMap[DELETED_AT_HEADER], sheet.getMaxRows() - 1, 1)
+      .setNumberFormat('yyyy/mm/dd hh:mm:ss');
+  }
+  return sheet;
+}
+
+/**
+ * 把月份分頁的幾列搬到「已刪除紀錄」分頁：依表頭名稱複製原始儲存格值（日期、數字維持原型別），
+ * 「刪除時間」寫入 deletedAt（一次性搬移舊資料時不知道實際刪除時間，傳 null 留空），
+ * 再從月份分頁刪掉這幾列（由下往上刪，前面的列號才不會跑掉）。回傳搬移筆數
+ */
+function moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, deletedAt) {
+  if (rowNumbers.length === 0) return 0;
+  var lastCol = sheet.getLastColumn();
+  var deletedSheet = getOrCreateDeletedSheet_();
+  var deletedColMap = getColumnMap_(deletedSheet);
+  var deletedLastCol = deletedSheet.getLastColumn();
+
+  var rows = rowNumbers.map(function (rowNumber) {
+    var source = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+    var row = new Array(deletedLastCol).fill('');
+    Object.keys(deletedColMap).forEach(function (header) {
+      var target = deletedColMap[header] - 1;
+      if (header === DELETED_AT_HEADER) {
+        row[target] = deletedAt || '';
+      } else if (colMap[header]) {
+        row[target] = source[colMap[header] - 1];
+      }
+    });
+    return row;
+  });
+  deletedSheet
+    .getRange(deletedSheet.getLastRow() + 1, 1, rows.length, deletedLastCol)
+    .setValues(rows);
+
+  rowNumbers
+    .slice()
+    .sort(function (a, b) {
+      return b - a;
+    })
+    .forEach(function (rowNumber) {
+      sheet.deleteRow(rowNumber);
+    });
+  return rows.length;
+}
+
+// 月份分頁照「工作日期 → 項次」排序，直接打開 Sheet 看到的順序跟網頁一樣。
+// 讀寫一律用 ID 與表頭名稱定位，不靠列的位置，所以排序不影響其他功能；每次寫入後呼叫
+function sortMonthSheet_(sheet, colMap) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 3 || !colMap.工作日期 || !colMap.項次) return;
+  sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).sort([
+    { column: colMap.工作日期, ascending: true },
+    { column: colMap.項次, ascending: true },
+  ]);
+}
+
+// 一次性遷移用：刪除改成「搬到已刪除紀錄分頁」之前，月份分頁裡「已刪除」= TRUE 的列，
+// 全部搬到「已刪除紀錄」分頁（不知道實際刪除時間，「刪除時間」留空）。在 Apps Script 編輯器
+// 手動執行一次即可，重複執行沒有副作用（名稱不加結尾底線的理由同 renumberDailyIndexes()）
+function moveDeletedRows() {
+  getSpreadsheet_()
+    .getSheets()
+    .forEach(function (sheet) {
+      if (!isMonthSheet_(sheet)) return;
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) return;
+      var colMap = getColumnMap_(sheet);
+      var rowNumbers = [];
+      sheet
+        .getRange(2, 1, lastRow - 1, sheet.getLastColumn())
+        .getValues()
+        .forEach(function (row, i) {
+          if (rowToItem_(colMap, row).已刪除) rowNumbers.push(i + 2);
+        });
+      moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, null);
+    });
+}
+
+// 一次性遷移用：把現有的月份分頁照「工作日期 → 項次」排序一次（之後每次寫入都會自動排序）。
+// 在 Apps Script 編輯器手動執行一次即可，重複執行沒有副作用
+function sortMonthSheets() {
+  getSpreadsheet_()
+    .getSheets()
+    .forEach(function (sheet) {
+      if (!isMonthSheet_(sheet)) return;
+      sortMonthSheet_(sheet, getColumnMap_(sheet));
+    });
+}
+
 // 一次性遷移用：把已經存在的各月份分頁補上 applyDateColumnFormat_（新分頁走
 // getOrCreateMonthSheet_ 會自動套用，但這支改動之前就已建立的分頁不會自動補上）。
 // 用法同 installTrigger()：在 Apps Script 編輯器手動執行一次即可，之後不用再跑。
@@ -139,7 +250,7 @@ function getOrCreateMonthSheet_(monthKey) {
 function fixExistingMonthSheetDateFormats() {
   var ss = getSpreadsheet_();
   ss.getSheets().forEach(function (sheet) {
-    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    if (!isMonthSheet_(sheet)) return;
     applyDateColumnFormat_(sheet, getColumnMap_(sheet));
   });
 }
@@ -152,7 +263,7 @@ function fixExistingMonthSheetDateFormats() {
 function renumberDailyIndexes() {
   var ss = getSpreadsheet_();
   ss.getSheets().forEach(function (sheet) {
-    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    if (!isMonthSheet_(sheet)) return;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
 
@@ -190,7 +301,7 @@ function renumberDailyIndexes() {
 function fillMissingIds() {
   var ss = getSpreadsheet_();
   ss.getSheets().forEach(function (sheet) {
-    if (!/^\d{4}-\d{2}$/.test(sheet.getName())) return;
+    if (!isMonthSheet_(sheet)) return;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
 
@@ -672,6 +783,7 @@ function handleCreate_(item) {
 
   var row = itemToRow_(colMap, sheet.getLastColumn(), created);
   sheet.getRange(lastRow + 1, 1, 1, row.length).setValues([row]);
+  sortMonthSheet_(sheet, colMap);
 
   syncOptionsFromItem_(created);
 
@@ -682,7 +794,7 @@ function handleCreate_(item) {
 // （既有紀錄＋這批）超過 DAILY_HOURS_MAX，就整批退回、不寫入任何一筆。
 // 項次依陣列順序、照每日編號規則接續；新值同步寫回選項清單（請假列一樣略過）。
 // replace 為 true 時（「複製本日」覆蓋目標日）：工時合計只算這批，驗證全部通過後，先把這批涉及的
-// 工作日期原本未刪除的紀錄（含請假）軟刪除，再寫入；已刪除的不佔項次，所以新紀錄從 1 開始編號。
+// 工作日期原本的紀錄（含請假）搬到「已刪除紀錄」分頁，再寫入，所以新紀錄從 1 開始編號。
 function handleBatchCreate_(items, replace) {
   if (!Array.isArray(items) || items.length === 0) {
     return jsonOutput_({ error: '沒有要新增的紀錄' });
@@ -727,11 +839,11 @@ function handleBatchCreate_(items, replace) {
     }
   }
 
-  // 驗證全部通過才開始動 Sheet：覆蓋模式先軟刪除，再算項次
+  // 驗證全部通過才開始動 Sheet：覆蓋模式先把原本的紀錄搬走，再算項次
   var replacedCount = 0;
   dates.forEach(function (date) {
     var day = days[date];
-    if (replace) replacedCount += softDeleteDayRows_(day.target.sheet, day.target.colMap, date);
+    if (replace) replacedCount += moveDayRowsToDeleted_(day.target.sheet, day.target.colMap, date);
     day.nextIndex = getNextDailyIndex_(day.target.sheet, day.target.colMap, date);
   });
 
@@ -755,6 +867,7 @@ function handleBatchCreate_(items, replace) {
     target.sheet
       .getRange(startRow, 1, target.rows.length, target.rows[0].length)
       .setValues(target.rows);
+    sortMonthSheet_(target.sheet, target.colMap);
   });
 
   created.forEach(syncOptionsFromItem_);
@@ -762,20 +875,17 @@ function handleBatchCreate_(items, replace) {
   return jsonOutput_({ items: created, replaced: replacedCount });
 }
 
-// 把某一工作日期所有未刪除的紀錄（含請假）標成已刪除，回傳筆數
-function softDeleteDayRows_(sheet, colMap, date) {
+// 把某一工作日期所有未刪除的紀錄（含請假）搬到「已刪除紀錄」分頁，回傳筆數
+function moveDayRowsToDeleted_(sheet, colMap, date) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
   var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  var count = 0;
+  var rowNumbers = [];
   values.forEach(function (row, i) {
     var item = rowToItem_(colMap, row);
-    if (item.工作日期 === date && !item.已刪除) {
-      sheet.getRange(i + 2, colMap.已刪除).setValue('TRUE');
-      count += 1;
-    }
+    if (item.工作日期 === date && !item.已刪除) rowNumbers.push(i + 2);
   });
-  return count;
+  return moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, new Date());
 }
 
 function handleUpdate_(id, originalDate, itemPatch) {
@@ -826,6 +936,7 @@ function handleUpdate_(id, originalDate, itemPatch) {
     if (dateChanged) merged.項次 = getNextDailyIndex_(oldSheet, oldColMap, merged.工作日期);
     var row = itemToRow_(oldColMap, oldSheet.getLastColumn(), merged);
     oldSheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+    sortMonthSheet_(oldSheet, oldColMap);
   } else {
     // 工作日期被改到別的月份：舊分頁刪掉這列、新分頁新增一列，確保一筆紀錄只存在一個分頁
     oldSheet.deleteRow(rowIndex);
@@ -835,6 +946,7 @@ function handleUpdate_(id, originalDate, itemPatch) {
     var newLastRow = newSheet.getLastRow();
     var newRow = itemToRow_(newColMap, newSheet.getLastColumn(), merged);
     newSheet.getRange(newLastRow + 1, 1, 1, newRow.length).setValues([newRow]);
+    sortMonthSheet_(newSheet, newColMap);
   }
 
   syncOptionsFromItem_(merged);
@@ -882,6 +994,7 @@ function handleReorder_(date, ids) {
   ids.forEach(function (id, i) {
     sheet.getRange(rowById[id], colMap.項次).setValue(i + 1);
   });
+  sortMonthSheet_(sheet, colMap);
   return jsonOutput_({ ok: true });
 }
 
@@ -903,7 +1016,8 @@ function handleDelete_(id, originalDate) {
     return jsonOutput_({ error: '找不到這筆紀錄' });
   }
 
-  sheet.getRange(rowIndex, colMap.已刪除).setValue('TRUE');
+  // 整列搬到「已刪除紀錄」分頁並記錄刪除時間；要復原時把那列搬回月份分頁即可
+  moveRowsToDeletedSheet_(sheet, colMap, [rowIndex], new Date());
   return jsonOutput_({ ok: true });
 }
 
