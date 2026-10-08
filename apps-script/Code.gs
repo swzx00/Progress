@@ -503,30 +503,78 @@ function syncOptionsFromItem_(item) {
 }
 
 function addOptionIfNew_(category, value) {
-  if (!value) return;
+  var key = optionKey_(value);
+  if (!key) return;
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(OPTIONS_SHEET_NAME);
     sheet.getRange(1, 1, 1, OPTION_CATEGORIES.length).setValues([OPTION_CATEGORIES]);
   }
-  var colMap = getColumnMap_(sheet);
-  var col = colMap[category];
+  var col = getColumnMap_(sheet)[category];
   if (!col) return;
 
-  var lastRow = sheet.getLastRow();
-  var existing =
-    lastRow >= 2
-      ? sheet
-          .getRange(2, col, lastRow - 1, 1)
-          .getValues()
-          .map(function (r) {
-            return r[0];
-          })
-      : [];
-  if (existing.indexOf(value) !== -1) return;
+  var column = readOptionColumn_(sheet, col);
+  if (column.list.indexOf(key) !== -1) return;
+  column.list.push(key);
+  writeOptionColumn_(sheet, col, column);
+}
 
-  sheet.getRange(lastRow + 1, col).setValue(value);
+// 選項值一律當文字比對：Google Sheet 會把「11111」這類純數字自動轉成數字，
+// 直接用 === 或 indexOf 跟前端送來的字串比對會對不上（造成重複新增、刪不掉／改不了）
+function optionKey_(value) {
+  return value === null || value === undefined ? '' : String(value).trim();
+}
+
+/**
+ * 讀取選項清單某個分類欄位（第 2 列起），回傳去掉空白、去掉重複、轉成文字的清單，
+ * 以及這一欄目前用到的列數（寫回時要把多出來的舊儲存格清掉）
+ */
+function readOptionColumn_(sheet, col) {
+  var lastRow = sheet.getLastRow();
+  var height = Math.max(lastRow - 1, 0);
+  var list = [];
+  if (height > 0) {
+    sheet
+      .getRange(2, col, height, 1)
+      .getValues()
+      .forEach(function (row) {
+        var key = optionKey_(row[0]);
+        if (key && list.indexOf(key) === -1) list.push(key);
+      });
+  }
+  return { list: list, height: height };
+}
+
+/**
+ * 把清單從第 2 列起連續寫回該分類欄位，下面多出來的舊儲存格清空，所以每一欄都是
+ * 從上往下連續、中間不留空白（各分類欄位彼此獨立，只動這一欄，不影響其他欄）。
+ * 儲存格設成純文字格式，避免「11111」「0123」這類值被 Google Sheet 轉成數字
+ */
+function writeOptionColumn_(sheet, col, column) {
+  var height = Math.max(column.height, column.list.length);
+  if (height === 0) return;
+  var values = [];
+  for (var i = 0; i < height; i++) {
+    values.push([i < column.list.length ? column.list[i] : '']);
+  }
+  var range = sheet.getRange(2, col, height, 1);
+  range.setNumberFormat('@');
+  range.setValues(values);
+}
+
+// 一次性整理函式：在 Apps Script 編輯器手動執行一次，把「選項清單」每個分類欄位
+// 往上補齊（去掉中間的空白格）、去掉重複值（例如被轉成數字後重複新增的「11111」），
+// 原本的先後順序與表頭不變。整理過後新增／刪除都會維持連續，不需要再執行；重複執行也沒有副作用
+function compactOptionsSheet() {
+  var sheet = getSpreadsheet_().getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) return;
+  var colMap = getColumnMap_(sheet);
+  OPTION_CATEGORIES.forEach(function (category) {
+    var col = colMap[category];
+    if (!col) return;
+    writeOptionColumn_(sheet, col, readOptionColumn_(sheet, col));
+  });
 }
 
 // ===== doGet =====
@@ -869,13 +917,6 @@ function isValidOptionCategory_(category) {
   return OPTION_CATEGORIES.indexOf(category) !== -1;
 }
 
-function findOptionRowIndex_(values, value) {
-  for (var i = 0; i < values.length; i++) {
-    if (values[i][0] === value) return i;
-  }
-  return -1;
-}
-
 function handleAddOption_(category, value) {
   if (!isValidOptionCategory_(category)) {
     return jsonOutput_({ error: '未知的選項分類' });
@@ -909,21 +950,17 @@ function handleRenameOption_(category, oldValue, newValue) {
     return jsonOutput_({ error: '選項清單缺少這個分類欄位' });
   }
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
+  var column = readOptionColumn_(sheet, col);
+  var index = column.list.indexOf(optionKey_(oldValue));
+  if (index === -1) {
     return jsonOutput_({ error: '找不到這個值' });
   }
-
-  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
-  var rowIndex = findOptionRowIndex_(values, oldValue);
-  if (rowIndex === -1) {
-    return jsonOutput_({ error: '找不到這個值' });
-  }
-  if (findOptionRowIndex_(values, newValue) !== -1) {
+  if (column.list.indexOf(newValue) !== -1) {
     return jsonOutput_({ error: '這個名稱已經存在' });
   }
 
-  sheet.getRange(2 + rowIndex, col).setValue(newValue);
+  column.list[index] = newValue;
+  writeOptionColumn_(sheet, col, column);
   return jsonOutput_({ options: getOptions_() });
 }
 
@@ -944,20 +981,16 @@ function handleDeleteOption_(category, value) {
     return jsonOutput_({ error: '選項清單缺少這個分類欄位' });
   }
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
+  var column = readOptionColumn_(sheet, col);
+  var index = column.list.indexOf(optionKey_(value));
+  if (index === -1) {
     return jsonOutput_({ error: '找不到這個值' });
   }
 
-  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
-  var rowIndex = findOptionRowIndex_(values, value);
-  if (rowIndex === -1) {
-    return jsonOutput_({ error: '找不到這個值' });
-  }
-
-  // 只清空該格，不整列刪除：同一列其他分類欄位可能還有各自的值（每個分類欄位
-  // 各自獨立，中間留空是正常狀態，getOptions_ 讀取時本來就會略過空白）
-  sheet.getRange(2 + rowIndex, col).clearContent();
+  // 只動這個分類欄位：刪掉這個值，下面的值往上補（使用者決定），
+  // 不整列刪除，同一列其他分類欄位的值不受影響
+  column.list.splice(index, 1);
+  writeOptionColumn_(sheet, col, column);
   return jsonOutput_({ options: getOptions_() });
 }
 
