@@ -90,7 +90,7 @@
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
 
-**錯誤代碼 `code`**：需要讓前端分辨錯誤類型的情況，`doPost` 回應除了 `error`（給人看的訊息）再多帶一個 `code` 欄位。目前只有登入驗證失敗會帶 `code: 'UNAUTHORIZED'`（含 token 過期），其他錯誤沒有 `code`。前端 `useWorkItems.ts` 的 `postAction` 會丟出帶 `code` 的 `ApiError`，呼叫端用 `e instanceof ApiError && e.code === 'UNAUTHORIZED'` 判斷，**不要比對 `error` 文字**（文字可能改、MSW 跟真後端也曾經不一致）。新增錯誤代碼時，`Code.gs`、`src/mocks/handlers.ts`、`useWorkItems.ts` 的 `ApiErrorCode` 型別要一起改。
+**錯誤代碼 `code`**：需要讓前端分辨錯誤類型的情況，`doPost` 回應除了 `error`（給人看的訊息）再多帶一個 `code` 欄位。目前只有登入驗證失敗會帶 `code: 'UNAUTHORIZED'`（含 token 過期），其他錯誤沒有 `code`。前端 `useWorkItems.ts` 的 `postAction`、`useOptions.ts` 的 `postOptionAction` 都會丟出帶 `code` 的 `ApiError`，呼叫端用 `e instanceof ApiError && e.code === 'UNAUTHORIZED'` 判斷，**不要比對 `error` 文字**（文字可能改、MSW 跟真後端也曾經不一致）。新增錯誤代碼時，`Code.gs`、`src/mocks/handlers.ts`、`useWorkItems.ts` 的 `ApiErrorCode` 型別要一起改。
 
 **選項清單管理**：`OptionsManagerModal.vue`（獨立 Modal，非 Drawer——這是特意的選擇，因為這是「設定」性質的操作，跟日常填寫工作紀錄的 Drawer 表單在使用情境上不同，用不同呈現方式做區隔；ARIA 標記仍用 `role="dialog"` + `aria-modal="true"`，這是 Modal 在 ARIA 規範裡正確的技術寫法，ARIA 沒有 `role="modal"` 這個角色，跟元件命名是兩回事），`HomeView.vue` 已登入區塊的「選項清單」按鈕觸發，`isAuthorized` 才看得到入口。手機（< 768px）滿版全螢幕，跟 `WorkItemForm` 的 Drawer 手機行為一致；桌面置中卡片。開關動畫：手機從畫面下方滑入/滑出，桌面淡入＋輕微縮放（`Transition name="options-manager"`，套用在 `HomeView.vue` 的 `<OptionsManagerModal>` 外層）；元件內部第一層（選母項）↔ 第二層（調整內容）切換也有動畫，不是瞬間跳畫面（`Transition name="options-manager-layer" mode="out-in"`，寫在元件自己的樣板內，淡入淡出＋輕微左右位移，模擬「鑽進去/退出來」的導覽感）
 - 第二層的值清單改成仿表格樣式：整份清單一個外框＋表頭列（「值」/「操作」）、列跟列之間用底線分隔，不是每個值各自一張獨立卡片（跟第一層選母項的卡片式大按鈕刻意做區隔，第一層是導覽入口用卡片按鈕合理，第二層是資料列表用表格排版比較符合資料呈現的慣例）
@@ -99,6 +99,7 @@
 - **重要限制，UI 上有明顯提示**：重新命名/刪除只改「選項清單」分頁本身，**不會**回頭更新各月份分頁裡已經寫入的歷史紀錄——交辦單位/人員/專案名稱/專案Repo 存在每筆工作紀錄上是純文字，不是跟這份清單做關聯查詢（ID 對應）的欄位，這是既有的資料模型設計（見上方「Google Sheet 結構設計」），管理選項清單不會改變這件事
 - Apps Script 端：`handleAddOption_`／`handleRenameOption_`／`handleDeleteOption_`，重新命名/刪除都是直接對「選項清單」分頁該分類欄位的儲存格操作（`clearContent()` 清空儲存格，不整列刪除／不搬移其他列，因為同一列不同分類欄位彼此獨立、允許中間留空，`getOptions_` 讀取時本來就會略過空白儲存格）
 - 前端 `useOptions.ts` 新增 `addOption`／`renameOption`／`deleteOption`，三個 action 的回應都帶回最新完整 `options`，直接覆寫本地快取，不用再多打一次 `fetchOptions()`
+- 新增／重新命名／刪除失敗用 `AppToast` 顯示錯誤（不在 Modal 裡顯示紅字），Modal 維持原狀讓使用者重試；登入錯誤（`UNAUTHORIZED`）Modal emit `unauthorized`，`HomeView` 關閉 Modal 並登出。開啟時讀取選項清單失敗仍在 Modal 內顯示（使用者決定）
 
 **月份分頁建立機制**：雙保險，兩個都要做，不互斥
 - **主要：每月 1 號定時觸發器**——`ScriptApp` 的 installable time-driven trigger，`onMonthDay(1)`，跑 `ensureMonthlySheet()` 主動建立當月分頁＋複製表頭格式。程式碼裡寫了 trigger 設定不會自動生效，需要**手動執行一次安裝函式**（或在 Apps Script 編輯器的「觸發條件」頁面手動加），這是一次性設定，之後照排程自動跑
@@ -310,7 +311,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
   - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）目前只有「複製本日」完成時用。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
-  - 目前只有「儲存」接 Toast；刪除失敗（`confirmDelete`）、選項清單管理的錯誤還沒改成 Toast
+  - 刪除工作紀錄失敗（`HomeView` 的 `confirmDelete`）比照儲存：用 Toast 顯示錯誤；登入錯誤關閉確認對話框並登出，其他錯誤確認對話框維持開啟，可以直接重試或取消。選項清單管理的錯誤也用 Toast（見上方「選項清單管理」）
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
 - `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
