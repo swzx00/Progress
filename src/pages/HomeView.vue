@@ -503,7 +503,7 @@ const onOptionsUnauthorized = (): void => {
       <ConfirmDialog
         v-if="deleteTarget && isAuthorized"
         title="確定要刪除這筆紀錄嗎？"
-        :message="`「${deleteTarget.專案名稱}」・${deleteTarget.工作目標}，${deleteTarget.工作日期}。刪除後不會馬上從 Google Sheet 消失（軟刪除），但列表會立刻看不到這筆。`"
+        :message="`「${deleteTarget.專案名稱}」・${deleteTarget.工作目標}，${deleteTarget.工作日期}。刪除後會移到 Sheet 的『已刪除紀錄』分頁。`"
         confirm-label="刪除"
         danger
         :busy="deleting"
