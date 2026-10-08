@@ -6,6 +6,7 @@ import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
 import { useOptions } from '@/composables/useOptions';
+import { vAutoResize } from '@/directives/auto-resize';
 import { fetchDaySummary } from '@/composables/useWorkItems';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
@@ -564,6 +565,7 @@ const onSubmit = async (): Promise<void> => {
             {{ LEAVE_RULES.處理內容.label }}
             <textarea
               v-model="form.處理內容"
+              v-auto-resize
               rows="2"
               placeholder="請填寫請假備註"
               :maxlength="LEAVE_RULES.處理內容.maxLength"
@@ -699,6 +701,7 @@ const onSubmit = async (): Promise<void> => {
           </span>
           <textarea
             v-model="form.工作目標"
+            v-auto-resize
             rows="2"
             placeholder="請填寫工作目標"
             required
@@ -716,6 +719,7 @@ const onSubmit = async (): Promise<void> => {
           處理內容
           <textarea
             v-model="form.處理內容"
+            v-auto-resize
             rows="2"
             placeholder="請填寫處理內容"
             :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
@@ -1037,8 +1041,9 @@ const onSubmit = async (): Promise<void> => {
       }
     }
 
+    // 高度隨內容自動調整（v-auto-resize），不需要手動拉
     textarea {
-      resize: vertical;
+      resize: none;
     }
 
     // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
