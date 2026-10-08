@@ -502,7 +502,9 @@ const confirmDelete = async (): Promise<void> => {
   display: flex;
   flex-direction: column;
   gap: 0;
-  width: 100dvw;
+
+  // 不用 100dvw／100vw：它們包含垂直捲軸的寬度，內容變高出現垂直捲軸時會多出捲軸那一條、冒出 X 軸捲軸
+  width: 100%;
   height: 100%;
   min-height: 100dvh;
 
