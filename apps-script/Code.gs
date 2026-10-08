@@ -601,22 +601,34 @@ function getOptions_() {
   return result;
 }
 
-// 交辦單位 ↔ 交辦人員的「最近搭配」（前端下拉選單推薦用，使用者決定）：只看最近 RECENT_PAIR_DAYS 天、
-// 排除請假，每個交辦單位只記最近一次搭配的交辦人員，反之亦然；「最近」比較工作日期，同一天再比項次。
-// 規則跟前端 src/utils/recent-pairing.ts 相同（手動同步），改一邊要一起改。
-// 回傳 { 交辦單位: { 單位: { value: 人員, date, index } }, 交辦人員: { 人員: { value: 單位, date, index } } }
-var RECENT_PAIR_DAYS = 30;
+// 近期紀錄（前端表單的下拉推薦、填完工作目標後預填用，使用者決定）：近 RECENT_DAYS 天、排除請假的紀錄，
+// 只回傳推薦／預填用得到的欄位。這裡只負責撈資料，「最近一筆」怎麼找、怎麼推薦都在前端
+// src/utils/recent-history.ts；天數與排除請假的規則要跟那邊的 RECENT_DAYS／filterRecentItems 一致
+var RECENT_DAYS = 30;
+var RECENT_ITEM_FIELDS = [
+  ID_KEY,
+  '工作日期',
+  '項次',
+  '交辦單位',
+  '交辦人員',
+  '專案名稱',
+  '專案Repo',
+  '工作目標',
+  '預計期限',
+  '完成度',
+  '狀態',
+];
 
-function getRecentPairs_() {
-  var result = { 交辦單位: {}, 交辦人員: {} };
+function getRecentItems_() {
   var tz = Session.getScriptTimeZone();
   var cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - RECENT_PAIR_DAYS);
+  cutoffDate.setDate(cutoffDate.getDate() - RECENT_DAYS);
   var cutoff = Utilities.formatDate(cutoffDate, tz, 'yyyy/MM/dd');
 
   // 近 30 天最多跨兩個月份分頁：cutoff 所在月份到本月
   var ss = getSpreadsheet_();
   var monthKeys = [getMonthKey_(cutoff), Utilities.formatDate(new Date(), tz, 'yyyy-MM')];
+  var result = [];
   monthKeys
     .filter(function (key, i) {
       return monthKeys.indexOf(key) === i;
@@ -630,24 +642,15 @@ function getRecentPairs_() {
         .getValues()
         .forEach(function (row) {
           var item = rowToItem_(colMap, row);
-          var unit = String(item.交辦單位 || '').trim();
-          var person = String(item.交辦人員 || '').trim();
-          if (item.已刪除 || isLeaveItem_(item) || !unit || !person) return;
-          if (item.工作日期 < cutoff) return;
-          var index = Number(item.項次) || 0;
-          if (isNewerPair_(item.工作日期, index, result.交辦單位[unit])) {
-            result.交辦單位[unit] = { value: person, date: item.工作日期, index: index };
-          }
-          if (isNewerPair_(item.工作日期, index, result.交辦人員[person])) {
-            result.交辦人員[person] = { value: unit, date: item.工作日期, index: index };
-          }
+          if (item.已刪除 || isLeaveItem_(item) || item.工作日期 < cutoff) return;
+          var picked = {};
+          RECENT_ITEM_FIELDS.forEach(function (field) {
+            picked[field] = item[field];
+          });
+          result.push(picked);
         });
     });
   return result;
-}
-
-function isNewerPair_(date, index, current) {
-  return !current || date > current.date || (date === current.date && index >= current.index);
 }
 
 // 新增/編輯工作紀錄時，把新的交辦單位/人員/專案名稱/Repo 寫回選項清單；
@@ -743,7 +746,7 @@ function doGet(e) {
   var params = (e && e.parameter) || {};
   try {
     if (params.type === 'options') {
-      return jsonOutput_({ options: getOptions_(), recentPairs: getRecentPairs_() });
+      return jsonOutput_({ options: getOptions_(), recentItems: getRecentItems_() });
     }
 
     var date = params.date;

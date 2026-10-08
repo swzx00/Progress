@@ -1,13 +1,13 @@
 import { ref } from 'vue';
 
 import { ApiError, type ApiErrorCode } from '@/composables/useWorkItems';
-import type { RecentPair, RecentPairs, WorkItem, WorkItemOptions } from '@/types/work-item';
-import { applyRecentPair, emptyRecentPairs } from '@/utils/recent-pairing';
+import type { RecentItem, WorkItemOptions } from '@/types/work-item';
+import { upsertRecentItems } from '@/utils/recent-history';
 
 interface DoGetOptionsResponse {
   options: WorkItemOptions;
-  /** 舊版後端沒有這個欄位，沒有就當作沒有推薦 */
-  recentPairs?: RecentPairs;
+  /** 近期紀錄（推薦與預填用）；舊版後端沒有這個欄位，沒有就當作沒有推薦、不預填 */
+  recentItems?: RecentItem[];
   error?: string;
 }
 
@@ -25,30 +25,26 @@ const API_BASE_URL = shouldUseDevProxy
   : import.meta.env.VITE_APPS_SCRIPT_URL;
 
 const options = ref<WorkItemOptions | null>(null);
-/** 交辦單位 ↔ 交辦人員的最近搭配（下拉選單推薦用），日期轉成前端內部的 YYYY-MM-DD */
-const recentPairs = ref<RecentPairs>(emptyRecentPairs());
+/** 近期紀錄（表單下拉推薦、填完工作目標後預填用），日期轉成前端內部的 YYYY-MM-DD */
+const recentItems = ref<RecentItem[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 let fetchPromise: Promise<void> | null = null;
 
 // API 的日期是 YYYY/MM/DD，前端內部一律 YYYY-MM-DD（跟 useWorkItems.ts 的 fromApiDate 相同）
-const toIsoRecentPairs = (pairs: RecentPairs | undefined): RecentPairs => {
-  if (!pairs) return emptyRecentPairs();
-  const convert = (map: Record<string, RecentPair>): Record<string, RecentPair> =>
-    Object.fromEntries(
-      Object.entries(map).map(([key, pair]) => [
-        key,
-        { ...pair, date: pair.date.replaceAll('/', '-') },
-      ]),
-    );
-  return { 交辦單位: convert(pairs.交辦單位), 交辦人員: convert(pairs.交辦人員) };
-};
+const toIsoRecentItems = (items: RecentItem[] | undefined): RecentItem[] =>
+  (items ?? []).map((item) => ({
+    ...item,
+    工作日期: item.工作日期.replaceAll('/', '-'),
+    預計期限: item.預計期限.replaceAll('/', '-'),
+  }));
 
-/** 存檔成功後用剛存的紀錄更新本地推薦（比現有的新才覆蓋），不用重新讀選項清單 */
-const rememberPairs = (
-  items: Pick<WorkItem, '工作日期' | '交辦單位' | '交辦人員' | '狀態'>[],
-): void => {
-  recentPairs.value = items.reduce(applyRecentPair, recentPairs.value);
+/**
+ * 存檔成功後用剛存的紀錄更新本地近期紀錄，不用重新讀選項清單：
+ * 編輯帶 id（取代原本那筆），新增、複製本日沒有 id（直接加入）
+ */
+const rememberItems = (saved: RecentItem[]): void => {
+  recentItems.value = upsertRecentItems(recentItems.value, saved);
 };
 
 const fetchOptions = async (): Promise<void> => {
@@ -67,7 +63,7 @@ const fetchOptions = async (): Promise<void> => {
         throw new Error(data.error);
       }
       options.value = data.options;
-      recentPairs.value = toIsoRecentPairs(data.recentPairs);
+      recentItems.value = toIsoRecentItems(data.recentItems);
     } catch (e) {
       error.value = e instanceof Error ? e.message : '讀取選項清單時發生未知錯誤';
     } finally {
@@ -130,11 +126,11 @@ const deleteOption = async (
 export function useOptions() {
   return {
     options,
-    recentPairs,
+    recentItems,
     loading,
     error,
     fetchOptions,
-    rememberPairs,
+    rememberItems,
     addOption,
     renameOption,
     deleteOption,

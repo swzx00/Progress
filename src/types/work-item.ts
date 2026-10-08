@@ -28,18 +28,25 @@ export interface WorkItemOptions {
   專案Repo: string[];
 }
 
-/** 最近一次搭配的值：date 是工作日期，index 是項次（同一天比較先後用） */
-export interface RecentPair {
-  value: string;
-  date: string;
-  index: number;
-}
-
-/** 交辦單位 → 最近搭配的交辦人員、交辦人員 → 最近搭配的交辦單位（見 utils/recent-pairing.ts） */
-export interface RecentPairs {
-  交辦單位: Record<string, RecentPair>;
-  交辦人員: Record<string, RecentPair>;
-}
+/**
+ * 近期紀錄（表單的推薦與預填用，見 utils/recent-history.ts）：後端回傳的有 id、項次；
+ * 剛存檔補進來的新增紀錄還沒有 id、項次
+ */
+export type RecentItem = Pick<
+  WorkItem,
+  | '工作日期'
+  | '交辦單位'
+  | '交辦人員'
+  | '專案名稱'
+  | '專案Repo'
+  | '工作目標'
+  | '預計期限'
+  | '完成度'
+  | '狀態'
+> & {
+  id?: string;
+  項次?: number;
+};
 
 export const STATUS_OPTIONS = ['進行中', '前端完成', '返修', '待辦', '確認上線', '暫緩'] as const;
 

@@ -10,7 +10,14 @@ import { fetchDaySummary } from '@/composables/useWorkItems';
 import { vAutoResize } from '@/directives/auto-resize';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
-import { withRecentFirst } from '@/utils/recent-pairing';
+import {
+  recentAssignee,
+  recentByTarget,
+  recentProject,
+  recentRepos,
+  recentUnit,
+  withRecentFirst,
+} from '@/utils/recent-history';
 import {
   DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
@@ -67,7 +74,7 @@ const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
 const {
   options,
-  recentPairs,
+  recentItems,
   loading: optionsLoading,
   error: optionsError,
   fetchOptions,
@@ -83,22 +90,29 @@ onMounted(fetchOptions);
 const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
   (values ?? []).map((value) => ({ label: value, value }));
 
-// 交辦單位 ↔ 交辦人員：已選了一邊，另一邊的下拉選單把「近一個月最近一次搭配」的值排最上面並標「最近」
-// （使用者決定：只推薦一個、另一邊空的時候不自動填入）
+// 交辦單位 ↔ 交辦人員、專案名稱 ↔ 專案 Repo：已選了一邊，另一邊的下拉選單把「近一個月最近一筆」
+// 搭配的值排最上面並標「最近」（使用者決定：只推薦、另一邊空的時候不自動填入）。規則見 utils/recent-history.ts
 const unitOptions = computed(() =>
   markRecent(
-    withRecentFirst(
-      options.value?.交辦單位 ?? [],
-      recentPairs.value.交辦人員[form.交辦人員.trim()]?.value,
-    ),
+    withRecentFirst(options.value?.交辦單位 ?? [], recentUnit(recentItems.value, form.交辦人員)),
   ),
 );
 const assigneeOptions = computed(() =>
   markRecent(
     withRecentFirst(
       options.value?.交辦人員 ?? [],
-      recentPairs.value.交辦單位[form.交辦單位.trim()]?.value,
+      recentAssignee(recentItems.value, form.交辦單位),
     ),
+  ),
+);
+const projectOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案名稱 ?? [], recentProject(recentItems.value, form.專案Repo)),
+  ),
+);
+const repoOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案Repo ?? [], recentRepos(recentItems.value, form.專案名稱)),
   ),
 );
 
@@ -118,8 +132,6 @@ const renderRecentOption = ({ node, option }: { node: VNode; option: SelectOptio
         h('span', { class: 'work-item-form-recent-tag', 'aria-hidden': 'true' }, '最近'),
       ])
     : node;
-const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱));
-const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo));
 const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
 const leaveTypeOptions = toSelectOptions(LEAVE_TYPES);
 
@@ -193,6 +205,57 @@ const statusModel = selectModel('狀態');
 // 請假模式的假別存在「工作目標」
 const leaveTypeModel = selectModel('工作目標');
 
+/**
+ * 填完工作目標後預填（使用者決定，只在「新增」工作項目時；編輯、單項複製、請假不預填）：
+ * 工作目標離開焦點時，找近一個月「工作目標相同」的最近一筆（開頭有單號就比單號，沒有才比整段文字，
+ * 見 recentByTarget），找到就：
+ * - 預計期限、完成度、狀態：還是預設值（空白、0、待辦）才帶入，不蓋掉手動改過的值
+ * - 交辦單位、交辦人員：兩個都空才一起帶入
+ * - 專案名稱、專案 Repo：兩個都空才一起帶入
+ * 有帶入任何欄位就在工作目標下方提示帶入了哪些欄位、依據哪天的紀錄
+ */
+const prefillHint = ref('');
+
+const prefillFromTarget = (): void => {
+  if (props.item || copying || isLeaveMode.value || props.saving) return;
+  const source = recentByTarget(recentItems.value, form.工作目標);
+  if (!source) return;
+
+  const filled: string[] = [];
+  if (form.預計期限 === '' && source.預計期限) {
+    form.預計期限 = source.預計期限;
+    filled.push('預計期限');
+  }
+  if (
+    (form.完成度 === '' || form.完成度 === DEFAULT_PROGRESS) &&
+    source.完成度 !== DEFAULT_PROGRESS
+  ) {
+    form.完成度 = source.完成度;
+    filled.push('完成度');
+  }
+  if (
+    form.狀態 === DEFAULT_STATUS &&
+    source.狀態 !== DEFAULT_STATUS &&
+    (STATUS_OPTIONS as readonly string[]).includes(source.狀態)
+  ) {
+    form.狀態 = source.狀態;
+    filled.push('狀態');
+  }
+  if (!form.交辦單位 && !form.交辦人員 && (source.交辦單位 || source.交辦人員)) {
+    form.交辦單位 = source.交辦單位;
+    form.交辦人員 = source.交辦人員;
+    filled.push('交辦單位', '交辦人員');
+  }
+  if (!form.專案名稱 && form.專案Repo.length === 0 && (source.專案名稱 || source.專案Repo.length)) {
+    form.專案名稱 = source.專案名稱;
+    form.專案Repo = [...source.專案Repo];
+    filled.push('專案名稱', '專案 Repo');
+  }
+  if (filled.length > 0) {
+    prefillHint.value = `已依 ${source.工作日期.replaceAll('-', '/')} 的紀錄帶入：${filled.join('、')}`;
+  }
+};
+
 const resetForm = (item: WorkItem | null | undefined): void => {
   form.工作日期 = item?.工作日期 ?? props.defaultDate ?? toDateString(new Date());
   form.交辦單位 = item?.交辦單位 ?? '';
@@ -213,6 +276,7 @@ const resetForm = (item: WorkItem | null | undefined): void => {
   }
   errors.value = {};
   submitAttempted = false;
+  prefillHint.value = '';
   snapshot.value = JSON.stringify(form);
   blankSnapshot.value = snapshot.value;
 };
@@ -694,6 +758,7 @@ const onSubmit = async (): Promise<void> => {
             filterable
             tag
             :options="projectOptions"
+            :render-option="renderRecentOption"
             :loading="optionsLoading"
             :status="errors.專案名稱 ? 'error' : undefined"
             placeholder="請選擇專案名稱"
@@ -718,6 +783,7 @@ const onSubmit = async (): Promise<void> => {
             multiple
             tag
             :options="repoOptions"
+            :render-option="renderRecentOption"
             :loading="optionsLoading"
             :status="errors.專案Repo ? 'error' : undefined"
             placeholder="請選擇專案 Repo (選填)"
@@ -749,8 +815,12 @@ const onSubmit = async (): Promise<void> => {
             required
             :maxlength="WORK_ITEM_RULES.工作目標.maxLength"
             :disabled="saving"
+            @blur="prefillFromTarget"
           />
           <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
+          <span v-if="prefillHint" class="work-item-form__hint" role="status">{{
+            prefillHint
+          }}</span>
         </label>
 
         <label
@@ -1135,6 +1205,13 @@ const onSubmit = async (): Promise<void> => {
 
   &__required {
     color: var(--color-red-600);
+  }
+
+  // 填完工作目標後預填的提示
+  &__hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-blue-700);
   }
 
   // 交辦單位／交辦人員下拉選單的「最近」推薦：選單 teleport 到 body，要用 :global。

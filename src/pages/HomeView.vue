@@ -75,8 +75,8 @@ const copySource = ref<WorkItem | null>(null);
 const saving = ref(false);
 
 const { showToast } = useToast();
-// 存檔成功後更新交辦單位 ↔ 交辦人員的最近搭配，下次開表單不用重新讀選項清單就能推薦
-const { rememberPairs } = useOptions();
+// 存檔成功後更新近期紀錄（表單的推薦與預填用），下次開表單不用重新讀選項清單
+const { rememberItems } = useOptions();
 
 const openCreateForm = (): void => {
   editingItem.value = null;
@@ -133,7 +133,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
     } else {
       await createItem(idToken.value, payload);
     }
-    rememberPairs([payload]);
+    rememberItems([{ ...payload, id: editingItem.value?.id }]);
     await fetchByDate(selectedDate.value);
     formOpen.value = false;
   } catch (e) {
@@ -197,7 +197,7 @@ const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> =
   copyingDay.value = true;
   try {
     await batchCreateItems(idToken.value, payloads, replace);
-    rememberPairs(payloads);
+    rememberItems(payloads);
     copyDayOpen.value = false;
     copyDayReplaceTarget.value = null;
     if (selectedDate.value === targetDate) {
