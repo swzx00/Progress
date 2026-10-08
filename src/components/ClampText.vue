@@ -202,9 +202,12 @@ onBeforeUnmount(() => {
       text-decoration: underline;
     }
 
-    // 收合：展開後全文的下一行
+    // 獨立一行的按鈕（展開後的收合、Repo 欄的展開）：寬度跟著文字走，不要被撐滿整欄
+    // （Repo 欄的展開在 flex column 裡，預設 align-items: stretch 會把按鈕拉滿）
     &--collapse {
       display: block;
+      align-self: flex-start;
+      width: fit-content;
       margin-top: 2px;
       margin-left: 0;
     }
