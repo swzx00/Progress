@@ -263,7 +263,7 @@ export const handlers = [
         const hours = batchHours.get(item.工作日期) ?? 0;
         batchHours.set(item.工作日期, hours + (Number(item.今日工時) || 0));
       });
-      // 覆蓋模式：工時合計只算這批，通過後先軟刪除這些日期原本的紀錄（含請假）
+      // 覆蓋模式：工時合計只算這批，通過後先把這些日期原本的紀錄（含請假）搬到『已刪除紀錄』分頁（mock 沒有分頁，用已刪除標記模擬）
       for (const [date, hours] of batchHours) {
         const otherHours = body.replace ? 0 : getDayHoursExcluding(date);
         if (otherHours + hours > schema.dailyHours.max) {
