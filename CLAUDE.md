@@ -118,6 +118,7 @@ src/
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
     ClampText.vue         # 文字刪節：收合時截斷（手機 3 行、平板桌面 2 行），判斷是否真的被截斷，有滑鼠的裝置用 NTooltip 顯示全文；展開狀態由使用端控制，見「UI/UX 定案」的「文字刪節」
+    OptionsDropdownState.vue # 可搜尋下拉選單（交辦單位、交辦人員、專案名稱、專案 Repo）放在 NSelect empty slot 的狀態畫面：載入中（AppLoading＋「選項載入中」）／載入失敗（「選項清單載入失敗」＋「重新載入」）
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
@@ -298,6 +299,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 
   - 日期欄維持原生 `<input type="date">`（使用者決定，手機用系統原生滾輪）：原生日期欄會忽略 `placeholder`，空白時顯示的是瀏覽器自己的「年／月／日」，所以「預計期限」的 placeholder 實際上看不到，屬已知限制
   - 送出時文字欄位去掉前後空白
+  - **選項清單載入中／失敗**（使用者決定）：交辦單位、交辦人員、專案名稱、專案 Repo 的選項是打開表單時才讀（`useOptions` 的 `fetchOptions`），真後端慢的時候清單會是空的。這四個 `NSelect` 在載入中時設 `loading`（欄位右側轉圈），打開下拉時 `empty` slot 放 `OptionsDropdownState`：轉圈（`AppLoading`）＋下方「選項載入中」；讀取失敗時顯示「選項清單載入失敗」＋「重新載入」（再呼叫一次 `fetchOptions`）。只在載入中或失敗時才放這個 slot，載入完成後沒有符合的選項時維持 Naive UI 原本的空狀態；可輸入新值（`tag`）的功能載入中照常可用
   - **單選 `NSelect` 的 placeholder**：`NSelect` 只有值是 `null` 時才顯示 placeholder，空字串會被當成「選了一個空的值」而不顯示。表單內部（驗證、送出、快照比對）維持用空字串代表「沒選」，交辦單位／交辦人員／專案名稱／狀態綁定 `NSelect` 時經過 `selectModel()` 這層 computed 互轉（`'' ↔ null`）；多選的專案 Repo 是空陣列，本來就正常
   - 必填欄位的名稱後面加紅色「＊」（`--color-red-600`，`aria-hidden`），是否顯示由 `isRequired(field)` 讀 schema 的 `required` 決定，不寫死在 template；欄位名稱跟＊包在 `.work-item-form__label` 裡（label 是 flex column，不包的話＊會被擠到下一行）
 - **表單驗證**（`src/validation/work-item.ts` 的 `validateWorkItem`）：`<form novalidate>` 關掉瀏覽器內建驗證，全部欄位統一走自訂驗證（交辦單位、狀態等是 `NSelect`，不是原生欄位，內建 `required` 檢查不到）
