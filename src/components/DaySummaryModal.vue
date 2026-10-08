@@ -170,6 +170,9 @@ const copy = async (): Promise<void> => {
   font-size: 14px;
   line-height: 1.6;
   color: var(--color-black-800);
+
+  // 很長、中間沒空白的英文（或網址）直接在字中間折行，不會整串被推到下一行、看起來跟「- 」分開
+  overflow-wrap: anywhere;
   resize: none;
   background: var(--color-black-000);
   border: 1px solid var(--color-black-100);
