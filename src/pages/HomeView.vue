@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
-import { computed, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
@@ -16,6 +16,7 @@ import WorkItemTable from '@/components/WorkItemTable.vue';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useOptions } from '@/composables/useOptions';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
+import { THEME_MODES, useTheme, type ThemeMode } from '@/composables/useTheme';
 import { useToast } from '@/composables/useToast';
 import {
   ApiError,
@@ -128,18 +129,40 @@ const optionsManagerOpen = ref(false);
 const daySummaryOpen = ref(false);
 const exportOpen = ref(false);
 
+// 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前的選項前面打勾。
+// 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項
+const { mode: themeMode, isDark, setMode: setThemeMode } = useTheme();
+const THEME_KEY_PREFIX = 'theme:';
+const themeOptions = computed<DropdownOption[]>(() =>
+  THEME_MODES.map(({ mode, label }) => ({
+    label,
+    key: `${THEME_KEY_PREFIX}${mode}`,
+    icon: () =>
+      h(
+        'span',
+        { class: 'home-view__theme-check', 'aria-hidden': 'true' },
+        mode === themeMode.value ? '✓' : '',
+      ),
+  })),
+);
+const onThemeSelect = (key: string): void => {
+  setThemeMode(key.slice(THEME_KEY_PREFIX.length) as ThemeMode);
+};
+
 // 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）、
-// 匯出 Excel（選範圍下載 .xlsx 的 Modal）
+// 匯出 Excel（選範圍下載 .xlsx 的 Modal）、樣式（子選單，切換深色模式）
 type ToolKey = 'options' | 'daySummary' | 'export';
-const toolOptions: DropdownOption[] = [
+const toolOptions = computed<DropdownOption[]>(() => [
   { label: '選項清單', key: 'options' },
   { label: '本日總結', key: 'daySummary' },
   { label: '匯出 Excel', key: 'export' },
-];
-const onToolSelect = (key: ToolKey): void => {
-  if (key === 'options') optionsManagerOpen.value = true;
+  { label: '樣式', key: 'theme', children: themeOptions.value },
+]);
+const onToolSelect = (key: ToolKey | string): void => {
+  if (key.startsWith(THEME_KEY_PREFIX)) onThemeSelect(key);
+  else if (key === 'options') optionsManagerOpen.value = true;
   else if (key === 'daySummary') daySummaryOpen.value = true;
-  else exportOpen.value = true;
+  else if (key === 'export') exportOpen.value = true;
 };
 
 const formOpen = ref(false);
@@ -426,15 +449,45 @@ const onOptionsUnauthorized = (): void => {
     <header class="home-view__header">
       <h1 class="home-view__title">工作進度</h1>
       <span v-if="!isAuthorized" class="home-view__badge">唯讀模式</span>
-      <button
-        type="button"
-        class="home-view__theme-btn"
-        title="深色模式（即將推出）"
-        aria-label="深色模式（即將推出）"
-        disabled
-      >
-        ☾
-      </button>
+      <NDropdown trigger="click" :options="themeOptions" @select="onThemeSelect">
+        <button
+          type="button"
+          class="home-view__theme-btn"
+          :title="isDark ? '樣式：目前是深色' : '樣式：目前是淺色'"
+          :aria-label="isDark ? '樣式：目前是深色' : '樣式：目前是淺色'"
+        >
+          <!-- 圖示：Lucide moon／sun（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0 -->
+          <svg
+            class="home-view__theme-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <template v-if="isDark">
+              <path
+                d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"
+              />
+            </template>
+            <template v-else>
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2" />
+              <path d="M12 20v2" />
+              <path d="m4.93 4.93 1.41 1.41" />
+              <path d="m17.66 17.66 1.41 1.41" />
+              <path d="M2 12h2" />
+              <path d="M20 12h2" />
+              <path d="m6.34 17.66-1.41 1.41" />
+              <path d="m19.07 4.93-1.41 1.41" />
+            </template>
+          </svg>
+        </button>
+      </NDropdown>
       <div v-if="isAuthorized" class="home-view__account">
         <span class="home-view__avatar">{{ userEmail?.charAt(0).toUpperCase() }}</span>
         <span class="home-view__email">{{ userEmail }}</span>
@@ -746,12 +799,28 @@ const onOptionsUnauthorized = (): void => {
     height: 28px;
     aspect-ratio: 1/1;
     padding: 0;
-    font-size: 13px;
     color: var(--color-black-500);
-    cursor: not-allowed;
+    cursor: pointer;
     background: var(--color-black-000);
     border: 1px solid var(--color-black-100);
     border-radius: 999px;
+
+    &:hover {
+      color: var(--color-black-800);
+      background: var(--color-black-050);
+    }
+  }
+
+  &__theme-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  // 樣式選項前面的打勾（下拉選單 teleport 到 body，不吃 scoped 樣式，用 :global）
+  :global(.home-view__theme-check) {
+    display: inline-block;
+    width: 1em;
+    text-align: center;
   }
 
   &__account,

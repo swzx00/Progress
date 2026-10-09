@@ -138,6 +138,7 @@ src/
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢，見下方「台灣國定假日顯示」
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
+    useTheme.ts            # 深色模式：自動（依日出日落）／淺色／深色，套用 <html data-theme>，見「UI/UX 定案」的「深色模式」
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
   utils/
@@ -145,11 +146,12 @@ src/
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
     search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
+    sun-times.ts           # 日出日落時間（台北，天文公式計算），深色模式「自動」用
     recent-history.ts      # 近期紀錄：下拉推薦（recentUnit／recentAssignee／recentProject／recentRepos／withRecentFirst）、工作目標預填（targetKey／recentByTarget）、存檔後更新（upsertRecentItems）
   validation/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
-    tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），預留深色模式擴充，元件一律吃變數不寫死 hex
+    tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），[data-theme='dark'] 底下是深色模式的值，元件一律吃變數不寫死 hex
 shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # clasp 專案（Apps Script 原始碼版控）
@@ -197,7 +199,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 # UI/UX 定案
 
 - 排版方向：A 版（商務簡潔風）——白底、細邊框表格，藍色系點綴，逾期用左側紅色標線＋小紅標籤提示
-- 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
+- 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；淺色、深色兩種模式共用同一組 token，見下方「深色模式」
 - **色彩 token：統一用色階，不分用途**：`src/styles/tokens.scss` 只有一種 token，命名一律是 `--color-<色系>-<階>`（例如 `--color-blue-000`、`--color-black-100`、`--color-red-050`）。元件裡的文字、背景、邊框都直接挑色階使用，**不另外定義 text／surface／border 這類依用途命名的 token**（使用者決定：同一套色階好記、好挑，不想維護兩層命名）
   - **色值來源**：公司共用設計系統的 primitive 色階，完整檔案在 `D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss`（另一個專案的檔案，不在本 repo 內）。色系名稱對應：`Candidate-Blue` → `blue`、`1111-Black` → `black`（中性灰階）、`1111-Rose` → `red`（危險／錯誤）、`1111-Teal`／`1111-Green`／`1111-Yellow`／`1111-Orange` → `teal`／`green`／`yellow`／`orange`。不自己配色，需要新顏色時先從這份檔案的色階挑
   - 例外：`purple` 是推算的色階，不在設計系統裡（搜尋結果用），見「UI/UX 定案」的「搜尋欄」
@@ -212,7 +214,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 今天剛好放假：同樣的階數換成 yellow（徽章 `--color-yellow-800`，表格 `yellow-100`／`050`／`000`／`200`／`1000`）
     - 判斷條件：`DateNav` 用 `isToday` 切 `date-nav__holiday-badge--today` 修飾符；`WorkItemTable` 用 `--holiday` + `--viewing-today` 兩個修飾符的組合。**兩處邏輯要一致**，改其中一處時另一處要跟著改
     - 演變紀錄：最早是自訂的 `#b45309`，後來統一成 `--color-yellow-800`（跟「暫緩」同色），現在再拆成 orange／yellow 兩種
-  - Naive UI（`App.vue` 的 `themeOverrides`）會在 JS 裡運算顏色，吃不了 CSS 變數，只能寫 hex，每個值旁邊用註解標出對應色階：主色 `blue-500`、hover `blue-600`、pressed `blue-700`；錯誤色 `red-600`、hover `red-700`、pressed `red-800`；邊框 `black-100`。改 `tokens.scss` 的色值時這裡要手動同步
+  - Naive UI（`App.vue` 的 `lightOverrides`／`darkOverrides`）會在 JS 裡運算顏色，吃不了 CSS 變數，只能寫 hex，每個值旁邊用註解標出對應色階：主色 `blue-500`、hover `blue-600`、pressed `blue-700`；錯誤色 `red-600`、hover `red-700`、pressed `red-800`；邊框 `black-100`。深色模式用 Naive UI 的 `darkTheme`，同樣的色階取深色模式下的值。改 `tokens.scss` 的色值時這裡要手動同步
   - 設計系統原檔有個小瑕疵：`--1111-Black-100` 被定義兩次（Icon-Neutral 區塊裡寫成 `#fff`，後面 1111/Black 色階又寫成 `#e9ecef`，後者生效），本專案的 `--color-black-100` 用 `#e9ecef`
 - **字體**：中文預設 **Noto Sans TC**，英文／數字預設 **Roboto**，都從 Google Fonts 載入
   - 載入方式：`index.html` 的 `<link rel="stylesheet">`（字重 400／500／600／700，`display=swap`），搭配 `preconnect` 到 `fonts.googleapis.com`／`fonts.gstatic.com` 提早建立連線。不用 SCSS 的 `@import url(...)`，因為那樣要等 CSS 下載完才開始抓字體，會比較慢
@@ -358,7 +360,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
   - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）用在「複製本日」完成、本日總結「複製」成功（使用者決定保留）。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
   - 刪除工作紀錄失敗（`HomeView` 的 `confirmDelete`）比照儲存：用 Toast 顯示錯誤；登入錯誤關閉確認對話框並登出，其他錯誤確認對話框維持開啟，可以直接重試或取消。選項清單管理的錯誤也用 Toast（見上方「選項清單管理」）
-- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面三項：
+- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面四項：
   - 「選項清單」：開 `OptionsManagerModal`（原本的功能）
   - 「本日總結」：開 `DaySummaryModal`，外觀、手機滿版、開關動畫比照 `OptionsManagerModal`（`Transition name="day-summary"`）。直接用畫面上那天已讀到的 `items`，不另外打 API。Textarea 可以先手動修改再複製，修改不存檔、不送後端，關掉重開恢復成產生的內容；Textarea 設 `overflow-wrap: anywhere`，很長、中間沒空白的英文或網址直接在字中間折行，不會整串被推到「- 」的下一行（只影響畫面折行，複製的文字不變）；「複製」用 `navigator.clipboard.writeText`，成功顯示 success Toast「已複製本日總結」，失敗顯示錯誤 Toast。整理後沒有任何紀錄時不顯示 Textarea，改顯示「這天沒有紀錄」
   - **本日總結文字規則**（`src/utils/day-summary.ts` 的 `buildDaySummary`，使用者決定）：
@@ -368,6 +370,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 下面每一行是處理內容的一行，前面加「`- `」（略過空行；本身已經是「-」開頭的維持原樣）；沒有處理內容就只有第一行
     - 範例：`1.web-components-vue3/notify-message-recruit`／`- 即時通測試`／`2.release_source #7902`／`- 與 PM 確認工單內容`
   - 「匯出 Excel」：開 `ExportModal`，見下方「匯出 Excel」
+  - 「樣式」：子選單選 自動（依日出日落）／淺色／深色，見下方「深色模式」
 - **匯出 Excel**（使用者決定）：`ExportModal.vue` 只負責畫面，範圍、檔名、分頁、欄位、樣式規則集中在 `src/utils/export-excel.ts`
   - Modal 外觀、手機滿版、開關動畫比照 `DaySummaryModal`（`Transition name="export-modal"`）
   - 匯出方式四選一（樣式比照表單的「工作項目 ｜ 請假」切換），範圍都用 `NDatePicker`：年份（`type="year"`，預設今年）／季度（`type="quarter"`，預設本季）／月份（`type="month"`，預設本月）／指定天數（`type="daterange"`，預設 `DateNav` 選到的那天到那天）。指定天數超過 366 天在欄位下方顯示錯誤、不送出（後端也會擋）。`NDatePicker` 的值是本地時間的時間戳，轉 `YYYY-MM-DD` 要用本地的年月日，不能用 `toISOString`
@@ -391,6 +394,14 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - **色系：purple**（使用者決定），階數比照今天：表頭 `purple-100`、斑馬紋 `purple-050`／`purple-000`、邊框 `purple-200`、工作日期連結與「展開／收合」`purple-700`（滑過 `purple-800`）、展開列底 `purple-100`／框 `purple-300`；搜尋摘要列 `purple-700` 字、不加底色（使用者決定）；空狀態 `purple-700` 字＋`purple-000` 底。請假、逾期的列照常用自己的 teal／red。`purple` 不是設計系統原有的色階：色相取舊版 `--Purple`（薰衣草），每一階的深淺（OKLab 明度）對齊 `1111-Purple` 同一階推算出來（使用者決定），見 `tokens.scss` 的註解
   - 顯示搜尋結果時（`DateNav` 的 `searching` prop），`DateNav` 只留搜尋欄：日期切換、放假徽章／工時合計／今天、動作按鈕都不顯示（使用者決定，搜尋結果跨日期，跟選到的那天無關）
   - 清空搜尋欄（✕、Esc 或自己刪光）、按「結束搜尋」、點工作日期都會回到單日表格
+- **深色模式**（使用者決定）：
+  - **切換**：「工具 → 樣式」子選單，或標題旁的月亮／太陽按鈕（未登入也能用，圖示是目前套用的主題，Lucide `moon`／`sun`，ISC 授權），三選一：自動（依日出日落，預設）／淺色／深色，目前的選項前面打勾。選擇用 `localStorage`（`theme-mode`）記住，讀寫失敗就當作自動。`main.ts` 掛載前呼叫 `initTheme()`，第一個畫面就是正確的主題
+  - **自動**：依台北的日出日落時間切換，日落後到日出前是深色。`src/utils/sun-times.ts` 用天文公式在瀏覽器裡算（演算法參考 SunCalc，BSD-2 授權），不打 API、不要定位權限；台灣各地差幾分鐘，所以地點固定台北。`useTheme` 用 `setTimeout` 排到下一次日出／日落再切換，分頁切回前景（`visibilitychange`）時也重算一次（背景分頁的計時器會被瀏覽器延後）
+  - **套用方式**：`<html data-theme="light|dark">`。`tokens.scss` 在 `:root[data-theme='dark']` 底下重新定義同一組 token，每個色系的階數上下對調（`000`↔`1000`、`050`↔`900`、`100`↔`800`、`200`↔`700`、`300`↔`600`、`400`↔`500`），元件不用改：淺色模式當背景的淺色階變成深色、當文字的深色階變成淺色。也設 `color-scheme`，原生日期欄、捲軸跟著變深色。Naive UI 換成 `darkTheme`（見上方 `themeOverrides`）
+  - **例外（B 版，使用者決定）**：`blue`／`orange`／`yellow`／`purple` 的 `000`、`050` 不對調，改用 `black` 的深色值（`#000`／`#141618`）。表格的今天／放假／搜尋在深色模式只靠表頭（`100`，等於原本的 `800`）與邊框帶色系，斑馬紋維持中性黑灰；手機卡片沒有表頭，只靠卡片外框區分
+  - 實心按鈕（「＋ 新增」、搜尋按鈕等）的文字是 `black-000`，深色模式下是淺藍底＋黑字，不另外開不對調的例外 token
+  - 寫死的半透明顏色：表單送出中的遮罩用 `color-mix(in srgb, var(--color-black-000) 70%, transparent)`，跟著主題變色；Modal 背景遮罩、陰影維持原本的 `rgb()`
+  - 不受影響：匯出的 Excel 維持淺色；Google 登入按鈕維持 `outline` 樣式
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
 - `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
@@ -521,7 +532,7 @@ npm run format     # Prettier 格式化 src/
 - ~~重新部署 `Code.gs`（選項清單每欄連續存放、值當文字比對）。部署後在編輯器的「執行」選單手動執行一次 `compactOptionsSheet()`，把「選項清單」每一欄往上補齊、去掉重複值（例如重複的「11111」）。部署前真後端新增選項仍會寫在整張分頁的最後一列、純數字的選項仍刪不掉／改不了~~（已完成，2026-10-08 部署並執行 `compactOptionsSheet()`）
 - ~~重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回~~（已完成）
 - 重新部署 `Code.gs`（`type=options` 多回傳近 30 天的近期紀錄 `recentItems`）。部署前表單下拉選單不會有「最近」推薦、填完工作目標也不會預填，其他功能不受影響
-- 重新部署 `Code.gs`（`doGet` 新增 `type=search`，搜尋欄用）。部署前按下搜尋會出現錯誤「缺少 date 參數」（舊後端不認得 `type=search`），推薦選擇與其他功能不受影響
+- ~~重新部署 `Code.gs`（`doGet` 新增 `type=search`，搜尋欄用）。部署前按下搜尋會出現錯誤「缺少 date 參數」（舊後端不認得 `type=search`），推薦選擇與其他功能不受影響~~（已完成）
 - 重新部署 `Code.gs`（`doGet` 新增 `type=range`，匯出 Excel 用）。部署前按「匯出」會出現錯誤 Toast「缺少 date 參數」（舊後端不認得 `type=range`），其他功能不受影響
 
 ---
