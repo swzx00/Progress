@@ -83,6 +83,8 @@ export default defineConfig(({ mode }) => {
               },
               { name: 'vendor-vue', test: /node_modules\/(@vue|vue|vue-router)\//, priority: 3 },
               { name: 'vendor-sortable', test: /node_modules\/(sortablejs|vue-draggable-plus)\// },
+              // 匯出 Excel 才用到，ExportModal 用動態 import() 載入，平常不會下載這包
+              { name: 'vendor-exceljs', test: /node_modules\/exceljs\// },
             ],
           },
         },

@@ -77,6 +77,7 @@
 **doGet(e)**
 - 接受 `date` 參數（`YYYY/MM/DD`，例如 `2026/09/17`，見上方「日期欄位格式」），後端從工作紀錄分頁讀出當天且「已刪除≠TRUE」的列
 - 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見「UI/UX 定案」的「表單的推薦與預填」
+- 額外支援 `type=range&from=YYYY/MM/DD&to=YYYY/MM/DD`（`handleRange_`），讀出 from～to（含頭尾）的未刪除紀錄（含請假），回應 `{ items }`，給前端「匯出 Excel」用。沿用 `readRowsByDate_`，傳入範圍判斷函式（`YYYY/MM/DD` 補零固定長度，字串可直接比大小），一樣只先讀工作日期一欄。檢查日期格式（含 2/30 這類不存在的日期）、from ≤ to、跨度上限 366 天（`RANGE_MAX_DAYS`），不合格回 `{ error }`。公開讀取、不需登入，同上
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
 **前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
@@ -127,6 +128,7 @@ src/
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
     DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋複製按鈕，見「UI/UX 定案」的「工具下拉選單」
+    ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載，見「UI/UX 定案」的「匯出 Excel」
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
@@ -139,6 +141,7 @@ src/
   utils/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
+    export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
     recent-history.ts      # 近期紀錄：下拉推薦（recentUnit／recentAssignee／recentProject／recentRepos／withRecentFirst）、工作目標預填（targetKey／recentByTarget）、存檔後更新（upsertRecentItems）
   validation/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
@@ -167,7 +170,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - Stylelint 16 起已移除所有排版類規則，排版全交給 Prettier，兩者不會互相打架
 - **VS Code 存檔自動整理**（`.vscode/settings.json`，有進版控；`.vscode/extensions.json` 推薦安裝 Prettier、Stylelint 擴充套件）：存檔時先跑 Stylelint 自動修復（含屬性重排，`source.fixAll.stylelint`），再用 Prettier 排版（`editor.formatOnSave`）。關掉 VS Code 內建的 CSS/SCSS 檢查，避免跟 Stylelint 重複報錯；Markdown 不在存檔時自動排版（避免 CLAUDE.md 這類文件被大量重排）
 - **`.editorconfig`**：管編輯器層級的基本排版（縮排、換行符、結尾換行等）
-- **建置拆檔**：`vite.config.ts` 的 `build.rolldownOptions.output.codeSplitting.groups` 把第三方套件拆成 `vendor-vue`／`vendor-naive-ui`／`vendor-naive-ui-deps`／`vendor-sortable`，避免單一檔案超過 500 kB 的建置警告，套件沒升級時檔名不變、瀏覽器可沿用快取。Vite 8 底層是 Rolldown，`manualChunks` 已棄用，要用 `codeSplitting`；群組預設會把相依一起收進去，所以用 `priority` 讓 Vue、Naive UI 的相依套件先被各自的群組認領。新增大型套件時記得看 build 輸出的檔案大小
+- **建置拆檔**：`vite.config.ts` 的 `build.rolldownOptions.output.codeSplitting.groups` 把第三方套件拆成 `vendor-vue`／`vendor-naive-ui`／`vendor-naive-ui-deps`／`vendor-sortable`／`vendor-exceljs`，避免單一檔案超過 500 kB 的建置警告，套件沒升級時檔名不變、瀏覽器可沿用快取。Vite 8 底層是 Rolldown，`manualChunks` 已棄用，要用 `codeSplitting`；群組預設會把相依一起收進去，所以用 `priority` 讓 Vue、Naive UI 的相依套件先被各自的群組認領。新增大型套件時記得看 build 輸出的檔案大小
+  - `vendor-exceljs`（ExcelJS，匯出 Excel 用）約 930 kB，是套件本身預先打包好的單一檔案，拆不開，所以 build 仍會出現超過 500 kB 的警告；它只在按「匯出」時用動態 `import()` 載入，不在 `index.html` 的預載清單裡，一般瀏覽不會下載
 - **`npm audit`**：剩下的 high 都是開發工具（Stylelint、ESLint 的 TypeScript 設定）間接用到的 `braces`（GHSA-vfj7-8cjw-p6xm），目前最新版 3.0.3 仍在受影響範圍、沒有修正版，`npm audit fix --force` 只會把工具鏈降版，不要執行；只影響本機開發工具，不會打包進正式站。有修正版之後再跑 `npm audit fix`
 - **路徑別名**：`@/` 對應 `src/`（`vite.config.ts` 的 `resolve.alias` + `tsconfig.app.json` 的 `paths` 都要同步設定），避免元件一多之後出現 `../../../components/xxx` 這種難維護的相對路徑
 - **Node 版本**：鎖定 `>=24.1.0`（`.nvmrc`、`package.json` 的 `engines`），並用 `.npmrc` 的 `engine-strict=true` 讓版本不符時直接擋下 `npm install`，避免換機器開發版本不一致
@@ -350,7 +354,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
   - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）用在「複製本日」完成、本日總結「複製」成功（使用者決定保留）。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
   - 刪除工作紀錄失敗（`HomeView` 的 `confirmDelete`）比照儲存：用 Toast 顯示錯誤；登入錯誤關閉確認對話框並登出，其他錯誤確認對話框維持開啟，可以直接重試或取消。選項清單管理的錯誤也用 Toast（見上方「選項清單管理」）
-- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面兩項：
+- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面三項：
   - 「選項清單」：開 `OptionsManagerModal`（原本的功能）
   - 「本日總結」：開 `DaySummaryModal`，外觀、手機滿版、開關動畫比照 `OptionsManagerModal`（`Transition name="day-summary"`）。直接用畫面上那天已讀到的 `items`，不另外打 API。Textarea 可以先手動修改再複製，修改不存檔、不送後端，關掉重開恢復成產生的內容；Textarea 設 `overflow-wrap: anywhere`，很長、中間沒空白的英文或網址直接在字中間折行，不會整串被推到「- 」的下一行（只影響畫面折行，複製的文字不變）；「複製」用 `navigator.clipboard.writeText`，成功顯示 success Toast「已複製本日總結」，失敗顯示錯誤 Toast。整理後沒有任何紀錄時不顯示 Textarea，改顯示「這天沒有紀錄」
   - **本日總結文字規則**（`src/utils/day-summary.ts` 的 `buildDaySummary`，使用者決定）：
@@ -359,6 +363,19 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 第一行「`N.標題`」（編號後面不空格）：有專案 Repo 就放 Repo（多個用逗號串，`AAA,BBBB`，同 Sheet 格式），工作目標**開頭**有單號就接在 Repo 後面（空一格）；沒有 Repo 放專案名稱，再沒有放工作目標（這兩種情況不加單號）。單號是「`#` 或 `T` 加 4–5 位數字」（`extractTaskCode`，例如 `#7902`、`T1234`，後面緊接著還有數字就不算）
     - 下面每一行是處理內容的一行，前面加「`- `」（略過空行；本身已經是「-」開頭的維持原樣）；沒有處理內容就只有第一行
     - 範例：`1.web-components-vue3/notify-message-recruit`／`- 即時通測試`／`2.release_source #7902`／`- 與 PM 確認工單內容`
+  - 「匯出 Excel」：開 `ExportModal`，見下方「匯出 Excel」
+- **匯出 Excel**（使用者決定）：`ExportModal.vue` 只負責畫面，範圍、檔名、分頁、欄位、樣式規則集中在 `src/utils/export-excel.ts`
+  - Modal 外觀、手機滿版、開關動畫比照 `DaySummaryModal`（`Transition name="export-modal"`）
+  - 匯出方式四選一（樣式比照表單的「工作項目 ｜ 請假」切換），範圍都用 `NDatePicker`：年份（`type="year"`，預設今年）／季度（`type="quarter"`，預設本季）／月份（`type="month"`，預設本月）／指定天數（`type="daterange"`，預設 `DateNav` 選到的那天到那天）。指定天數超過 366 天在欄位下方顯示錯誤、不送出（後端也會擋）。`NDatePicker` 的值是本地時間的時間戳，轉 `YYYY-MM-DD` 要用本地的年月日，不能用 `toISOString`
+  - 讀資料用 `useWorkItems.ts` 的 `fetchByRange`（後端 `doGet type=range`），請假紀錄一起匯出，不做逾期標示
+  - 按「匯出」：按鈕轉圈並停用（「匯出中」），期間不能關閉 Modal、不能切換範圍；成功下載檔案＋success Toast「已匯出 N 筆紀錄」；失敗用錯誤 Toast，Modal 維持開啟可重試（讀取是公開的，不用處理 `UNAUTHORIZED`）；範圍內沒有紀錄不下載，Modal 內顯示「這段期間沒有紀錄」，換範圍就清掉
+  - 檔名：`工作進度_2026.xlsx`／`工作進度_2026Q4.xlsx`／`工作進度_2026-10.xlsx`／`工作進度_2026-10-01_2026-10-15.xlsx`
+  - **分頁**：年份、季度每月一個「月份分頁」（`2026-10`）；月份、指定天數每天一個「日期分頁」（`10-01 (三)`，星期寫在分頁名稱上），指定天數跨年時改用 `2026-12-31 (四)` 避免同名。沒有紀錄的月份／日子不建分頁。每個分頁照「工作日期 → 項次」排序，表頭凍結、自動篩選（範圍只含表頭＋資料列，不含工時合計列）
+  - **欄位**：月份分頁是工作日期（文字 `2026/10/09 (五)`）、交辦單位、交辦人員、專案名稱、專案Repo（逗號串 `AAA,BBBB`）、工作目標、處理內容、今日工時（數字）、預計期限（日期儲存格 `yyyy/mm/dd`，空值留白）、完成度（數字）、狀態，不要項次、不要工時合計列；日期分頁把工作日期換成項次，最下方多一列「工時合計」（第一欄文字、今日工時欄放當天合計，含請假，整列粗體）。工作目標、處理內容較寬並自動換行（保留多行），所有儲存格靠上對齊
+  - 完成度的儲存格格式是 `General"%"`：照實際值顯示、不補多餘的 0（70%、12.5%、12.25%，同畫面規則）；不用 `0.##"%"`，整數時 Excel 會多一個小數點（`70.%`）
+  - 預計期限用 UTC 午夜建 `Date`（ExcelJS 用 UTC 換算日期序號），不會差一天
+  - **樣式**（ExcelJS 吃 ARGB hex，吃不了 CSS 變數，程式裡每個值旁邊註解對應色階，改 `tokens.scss` 時要手動同步）：表頭底 `blue-700`、字 `black-000` 粗體；資料列斑馬紋第 1、3、5…筆 `black-050`、雙數 `black-000`，字 `black-800`；請假列整列（蓋過斑馬紋）底 `teal-050`、字 `teal-800`；工時合計列底 `black-100`、字 `black-800` 粗體；格線 `black-100` 細線
+  - ExcelJS 用動態 `import()` 只在按「匯出」時載入（`vendor-exceljs`，見「開發工具鏈」的建置拆檔）
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
 - `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
@@ -489,6 +506,7 @@ npm run format     # Prettier 格式化 src/
 - ~~重新部署 `Code.gs`（選項清單每欄連續存放、值當文字比對）。部署後在編輯器的「執行」選單手動執行一次 `compactOptionsSheet()`，把「選項清單」每一欄往上補齊、去掉重複值（例如重複的「11111」）。部署前真後端新增選項仍會寫在整張分頁的最後一列、純數字的選項仍刪不掉／改不了~~（已完成，2026-10-08 部署並執行 `compactOptionsSheet()`）
 - ~~重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回~~（已完成）
 - 重新部署 `Code.gs`（`type=options` 多回傳近 30 天的近期紀錄 `recentItems`）。部署前表單下拉選單不會有「最近」推薦、填完工作目標也不會預填，其他功能不受影響
+- 重新部署 `Code.gs`（`doGet` 新增 `type=range`，匯出 Excel 用）。部署前按「匯出」會出現錯誤 Toast「缺少 date 參數」（舊後端不認得 `type=range`），其他功能不受影響
 
 ---
 

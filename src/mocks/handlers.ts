@@ -208,6 +208,31 @@ type DoPostPayload =
   | RenameOptionPayload
   | DeleteOptionPayload;
 
+// 匯出 Excel（type=range）一次最多可讀的天數，跟 Code.gs 的 RANGE_MAX_DAYS 一致
+const RANGE_MAX_DAYS = 366;
+
+// YYYY/MM/DD 轉成 UTC 午夜的毫秒數，格式或日期本身不合法回 NaN（同 Code.gs 的 apiDateToUtc_）
+const apiDateToUtc = (value: string | null): number => {
+  if (!value || !/^\d{4}\/\d{2}\/\d{2}$/.test(value)) return NaN;
+  const [year, month, day] = value.split('/').map(Number) as [number, number, number];
+  const time = Date.UTC(year, month - 1, day);
+  const check = new Date(time);
+  if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return NaN;
+  return time;
+};
+
+// 錯誤訊息跟 Code.gs 的 handleRange_ 一致
+const validateRange = (from: string | null, to: string | null): string | undefined => {
+  const fromTime = apiDateToUtc(from);
+  const toTime = apiDateToUtc(to);
+  if (Number.isNaN(fromTime) || Number.isNaN(toTime)) return 'from／to 日期格式不正確';
+  if (fromTime > toTime) return '開始日期不能晚於結束日期';
+  if (Math.round((toTime - fromTime) / 86400000) + 1 > RANGE_MAX_DAYS) {
+    return `日期範圍不可超過 ${RANGE_MAX_DAYS} 天`;
+  }
+  return undefined;
+};
+
 export const handlers = [
   http.get('*/exec', ({ request }) => {
     const url = new URL(request.url);
@@ -220,6 +245,18 @@ export const handlers = [
         cutoff,
       );
       return HttpResponse.json({ options, recentItems });
+    }
+
+    if (url.searchParams.get('type') === 'range') {
+      const rangeError = validateRange(url.searchParams.get('from'), url.searchParams.get('to'));
+      if (rangeError) return HttpResponse.json({ error: rangeError });
+      const from = url.searchParams.get('from') as string;
+      const to = url.searchParams.get('to') as string;
+      // YYYY/MM/DD 補零固定長度，字串可以直接比大小（同 Code.gs 的 handleRange_）
+      const rangeItems = items.filter(
+        (item) => item.工作日期 >= from && item.工作日期 <= to && !item.已刪除,
+      );
+      return HttpResponse.json({ items: rangeItems });
     }
 
     const date = url.searchParams.get('date') ?? today;
