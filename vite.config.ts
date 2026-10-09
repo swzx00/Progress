@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 
 import vue from '@vitejs/plugin-vue';
@@ -65,6 +66,11 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
+    },
+    test: {
+      include: ['src/**/*.spec.ts'],
+      // 日期相關的測試要固定在台灣時區，換機器（CI 是 UTC）結果才一致
+      globalSetup: ['./vitest.global-setup.ts'],
     },
     build: {
       rolldownOptions: {
