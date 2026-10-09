@@ -19,6 +19,7 @@ import {
   recentUnit,
   withRecentFirst,
 } from '@/utils/recent-history';
+import { hoursToRange, rangeToHours, roundToQuarter } from '@/utils/work-hours';
 import {
   DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
@@ -74,6 +75,7 @@ const emit = defineEmits<{
 const {
   options,
   recentItems,
+  workHours,
   loading: optionsLoading,
   error: optionsError,
   fetchOptions,
@@ -427,36 +429,123 @@ watch(
 );
 
 /**
+ * 工作時段（請假是「請假時段」，有工時設定才顯示，使用者決定）：時段只是換算今日工時的工具，不存檔、不送後端，
+ * 也不列入「放棄變更」的快照比對。換算規則在 utils/work-hours.ts。
+ * - 打開表單、改工作日期時依項次推算：開始時間＝上班時間＋當天排在這筆前面的紀錄（含請假）工時累計
+ *   （新增、複製、編輯改到別天：接在當天所有紀錄後面；編輯沒改日期：只累計項次在它前面的）
+ * - 改時段（開始、結束都填才換算）→ 只更新今日工時，保留使用者填的時間；離開時間欄位時四捨五入到 15 分鐘
+ * - 改今日工時 → 重新推算時段
+ * 雙向連動看最後是誰改的：時段換算出的小時寫進今日工時時，下方 watch 跳過那一次，不會反過來重算時段
+ */
+const rangeStart = ref('');
+const rangeEnd = ref('');
+const rangeError = ref('');
+/** 開始時間要從上班時間往後累計的小時數；當天紀錄還沒查到（或查詢失敗）是 null，不推算 */
+const rangeOffset = ref<number | null>(null);
+// 查詢當天紀錄期間使用者改過時段，查回來時就不覆蓋使用者填的時間
+let rangeTouched = false;
+// 今日工時是由時段換算寫入的，watch 跳過這一次
+let hoursFromRange = false;
+
+const recomputeRange = (): void => {
+  rangeError.value = '';
+  const setting = workHours.value;
+  const hours = form.今日工時;
+  const range =
+    setting && rangeOffset.value !== null && hours !== ''
+      ? hoursToRange(rangeOffset.value, hours, setting)
+      : null;
+  rangeStart.value = range?.start ?? '';
+  rangeEnd.value = range?.end ?? '';
+};
+
+const applyRange = (): void => {
+  rangeTouched = true;
+  rangeError.value = '';
+  if (!workHours.value || !rangeStart.value || !rangeEnd.value) return;
+  const hours = rangeToHours(
+    roundToQuarter(rangeStart.value),
+    roundToQuarter(rangeEnd.value),
+    workHours.value,
+  );
+  if (hours === null) {
+    rangeError.value = '結束時間需晚於開始時間';
+    return;
+  }
+  if (form.今日工時 !== hours) {
+    hoursFromRange = true;
+    form.今日工時 = hours;
+  }
+};
+
+const onRangeBlur = (field: 'start' | 'end'): void => {
+  if (field === 'start') rangeStart.value = roundToQuarter(rangeStart.value);
+  else rangeEnd.value = roundToQuarter(rangeEnd.value);
+  applyRange();
+};
+
+watch(
+  () => form.今日工時,
+  () => {
+    if (hoursFromRange) {
+      hoursFromRange = false;
+      return;
+    }
+    rangeTouched = false;
+    recomputeRange();
+  },
+);
+
+// 工時設定比當天紀錄晚讀到時，補推算一次
+watch(workHours, () => {
+  if (!rangeTouched) recomputeRange();
+});
+
+/**
  * 項次欄（唯讀，只負責顯示；項次一律由後端決定，送出的資料不含項次，後端也會忽略
  * 前端送來的值，就算用開發者工具改了欄位也不會影響 Sheet）：
  * - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
  * - 新增，或編輯時把工作日期改到別天：顯示那一天的預計項次
  * 查詢中或失敗時留空（顯示 placeholder「項次」）。
  * 同一次查詢也算出當天其他紀錄的工時合計（otherHours），編輯且日期沒改時也要查。
+ * 同一次查詢也帶回當天各紀錄的項次與工時，推算工作時段用（refreshRange 為 true 時重新推算）。
  * 連續改日期時只採用最後一次查詢的結果，避免較早的回應晚到、蓋掉新的值。
  */
 const indexValue = ref<number | null>(null);
 let latestDayRequest = 0;
 
-const updateDaySummary = async (): Promise<void> => {
+const updateDaySummary = async (refreshRange: boolean): Promise<void> => {
   const requestId = ++latestDayRequest;
   const date = form.工作日期;
   // 編輯且工作日期沒改：沿用這筆紀錄自己的項次
   const ownIndex = props.item && date === props.item.工作日期 ? props.item.項次 : null;
   indexValue.value = ownIndex;
   otherHours.value = null;
+  if (refreshRange) {
+    rangeTouched = false;
+    rangeOffset.value = null;
+  }
   if (!date) return;
   try {
     const summary = await fetchDaySummary(date, props.item?.id);
     if (requestId !== latestDayRequest) return;
     if (ownIndex === null) indexValue.value = summary.nextIndex;
     otherHours.value = summary.otherHours;
+    if (refreshRange) {
+      // 排在這筆前面的紀錄：編輯沒改日期只算項次比它小的，其他情況（新增、複製、改到別天）是當天全部
+      rangeOffset.value = summary.entries
+        .filter(
+          (entry) => entry.id !== props.item?.id && (ownIndex === null || entry.項次 < ownIndex),
+        )
+        .reduce((sum, entry) => sum + (Number(entry.今日工時) || 0), 0);
+      if (!rangeTouched) recomputeRange();
+    }
   } catch {
     // 查不到就維持空白，不影響存檔（實際項次與每日工時上限都由後端寫入時把關）
   }
 };
 
-watch([() => form.工作日期, () => props.item], updateDaySummary, { immediate: true });
+watch([() => form.工作日期, () => props.item], () => updateDaySummary(true), { immediate: true });
 
 const title = computed(() => {
   const subject = isLeaveMode.value ? '請假' : '工作項目';
@@ -475,7 +564,8 @@ const onSubmit = async (): Promise<void> => {
   if (props.saving || checkingDayHours.value) return;
   submitAttempted = true;
   errors.value = validate(form);
-  if (Object.keys(errors.value).length > 0) {
+  // 時段的結束早於或等於開始時，換算不出今日工時，擋下不送出
+  if (Object.keys(errors.value).length > 0 || rangeError.value) {
     void scrollToFirstError();
     return;
   }
@@ -484,7 +574,8 @@ const onSubmit = async (): Promise<void> => {
   if (otherHours.value === null) {
     checkingDayHours.value = true;
     try {
-      await updateDaySummary();
+      // 只補查工時合計，不重新推算時段（避免蓋掉使用者填的時間）
+      await updateDaySummary(false);
     } finally {
       checkingDayHours.value = false;
     }
@@ -660,6 +751,41 @@ const onSubmit = async (): Promise<void> => {
             />
             <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
           </label>
+
+          <!-- 請假時段：有工時設定才顯示，只用來換算請假時數，不存檔（請假、工作項目各放一份，位置不同） -->
+          <div
+            v-if="workHours"
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': rangeError }"
+            role="group"
+            aria-label="請假時段"
+          >
+            請假時段
+            <div class="work-item-form__range">
+              <input
+                v-model="rangeStart"
+                type="time"
+                step="900"
+                aria-label="開始時間"
+                title="開始時間"
+                :disabled="saving"
+                @change="applyRange"
+                @blur="onRangeBlur('start')"
+              />
+              <span class="work-item-form__range-sep" aria-hidden="true">～</span>
+              <input
+                v-model="rangeEnd"
+                type="time"
+                step="900"
+                aria-label="結束時間"
+                title="結束時間"
+                :disabled="saving"
+                @change="applyRange"
+                @blur="onRangeBlur('end')"
+              />
+            </div>
+            <span v-if="rangeError" class="work-item-form__error">{{ rangeError }}</span>
+          </div>
 
           <label
             class="work-item-form__field"
@@ -856,6 +982,41 @@ const onSubmit = async (): Promise<void> => {
           />
           <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
         </label>
+
+        <!-- 工作時段：有工時設定才顯示，只用來換算今日工時，不存檔（請假、工作項目各放一份，位置不同） -->
+        <div
+          v-if="workHours && !isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': rangeError }"
+          role="group"
+          aria-label="工作時段"
+        >
+          工作時段
+          <div class="work-item-form__range">
+            <input
+              v-model="rangeStart"
+              type="time"
+              step="900"
+              aria-label="開始時間"
+              title="開始時間"
+              :disabled="saving"
+              @change="applyRange"
+              @blur="onRangeBlur('start')"
+            />
+            <span class="work-item-form__range-sep" aria-hidden="true">～</span>
+            <input
+              v-model="rangeEnd"
+              type="time"
+              step="900"
+              aria-label="結束時間"
+              title="結束時間"
+              :disabled="saving"
+              @change="applyRange"
+              @blur="onRangeBlur('end')"
+            />
+          </div>
+          <span v-if="rangeError" class="work-item-form__error">{{ rangeError }}</span>
+        </div>
 
         <label
           v-if="!isLeaveMode"
@@ -1187,6 +1348,22 @@ const onSubmit = async (): Promise<void> => {
       font-weight: 400;
       color: var(--color-black-300);
     }
+  }
+
+  // 工作時段：開始時間～結束時間兩個時間欄並排
+  &__range {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+
+    input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__range-sep {
+    color: var(--color-black-500);
   }
 
   &__error {

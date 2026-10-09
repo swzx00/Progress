@@ -3,16 +3,25 @@ import { ref } from 'vue';
 import { ApiError, type ApiErrorCode } from '@/composables/useWorkItems';
 import type { RecentItem, WorkItemOptions } from '@/types/work-item';
 import { upsertRecentItems } from '@/utils/recent-history';
+import type { WorkHoursSetting } from '@/utils/work-hours';
 
 interface DoGetOptionsResponse {
   options: WorkItemOptions;
   /** 近期紀錄（推薦與預填用）；舊版後端沒有這個欄位，沒有就當作沒有推薦、不預填 */
   recentItems?: RecentItem[];
+  /** 工時設定，沒設定時是 null；舊版後端沒有這個欄位，當作沒設定（表單不顯示工作時段） */
+  workHours?: WorkHoursSetting | null;
   error?: string;
 }
 
 interface DoPostOptionsResponse {
   options?: WorkItemOptions;
+  error?: string;
+  code?: ApiErrorCode;
+}
+
+interface DoPostWorkHoursResponse {
+  workHours?: WorkHoursSetting | null;
   error?: string;
   code?: ApiErrorCode;
 }
@@ -27,6 +36,8 @@ const API_BASE_URL = shouldUseDevProxy
 const options = ref<WorkItemOptions | null>(null);
 /** 近期紀錄（表單下拉推薦、填完工作目標後預填用），日期轉成前端內部的 YYYY-MM-DD */
 const recentItems = ref<RecentItem[]>([]);
+/** 工時設定（表單的工作時段換算用），沒設定時是 null */
+const workHours = ref<WorkHoursSetting | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 let fetchPromise: Promise<void> | null = null;
@@ -64,6 +75,7 @@ const fetchOptions = async (): Promise<void> => {
       }
       options.value = data.options;
       recentItems.value = toIsoRecentItems(data.recentItems);
+      workHours.value = data.workHours ?? null;
     } catch (e) {
       error.value = e instanceof Error ? e.message : '讀取選項清單時發生未知錯誤';
     } finally {
@@ -123,10 +135,28 @@ const deleteOption = async (
   options.value = await postOptionAction(idToken, { action: 'deleteOption', category, value });
 };
 
+/**
+ * 儲存工時設定（setting 為 null 代表清除），回應帶回最新的工時設定，直接覆寫本地快取。
+ * 失敗丟帶 code 的 ApiError，呼叫端才分得出登入錯誤
+ */
+const saveWorkHours = async (idToken: string, setting: WorkHoursSetting | null): Promise<void> => {
+  const res = await fetch(API_BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken, action: 'saveWorkHours', workHours: setting }),
+  });
+  const data = (await res.json()) as DoPostWorkHoursResponse;
+  if (data.error) {
+    throw new ApiError(data.error, data.code);
+  }
+  workHours.value = data.workHours ?? null;
+};
+
 export function useOptions() {
   return {
     options,
     recentItems,
+    workHours,
     loading,
     error,
     fetchOptions,
@@ -134,5 +164,6 @@ export function useOptions() {
     addOption,
     renameOption,
     deleteOption,
+    saveWorkHours,
   };
 }

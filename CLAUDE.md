@@ -1,6 +1,6 @@
 # 專案簡介
 
-> 最後更新：2026-10-09
+> 最後更新：2026-10-10
 
 「工作進度」列管系統。取代目前手動維護的 Google Sheet 表單，改用前端頁面輸入/檢視資料，資料實際存放位置仍是 Google Sheet。
 
@@ -65,6 +65,7 @@
 **附件欄位**：已從系統範圍移除（圖片需經 Google Drive 中轉才能顯示，複雜度高，暫不做上傳功能）。Sheet 上保留原欄位，有需要時使用者自行手動貼連結。
 
 **選項清單分頁**（新增，命名「選項清單」）：存放「交辦單位」「交辦人員」「專案名稱」「專案Repo」的可選值，供前端可搜尋下拉選單讀取；使用者輸入清單沒有的新值時，`doPost` 的 `create` 動作會同步把新值寫回此分頁。
+- 同一分頁另有一欄表頭「工時設定」（使用者決定，`Code.gs` 的 `WORK_HOURS_HEADER`）：第 2～5 列依序是上班時間、下班時間、午休開始、午休結束（`HH:mm`，午休沒填留空），儲存格純文字格式（`@`，避免 Sheet 把 `08:30` 轉成時間值；讀取時遇到 `Date` 用試算表時區轉回 `HH:mm`，`formatTimeCell_`）。這欄不屬於 `OPTION_CATEGORIES`，不會出現在管理選項清單或下拉選單；欄不存在時第一次儲存自動在最後面加表頭。規則見「UI/UX 定案」的「工時設定」
 
 **資料模式**：情境 A（日誌式）——同一專案每天新增一列新紀錄，不覆寫舊資料，歷史紀錄自然依時間往下疊。
 
@@ -76,7 +77,7 @@
 
 **doGet(e)**
 - 接受 `date` 參數（`YYYY/MM/DD`，例如 `2026/09/17`，見上方「日期欄位格式」），後端從工作紀錄分頁讀出當天且「已刪除≠TRUE」的列
-- 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見「UI/UX 定案」的「表單的推薦與預填」
+- 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems, workHours }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見「UI/UX 定案」的「表單的推薦與預填」；`workHours` 是工時設定（`getWorkHours_`，`{ start, end, breakStart?, breakEnd? }`，沒設定或設定不合法時 `null`），見「UI/UX 定案」的「工時設定」
 - 額外支援 `type=range&from=YYYY/MM/DD&to=YYYY/MM/DD`（`handleRange_`），讀出 from～to（含頭尾）的未刪除紀錄（含請假），回應 `{ items }`，給前端「匯出 Excel」用。沿用 `readRowsByDate_`，傳入範圍判斷函式（`YYYY/MM/DD` 補零固定長度，字串可直接比大小），一樣只先讀工作日期一欄。檢查日期格式（含 2/30 這類不存在的日期）、from ≤ to、跨度上限 366 天（`RANGE_MAX_DAYS`），不合格回 `{ error }`。公開讀取、不需登入，同上
 - 額外支援 `type=search&q=關鍵字[&field=欄位]`（`handleSearch_`），讀整張工作紀錄分頁找出符合的未刪除紀錄（含請假），給前端搜尋欄用，回應 `{ items, total }`：照「工作日期新的在前、同一天照項次」排序，最多回傳 `SEARCH_MAX_RESULTS`（200）筆，`total` 是全部符合的筆數。比對規則（`matchesSearch_`）跟前端 `src/utils/search-work-items.ts` 的 `matchesSearch` 手動同步，見「UI/UX 定案」的「搜尋欄」。關鍵字不可空白、上限 `SEARCH_KEYWORD_MAX`（100）字，`field` 只接受 `SEARCH_FIELDS`，不合格回 `{ error }`。公開讀取、不需登入
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
@@ -92,6 +93,7 @@
   - `batchCreate`：payload 帶 `items` 陣列，一次新增多筆（前端「複製本日」用，`handleBatchCreate_`）。全部先驗證，任何一筆不合格（錯誤訊息標出第幾筆）、或任何一天的工時合計（既有紀錄＋這批）超過 24 小時，就**整批退回、不寫入任何一筆**；通過後項次依陣列順序照每日編號規則接續，整批的列一次 `setValues` 寫入，新值同步寫回「選項清單」（請假列一樣略過）。回應 `{ items: [...], replaced }`。另可帶 `replace: true`（「複製本日」覆蓋目標日用）：工時合計只算這批，驗證全部通過後，先把這批涉及的工作日期原本的紀錄（含請假）**搬到「已刪除紀錄」分頁**（`moveDayRowsToDeleted_`），再寫入，新紀錄從 1 開始編號，`replaced` 是被搬走的筆數。驗證沒過時原本的紀錄完全不動
   - `reorder`：payload 帶 `date` 與那天所有未刪除紀錄（含請假）依新順序排列的 `ids`（`handleReorder_`）。`ids` 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少、不能重複、不能混到已刪除或別天的），不一致代表資料已被別處改過，回「紀錄已變更，請重新整理後再排序」、不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見下方「選項清單管理」
+  - `saveWorkHours`：payload 帶 `workHours`（`{ start, end, breakStart?, breakEnd? }`，`null` 代表清除），寫入「選項清單」分頁的「工時設定」欄（`handleSaveWorkHours_`）。後端也驗證（`validateWorkHours_`，規則與訊息跟前端 `validateWorkHoursSetting` 手動同步）：格式 `HH:mm`、上班 < 午休開始 < 午休結束 < 下班、每日工時剛好 `WORK_HOURS_DAILY_STANDARD`（8）小時，不合格回 `{ error }`；回應帶回最新的 `{ workHours }`
 - 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
@@ -131,6 +133,7 @@ src/
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
     DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋複製按鈕，見「UI/UX 定案」的「工具下拉選單」
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載，見「UI/UX 定案」的「匯出 Excel」
+    WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間，見「UI/UX 定案」的「工時設定」
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts，見下方「UI/UX 定案」的儲存失敗處理
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
@@ -145,6 +148,7 @@ src/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
+    work-hours.ts          # 工時設定：時段與小時互換（rangeToHours／hoursToRange／roundToQuarter）、設定驗證（validateWorkHoursSetting，Code.gs 手動同步）
     search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
     date.ts                # 本地時間的 YYYY-MM-DD 日期字串（toLocalDateString／todayString／parseLocalDate／addDays），前端產生日期字串一律用這裡，不要用 toISOString
     sun-times.ts           # 日出日落時間（台北，天文公式計算），深色模式「自動」用
@@ -305,7 +309,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
   - 新增，或編輯時把工作日期改到別天：顯示那天的預計項次（`fetchDaySummary`，同一次查詢也算出當天其他紀錄的工時合計，沿用 `doGet` 的 `date` 查詢自己算，不另開 API、不影響表格的 `items`）；查詢中或失敗時留空（顯示 placeholder），不擋存檔。連續改日期只採用最後一次查詢的結果
   - 預計項次只是參考值，實際項次由後端寫入當下決定（中間若有其他新增，號碼可能較大）
-- 表單欄位順序：工作日期／項次 → 交辦單位／交辦人員 → 專案名稱 → 專案 Repo → 工作目標 → 處理內容 → 今日工時 → 完成度 → 預計期限 → 狀態
+- 表單欄位順序：工作日期／項次 → 交辦單位／交辦人員 → 專案名稱 → 專案 Repo → 工作目標 → 處理內容 → 今日工時 → （工作時段，有工時設定才有）→ 完成度 → 預計期限 → 狀態；請假是 工作日期／項次 → 假別 → 請假時數 → （請假時段）→ 備註
 - **表單欄位規格**（使用者定案；規則數值以 `shared/validation-schema.json` 為準）：
 
   | 欄位 | 必填 | 預設 | placeholder | 限制 |
@@ -361,7 +365,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
   - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）用在「複製本日」完成、本日總結「複製」成功（使用者決定保留）。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
   - 刪除工作紀錄失敗（`HomeView` 的 `confirmDelete`）比照儲存：用 Toast 顯示錯誤；登入錯誤關閉確認對話框並登出，其他錯誤確認對話框維持開啟，可以直接重試或取消。選項清單管理的錯誤也用 Toast（見上方「選項清單管理」）
-- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面四項：
+- **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面五項：
   - 「選項清單」：開 `OptionsManagerModal`（原本的功能）
   - 「本日總結」：開 `DaySummaryModal`，外觀、手機滿版、開關動畫比照 `OptionsManagerModal`（`Transition name="day-summary"`）。直接用畫面上那天已讀到的 `items`，不另外打 API。Textarea 可以先手動修改再複製，修改不存檔、不送後端，關掉重開恢復成產生的內容；Textarea 設 `overflow-wrap: anywhere`，很長、中間沒空白的英文或網址直接在字中間折行，不會整串被推到「- 」的下一行（只影響畫面折行，複製的文字不變）；「複製」用 `navigator.clipboard.writeText`，成功顯示 success Toast「已複製本日總結」，失敗顯示錯誤 Toast。整理後沒有任何紀錄時不顯示 Textarea，改顯示「這天沒有紀錄」
   - **本日總結文字規則**（`src/utils/day-summary.ts` 的 `buildDaySummary`，使用者決定）：
@@ -371,7 +375,24 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 下面每一行是處理內容的一行，前面加「`- `」（略過空行；本身已經是「-」開頭的維持原樣）；沒有處理內容就只有第一行
     - 範例：`1.web-components-vue3/notify-message-recruit`／`- 即時通測試`／`2.release_source #7902`／`- 與 PM 確認工單內容`
   - 「匯出 Excel」：開 `ExportModal`，見下方「匯出 Excel」
+  - 「工時設定」：開 `WorkHoursSettingModal`，見下方「工時設定」
   - 「樣式」：子選單選 自動（依日出日落）／淺色／深色，見下方「深色模式」
+- **工時設定**（使用者決定）：工作紀錄分頁結構不改，後端只存「今日工時」（小時）；時段只是表單上的換算工具，**不存檔、不送後端**。設定存在「選項清單」分頁的「工時設定」欄（見「Google Sheet 結構設計」的選項清單分頁）。換算與驗證規則集中在 `src/utils/work-hours.ts`（純函式）
+  - **設定 Modal**（`WorkHoursSettingModal.vue`）：「工具」下拉選單的「工時設定」，只有 `isAuthorized` 看得到。外觀、手機滿版、開關動畫比照 `ExportModal`（`Transition name="work-hours-setting"`）
+    - 欄位是原生 `<input type="time" step="900">`：上班時間、下班時間、午休時間（開始 ～ 結束，選填），下方顯示「每日工時：X 小時」；離開時間欄位時四捨五入到 15 分鐘
+    - 驗證（第一次按「儲存」才顯示，之後即時更新）：上班、下班必填；午休要填就開始結束都填；上班 < 午休開始 < 午休結束 < 下班；每日工時（下班 − 上班 − 午休，沒填午休就是下班 − 上班）必須剛好 8 小時，否則「每日工時需剛好 8 小時（目前 X 小時）」。8 是 `shared/validation-schema.json` 的 `workHours.dailyStandard`（`Code.gs` 的 `WORK_HOURS_DAILY_STANDARD` 手動同步）
+    - 預設空白；「清除設定」回到空白（還沒有設定時停用），清除後表單不再出現時段欄位
+    - 儲存成功 success Toast「已儲存工時設定」並關閉 Modal；清除成功 success Toast「已清除工時設定」、Modal 維持開啟；失敗用錯誤 Toast，Modal 維持原狀；`UNAUTHORIZED` 時關 Modal 並登出（比照 `OptionsManagerModal`）
+    - `useOptions.ts` 的 `workHours` 保存設定（跟選項清單同一次讀取，舊版後端沒有這個欄位時當作沒設定），`saveWorkHours` 存檔後直接用回應覆寫
+  - **表單的工作時段**（`WorkItemForm.vue`）：有工時設定時，「今日工時」下方多一列「工作時段」（請假模式是「請假時數」下方「請假時段」），兩個時間欄「開始時間」～「結束時間」，選填；沒設定時完全不顯示
+    - 打開表單（新增、編輯、複製）、改工作日期時依項次推算並帶入：開始時間＝上班時間＋排在這筆前面的紀錄工時累計（含請假，跳過午休）。新增、複製、編輯改到別天：接在當天所有紀錄後面；編輯沒改日期：只累計項次排在它前面的紀錄。資料來自 `fetchDaySummary` 那次查詢（`entries`：當天各紀錄的 id、項次、工時），不多打 API。畫面上不標示「依項次推算」
+    - 雙向連動看最後是誰改的：改時段（開始、結束都填才換算）→ 只更新今日工時、保留使用者填的時間；改今日工時 → 重新推算時段。時段換算寫入今日工時時，今日工時的 watch 跳過那一次（`hoursFromRange`），不會互相觸發；查詢當天紀錄期間使用者改過時段（`rangeTouched`），查回來也不覆蓋
+    - 離開時間欄位時四捨五入到最近的 15 分鐘（換算時也用四捨五入後的值）；結束早於或等於開始（含跨午夜，不支援）時在欄位下方提示「結束時間需晚於開始時間」並擋下送出
+    - 換算出的小時照原本驗證（0–24、當天合計不超過 24、請假 0.25–8）；送出只送今日工時，時段不列入「放棄變更」的快照比對
+  - **換算規則**（`work-hours.ts`，型別 `WorkHoursSetting { start, end, breakStart?, breakEnd? }`，都是 `HH:mm`）
+    - `rangeToHours(start, end, setting)`：結束 − 開始；只有開始早於午休開始、而且結束晚於午休結束（跨過整段午休）才扣掉午休長度，有一端落在午休內（含剛好等於午休開始或結束）整段照算不扣；沒填午休不扣；上班時間外（例如 07:00–08:30、18:00–20:00）照算。範例（08:30–18:00、午休 12:00–13:30）：11:00–14:00 得 1.5、12:15–13:00 得 0.75、11:00–13:00 得 2、12:00–14:00 得 2、11:00–13:30 得 2.5、07:00–08:30 得 1.5、17:00–20:00 得 3
+    - `hoursToRange(startOffsetHours, hours, setting)`：從上班時間起累計、遇到午休跳過；剛好累計到午休開始時，結束時間顯示午休開始（例如 11:00–12:00），下一筆的開始才從午休結束起算（開始剛好落在午休開始就移到午休結束）。累計超過下班時間直接往後延（18:00 之後接 18:00–19:00）。反推出的時段換算回小時一定等於原本小時（例：11:00 起 1.25 小時 → 11:00–13:45）。工時 0 不顯示時段；結束到 24:00 以後（原生時間欄位最多 23:59）不顯示時段
+    - `roundToQuarter(time)`：四捨五入到最近的 15 分鐘，最晚 23:45
 - **匯出 Excel**（使用者決定）：`ExportModal.vue` 只負責畫面，範圍、檔名、分頁、欄位、樣式規則集中在 `src/utils/export-excel.ts`
   - Modal 外觀、手機滿版、開關動畫比照 `DaySummaryModal`（`Transition name="export-modal"`）
   - 匯出方式四選一（樣式比照表單的「工作項目 ｜ 請假」切換），範圍都用 `NDatePicker`：年份（`type="year"`，預設今年）／季度（`type="quarter"`，預設本季）／月份（`type="month"`，預設本月）／指定天數（`type="daterange"`，預設 `DateNav` 選到的那天到那天）。指定天數超過 366 天在欄位下方顯示錯誤、不送出（後端也會擋）。`NDatePicker` 的值是本地時間的時間戳，轉 `YYYY-MM-DD` 要用本地的年月日，不能用 `toISOString`
@@ -535,6 +556,7 @@ npm run format     # Prettier 格式化 src/
 - 重新部署 `Code.gs`（`type=options` 多回傳近 30 天的近期紀錄 `recentItems`）。部署前表單下拉選單不會有「最近」推薦、填完工作目標也不會預填，其他功能不受影響
 - ~~重新部署 `Code.gs`（`doGet` 新增 `type=search`，搜尋欄用）。部署前按下搜尋會出現錯誤「缺少 date 參數」（舊後端不認得 `type=search`），推薦選擇與其他功能不受影響~~（已完成）
 - 重新部署 `Code.gs`（`doGet` 新增 `type=range`，匯出 Excel 用）。部署前按「匯出」會出現錯誤 Toast「缺少 date 參數」（舊後端不認得 `type=range`），其他功能不受影響
+- 重新部署 `Code.gs`（`type=options` 多回傳工時設定 `workHours`、`doPost` 新增 `saveWorkHours`）：**先部署 `Code.gs` 再部署前端**。部署前在「工時設定」按儲存會出現錯誤 Toast「未知的 action」（存不了），表單也不會出現工作時段欄位（舊後端不回 `workHours`，視為沒設定），其他功能不受影響
 
 ---
 

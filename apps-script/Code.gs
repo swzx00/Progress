@@ -98,6 +98,16 @@ var LEAVE_RULES = {
 // 手動同步自 shared/validation-schema.json 的 dailyHours.max
 var DAILY_HOURS_MAX = 24;
 
+// 工時設定（上班、下班、午休）：存在「選項清單」分頁的「工時設定」欄，第 2～5 列依序是
+// 上班時間、下班時間、午休開始、午休結束（午休沒填留空），儲存格純文字格式。
+// 這欄不屬於 OPTION_CATEGORIES，不會出現在管理選項清單或下拉選單。
+// 每日工時（下班 − 上班 − 午休）必須剛好 WORK_HOURS_DAILY_STANDARD 小時，
+// 手動同步自 shared/validation-schema.json 的 workHours.dailyStandard
+var WORK_HOURS_HEADER = '工時設定';
+var WORK_HOURS_FIELDS = ['start', 'end', 'breakStart', 'breakEnd'];
+var WORK_HOURS_DAILY_STANDARD = 8;
+var TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 // ===== Sheet 共用工具 =====
 
 function getSheetId_() {
@@ -728,6 +738,105 @@ function compactOptionsSheet() {
   });
 }
 
+// ===== 工時設定（前端「工具 → 工時設定」，表單的工作時段換算用） =====
+
+// HH:mm 轉成分鐘數，空白或格式不對回 null
+function parseTime_(value) {
+  var match = TIME_PATTERN.exec(value === undefined || value === null ? '' : String(value));
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+// 儲存格轉回 HH:mm：正常是純文字；被 Sheet 轉成時間值時讀到的是 Date，
+// 用試算表本身的時區格式化（Sheet 把時間轉成 Date 也是用這個時區）
+function formatTimeCell_(raw, timeZone) {
+  if (raw instanceof Date) return Utilities.formatDate(raw, timeZone, 'HH:mm');
+  return raw === undefined || raw === null ? '' : String(raw).trim();
+}
+
+// 驗證規則與訊息跟前端 src/utils/work-hours.ts 的 validateWorkHoursSetting 相同，改一邊要一起改
+function validateWorkHours_(setting) {
+  if (!setting || typeof setting !== 'object') return '工時設定格式不正確';
+  if (isBlank_(setting.start)) return '請填寫上班時間';
+  if (isBlank_(setting.end)) return '請填寫下班時間';
+  var start = parseTime_(setting.start);
+  var end = parseTime_(setting.end);
+  if (start === null) return '上班時間格式不正確';
+  if (end === null) return '下班時間格式不正確';
+
+  var hasBreakStart = !isBlank_(setting.breakStart);
+  var hasBreakEnd = !isBlank_(setting.breakEnd);
+  if (hasBreakStart !== hasBreakEnd) return '午休時間需填寫開始與結束';
+  var breakMinutes = 0;
+  if (hasBreakStart) {
+    var breakStart = parseTime_(setting.breakStart);
+    var breakEnd = parseTime_(setting.breakEnd);
+    if (breakStart === null || breakEnd === null) return '午休時間格式不正確';
+    if (!(start < breakStart && breakStart < breakEnd && breakEnd < end)) {
+      return '時間順序需為：上班時間 → 午休開始 → 午休結束 → 下班時間';
+    }
+    breakMinutes = breakEnd - breakStart;
+  } else if (end <= start) {
+    return '下班時間需晚於上班時間';
+  }
+
+  var total = roundHours_((end - start - breakMinutes) / 60);
+  if (total !== WORK_HOURS_DAILY_STANDARD) {
+    return '每日工時需剛好 ' + WORK_HOURS_DAILY_STANDARD + ' 小時（目前 ' + total + ' 小時）';
+  }
+  return null;
+}
+
+// 讀取工時設定，沒有設定（分頁或欄位不存在、上下班空白）或設定不合法時回 null
+function getWorkHours_() {
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) return null;
+  var col = getColumnMap_(sheet)[WORK_HOURS_HEADER];
+  if (!col) return null;
+
+  var timeZone = ss.getSpreadsheetTimeZone();
+  var values = sheet.getRange(2, col, WORK_HOURS_FIELDS.length, 1).getValues();
+  var setting = {};
+  WORK_HOURS_FIELDS.forEach(function (field, i) {
+    var value = formatTimeCell_(values[i][0], timeZone);
+    if (value) setting[field] = value;
+  });
+  if (!setting.start || !setting.end || validateWorkHours_(setting)) return null;
+  return setting;
+}
+
+// 儲存工時設定（workHours 為 null 代表清除）：「工時設定」欄不存在就在最後面加一欄表頭，
+// 第 2～5 列寫入上班、下班、午休開始、午休結束，儲存格設成純文字，避免 08:30 被轉成時間值
+function handleSaveWorkHours_(workHours) {
+  if (workHours !== null) {
+    var error = validateWorkHours_(workHours);
+    if (error) return jsonOutput_({ error: error });
+  }
+
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(OPTIONS_SHEET_NAME);
+    sheet.getRange(1, 1, 1, OPTION_CATEGORIES.length).setValues([OPTION_CATEGORIES]);
+  }
+  var col = getColumnMap_(sheet)[WORK_HOURS_HEADER];
+  if (!col) {
+    col = sheet.getLastColumn() + 1;
+    if (col > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
+    sheet.getRange(1, col).setValue(WORK_HOURS_HEADER);
+  }
+
+  ensureRows_(sheet, WORK_HOURS_FIELDS.length + 1);
+  var values = WORK_HOURS_FIELDS.map(function (field) {
+    var value = workHours ? workHours[field] : '';
+    return [isBlank_(value) ? '' : String(value).trim()];
+  });
+  var range = sheet.getRange(2, col, WORK_HOURS_FIELDS.length, 1);
+  range.setNumberFormat('@');
+  range.setValues(values);
+  return jsonOutput_({ workHours: getWorkHours_() });
+}
+
 // ===== doGet =====
 
 // 匯出 Excel（type=range）一次最多可讀的天數（含頭尾），閏年整年 366 天剛好放得下
@@ -854,7 +963,11 @@ function doGet(e) {
   var params = (e && e.parameter) || {};
   try {
     if (params.type === 'options') {
-      return jsonOutput_({ options: getOptions_(), recentItems: getRecentItems_() });
+      return jsonOutput_({
+        options: getOptions_(),
+        recentItems: getRecentItems_(),
+        workHours: getWorkHours_(),
+      });
     }
 
     if (params.type === 'range') {
@@ -904,6 +1017,9 @@ function doPost(e) {
       return handleRenameOption_(body.category, body.oldValue, body.newValue);
     }
     if (body.action === 'deleteOption') return handleDeleteOption_(body.category, body.value);
+    if (body.action === 'saveWorkHours') {
+      return handleSaveWorkHours_(body.workHours === undefined ? null : body.workHours);
+    }
 
     return jsonOutput_({ error: '未知的 action' });
   } catch (err) {

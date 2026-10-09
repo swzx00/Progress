@@ -53,6 +53,10 @@
     "warn": 8,
     "max": 24
   },
+  "workHours": {
+    "$comment": "工時設定（上班、下班、午休，存在「選項清單」分頁的「工時設定」欄）。dailyStandard：下班 − 上班 − 午休（沒填午休就是下班 − 上班）必須剛好等於這個小時數才能存（前端 src/utils/work-hours.ts 跟後端都擋，Code.gs 的 WORK_HOURS_DAILY_STANDARD 手動同步）。",
+    "dailyStandard": 8
+  },
   "leave": {
     "$comment": "請假紀錄跟工作紀錄寫在同一個月份分頁、計入每日工時合計，用「狀態」等於 status 來區分。fixed 是請假列固定寫入的值（後端一律覆蓋，前端送什麼都不算數），這些值不會寫回「選項清單」，也不會出現在一般工作紀錄的下拉選單。假別存在「工作目標」、備註存在「處理內容」、請假時數存在「今日工時」。apps-script/Code.gs 的 LEAVE_RULES 手動同步。",
     "status": "休假",
