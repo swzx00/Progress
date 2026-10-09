@@ -149,25 +149,13 @@ export function useWorkItems() {
     postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem), replace });
 
   /**
-   * originalDate：這筆紀錄「修改前」的工作日期，用來換算它原本在哪個月份分頁，
-   * 後端才找得到列。item.工作日期 可能跟 originalDate 不同（使用者把工作日期改到別的月份），
-   * 這種情況後端會從舊分頁刪除、在新分頁新增。
+   * 後端用 id 找到那一列；item.工作日期 可以改到別天（含別的月份），後端會在新的那天重新編項次。
    */
-  const updateItem = (
-    idToken: string,
-    id: string,
-    originalDate: string,
-    item: UpdateInput,
-  ): Promise<void> =>
-    postAction(idToken, {
-      action: 'update',
-      id,
-      originalDate: toApiDate(originalDate),
-      item: toApiItem(item),
-    });
+  const updateItem = (idToken: string, id: string, item: UpdateInput): Promise<void> =>
+    postAction(idToken, { action: 'update', id, item: toApiItem(item) });
 
-  const deleteItem = (idToken: string, id: string, originalDate: string): Promise<void> =>
-    postAction(idToken, { action: 'delete', id, originalDate: toApiDate(originalDate) });
+  const deleteItem = (idToken: string, id: string): Promise<void> =>
+    postAction(idToken, { action: 'delete', id });
 
   /**
    * 調整某一天的項次順序：ids 是那天所有未刪除紀錄（含請假）依新順序排列的 id，

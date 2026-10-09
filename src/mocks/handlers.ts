@@ -167,7 +167,6 @@ interface UpdatePayload {
   action: 'update';
   idToken: string;
   id: string;
-  originalDate: string;
   item: Partial<Omit<WorkItem, 'id'>>;
 }
 
@@ -175,7 +174,6 @@ interface DeletePayload {
   action: 'delete';
   idToken: string;
   id: string;
-  originalDate: string;
 }
 
 interface AddOptionPayload {
