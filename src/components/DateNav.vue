@@ -11,6 +11,8 @@ const props = defineProps<{
   totalHours?: number;
   /** 當天有沒有紀錄：放假且沒有紀錄時才隱藏工時合計（使用者決定） */
   hasItems?: boolean;
+  /** 顯示搜尋結果中：只留搜尋欄，日期切換、工時合計／今天、動作按鈕都隱藏（使用者決定） */
+  searching?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -75,17 +77,17 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
     <!-- 第一列：搜尋欄＋動作按鈕（使用者決定）。
          桌面、平板：搜尋欄靠左（最大寬度跟日期切換一樣寬），動作按鈕靠右；
          手機：動作按鈕（三顆平均分配整列寬度）在上、搜尋欄在下，再下面才是日期切換。
-         動作按鈕沒傳 slot（未登入）時不渲染，只剩搜尋欄 -->
+         動作按鈕沒傳 slot（未登入）時不渲染，只剩搜尋欄；顯示搜尋結果時（searching）也只剩搜尋欄 -->
     <div v-if="$slots.actions || $slots.search" class="date-nav__toolbar">
       <div v-if="$slots.search" class="date-nav__search">
         <slot name="search" />
       </div>
-      <div v-if="$slots.actions" class="date-nav__actions">
+      <div v-if="$slots.actions && !searching" class="date-nav__actions">
         <slot name="actions" />
       </div>
     </div>
     <!-- 日期切換：桌面、平板靠左；手機撐滿整列（⏮ 最左、⏭ 最右，日期選擇器填滿中間） -->
-    <div class="date-nav__switcher">
+    <div v-if="!searching" class="date-nav__switcher">
       <button
         type="button"
         class="date-nav__btn"
@@ -121,7 +123,7 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       </button>
     </div>
     <!-- 放假徽章＋工時合計（同一區塊）與今天：桌面、平板靠右；手機自成一列，左右對齊 -->
-    <div class="date-nav__status">
+    <div v-if="!searching" class="date-nav__status">
       <div class="date-nav__info">
         <span
           v-if="dayOffLabel"

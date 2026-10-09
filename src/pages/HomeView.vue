@@ -465,7 +465,12 @@ const onOptionsUnauthorized = (): void => {
       <div v-else ref="signInButtonEl" class="home-view__signin"></div>
     </header>
 
-    <DateNav v-model="selectedDate" :total-hours="totalHours" :has-items="items.length > 0">
+    <DateNav
+      v-model="selectedDate"
+      :total-hours="totalHours"
+      :has-items="items.length > 0"
+      :searching="searchQuery !== null"
+    >
       <template #search>
         <WorkItemSearch v-model="searchText" @search="runSearch" @clear="clearSearch" />
       </template>
@@ -873,19 +878,24 @@ const onOptionsUnauthorized = (): void => {
     }
   }
 
-  // 搜尋結果上方的摘要（關鍵字、筆數）＋結束搜尋；左右內距跟 DateNav 對齊
+  // 搜尋結果上方的摘要（關鍵字、筆數）＋結束搜尋；左右內距跟 DateNav 對齊，色系跟搜尋結果表格一樣用 purple
   &__search-summary {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 12px;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px 12px;
+    padding: 8px 16px;
+
+    // 手機的搜尋結果是一張張卡片，跟第一張卡片之間留空；平板、桌面跟表頭直接接在一起
+    margin-bottom: 12px;
     font-size: 13px;
-    color: var(--color-black-600);
+    color: var(--color-purple-700);
+    background: var(--color-purple-050);
 
     @media (min-width: 768px) {
-      padding: 0 32px 12px;
+      padding: 8px 32px;
+      margin-bottom: 0;
     }
   }
 

@@ -200,6 +200,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
 - **色彩 token：統一用色階，不分用途**：`src/styles/tokens.scss` 只有一種 token，命名一律是 `--color-<色系>-<階>`（例如 `--color-blue-000`、`--color-black-100`、`--color-red-050`）。元件裡的文字、背景、邊框都直接挑色階使用，**不另外定義 text／surface／border 這類依用途命名的 token**（使用者決定：同一套色階好記、好挑，不想維護兩層命名）
   - **色值來源**：公司共用設計系統的 primitive 色階，完整檔案在 `D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss`（另一個專案的檔案，不在本 repo 內）。色系名稱對應：`Candidate-Blue` → `blue`、`1111-Black` → `black`（中性灰階）、`1111-Rose` → `red`（危險／錯誤）、`1111-Teal`／`1111-Green`／`1111-Yellow`／`1111-Orange` → `teal`／`green`／`yellow`／`orange`。不自己配色，需要新顏色時先從這份檔案的色階挑
+  - 例外：`purple` 是推算的色階，不在設計系統裡（搜尋結果用），見「UI/UX 定案」的「搜尋欄」
   - 設計系統另有一組品牌紅 `Candidate-Red`（`#cf2323` 系列），跟上面對應成 `red` 的 `1111-Rose` 是不同色階；專案目前沒用到，之後真的需要時不能也叫 `red`，要另外取名（例如 `--color-brand-red-*`）
   - `tokens.scss` 放的是用到的色系的**完整色階**（`000`／`050`／`100`～`1000`），換深淺直接改階數，不用回來加 token；用到新色系（例如 Orange、Purple）時，整組色階從設計系統檔複製進來
   - 常用對照：主文字 `--color-black-800`、次要文字 `--color-black-500`、白底 `--color-black-000`、淺灰底 `--color-black-050`、細邊框 `--color-black-100`、主色 `--color-blue-500`、深藍文字 `--color-blue-700`、危險色 `--color-red-600`
@@ -387,6 +388,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 點推薦只搜那個欄位：交辦單位／交辦人員／專案名稱完全相同；專案 Repo 包含那一個；工作目標包含那段文字（同一件工作的目標常會多寫幾個字）
   - **結果呈現**（`HomeView` 的 `searchQuery`／`searchResult`）：表格換成搜尋結果，上方一行「搜尋結果：專案名稱「官網改版」，共 N 筆」＋「結束搜尋」；超過 200 筆加註「只顯示最新的 200 筆」。`WorkItemTable` 的 `search-mode`：照傳進來的順序（工作日期新的在前）、項次欄換成工作日期（`--index-col` 從 32px 加寬成 84px；手機卡片在最上面一行），點日期 emit `goToDate` 跳到那天並結束搜尋；不顯示拖曳把手與上移／下移，編輯、複製、刪除照常（存檔、刪除、複製本日後重新搜尋一次，`refreshAfterChange`）；不套今天／放假的底色
   - **狀態**：搜尋中 `AppLoading`「搜尋中…」；錯誤顯示訊息＋「重新載入」（用同一組條件再搜尋一次）；沒有符合時表格空狀態「找不到符合「關鍵字」的紀錄」。連續搜尋只採用最後一次的結果
+  - **色系：purple**（使用者決定），階數比照今天：表頭 `purple-100`、斑馬紋 `purple-050`／`purple-000`、邊框 `purple-200`、工作日期連結與「展開／收合」`purple-700`（滑過 `purple-800`）、展開列底 `purple-100`／框 `purple-300`；搜尋摘要列 `purple-700` 字＋`purple-050` 底；空狀態 `purple-700` 字＋`purple-000` 底。請假、逾期的列照常用自己的 teal／red。`purple` 不是設計系統原有的色階：色相取舊版 `--Purple`（薰衣草），每一階的深淺（OKLab 明度）對齊 `1111-Purple` 同一階推算出來（使用者決定），見 `tokens.scss` 的註解
+  - 顯示搜尋結果時（`DateNav` 的 `searching` prop），`DateNav` 只留搜尋欄：日期切換、放假徽章／工時合計／今天、動作按鈕都不顯示（使用者決定，搜尋結果跨日期，跟選到的那天無關）
   - 清空搜尋欄（✕、Esc 或自己刪光）、按「結束搜尋」、點工作日期都會回到單日表格
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入

@@ -573,9 +573,38 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     }
   }
 
-  // 搜尋結果模式：第一欄放工作日期（2026/10/09），平板、桌面加寬
+  // 搜尋結果模式：第一欄放工作日期（2026/10/09），平板、桌面加寬。
+  // 色系用 purple（使用者決定），階數比照今天（藍）：表頭 100、斑馬紋 050／000、邊框 200、文字 700。
+  // 搜尋結果不會同時是今天／放假（使用端不傳那兩個 prop），請假、逾期的列照常用自己的顏色
   &--search {
     --index-col: 84px;
+    --expand-bg: var(--color-purple-100);
+    --expand-border: var(--color-purple-300);
+    --expand-toggle: var(--color-purple-700);
+    --expand-toggle-hover: var(--color-purple-800);
+
+    .work-item-table__row {
+      border: 1px solid var(--color-purple-200);
+
+      @media (min-width: 768px) {
+        border: none;
+        border-bottom: 1px solid var(--color-purple-200);
+      }
+
+      &--header {
+        @media (min-width: 768px) {
+          background: var(--color-purple-100);
+        }
+      }
+
+      &:not(.work-item-table__row--header):nth-child(odd) {
+        background: var(--color-purple-050);
+      }
+
+      &:not(.work-item-table__row--header):nth-child(even) {
+        background: var(--color-purple-000);
+      }
+    }
   }
 
   &--viewing-today {
@@ -1568,14 +1597,14 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     padding: 0;
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-blue-700);
+    color: var(--color-purple-700);
     white-space: nowrap;
     cursor: pointer;
     background: none;
     border: none;
 
     &:hover {
-      color: var(--color-blue-800);
+      color: var(--color-purple-800);
       text-decoration: underline;
     }
 
@@ -1700,6 +1729,16 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       color: var(--color-yellow-1000);
       background: var(--color-yellow-000);
       border: 1px solid var(--color-yellow-200);
+
+      @media (min-width: 768px) {
+        border: none;
+      }
+    }
+
+    .work-item-table--search & {
+      color: var(--color-purple-700);
+      background: var(--color-purple-000);
+      border: 1px solid var(--color-purple-200);
 
       @media (min-width: 768px) {
         border: none;
