@@ -15,11 +15,20 @@ const props = withDefaults(
     dayOffLabel?: string | null;
     /** 項次調整存檔中：暫時停用拖曳與上移／下移 */
     reordering?: boolean;
+    /**
+     * 搜尋結果模式（搜尋欄按下搜尋後，使用者決定）：items 是跨日期的搜尋結果，照傳進來的順序顯示
+     * （工作日期新的在前）；項次欄換成工作日期（點了跳到那天），不能調整順序，其他操作照常
+     */
+    searchMode?: boolean;
+    /** 搜尋結果是空的時候，空狀態顯示的關鍵字 */
+    searchKeyword?: string;
   }>(),
   {
     editable: false,
     viewingToday: false,
     reordering: false,
+    searchMode: false,
+    searchKeyword: '',
   },
 );
 
@@ -29,6 +38,8 @@ const emit = defineEmits<{
   delete: [item: WorkItem];
   /** 項次調整：那天所有紀錄（含請假）依新順序排列的 id，由使用端存檔 */
   reorder: [ids: string[]];
+  /** 搜尋結果模式：點工作日期，跳到那天 */
+  goToDate: [date: string];
 }>();
 
 const formatDate = (date: string): string => date.replaceAll('-', '/');
@@ -51,7 +62,8 @@ const rows = ref<WorkItem[]>([]);
 watch(
   () => props.items,
   (items) => {
-    rows.value = [...items].sort((a, b) => a.項次 - b.項次);
+    // 搜尋結果跨日期，照傳進來的順序（工作日期新的在前、同一天照項次）
+    rows.value = props.searchMode ? [...items] : [...items].sort((a, b) => a.項次 - b.項次);
   },
   { immediate: true },
 );
@@ -128,11 +140,14 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       'work-item-table--editable': editable,
       'work-item-table--viewing-today': viewingToday,
       'work-item-table--holiday': dayOffLabel,
+      'work-item-table--search': searchMode,
     }"
     role="table"
   >
     <div class="work-item-table__row work-item-table__row--header" role="row">
-      <div class="work-item-table__cell work-item-table__cell--index" role="columnheader">項次</div>
+      <div class="work-item-table__cell work-item-table__cell--index" role="columnheader">
+        {{ searchMode ? '工作日期' : '項次' }}
+      </div>
       <div class="work-item-table__cell work-item-table__cell--assignee" role="columnheader">
         交辦單位/人員
       </div>
@@ -174,7 +189,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     <VueDraggable
       v-model="rows"
       class="work-item-table__body"
-      :disabled="!editable || reordering"
+      :disabled="!editable || reordering || searchMode"
       :animation="150"
       handle=".work-item-table__drag-handle"
       :force-fallback="true"
@@ -196,7 +211,22 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         role="row"
       >
         <!-- 項次：平板、桌面在數字上下放上移／下移（圖示：Lucide chevron-up／chevron-down，ISC 授權） -->
-        <div class="work-item-table__cell work-item-table__cell--index" role="cell">
+        <!-- 搜尋結果模式：項次欄換成工作日期，點了跳到那天（跨日期的結果，項次本身沒有意義） -->
+        <div
+          v-if="searchMode"
+          class="work-item-table__cell work-item-table__cell--index work-item-table__cell--date"
+          role="cell"
+        >
+          <button
+            type="button"
+            class="work-item-table__date-link"
+            :title="`跳到 ${formatDate(item.工作日期)}`"
+            @click="emit('goToDate', item.工作日期)"
+          >
+            {{ formatDate(item.工作日期) }}
+          </button>
+        </div>
+        <div v-else class="work-item-table__cell work-item-table__cell--index" role="cell">
           <button
             v-if="editable"
             type="button"
@@ -281,7 +311,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           圖示：Lucide grip-vertical（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
         -->
         <span
-          v-if="editable"
+          v-if="editable && !searchMode"
           class="work-item-table__drag-handle"
           title="按住拖曳排序"
           aria-hidden="true"
@@ -371,7 +401,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
           role="cell"
         >
           <!-- 手機卡片沒有項次欄，上移／下移放在操作列最前面（平板、桌面隱藏，改用項次欄的） -->
-          <span class="work-item-table__move-group">
+          <span v-if="!searchMode" class="work-item-table__move-group">
             <button
               type="button"
               class="work-item-table__move-btn"
@@ -501,7 +531,8 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     </VueDraggable>
 
     <div v-if="rows.length === 0" class="work-item-table__empty">
-      <template v-if="dayOffLabel && viewingToday">今天放假呦！</template>
+      <template v-if="searchMode">找不到符合「{{ searchKeyword }}」的紀錄</template>
+      <template v-else-if="dayOffLabel && viewingToday">今天放假呦！</template>
       <template v-else-if="dayOffLabel">這天放假呦！</template>
       <template v-else-if="viewingToday">今天還沒有紀錄</template>
       <template v-else>這天沒有紀錄</template>
@@ -516,6 +547,9 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   --expand-border: var(--color-black-300);
   --expand-toggle: var(--color-black-700);
   --expand-toggle-hover: var(--color-black-800);
+
+  // 平板、桌面第一欄（項次）的寬度；搜尋結果模式換成工作日期，要放得下 2026/10/09
+  --index-col: 32px;
 
   display: flex;
   flex-direction: column;
@@ -537,6 +571,11 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     @media (min-width: 768px) {
       gap: 0;
     }
+  }
+
+  // 搜尋結果模式：第一欄放工作日期（2026/10/09），平板、桌面加寬
+  &--search {
+    --index-col: 84px;
   }
 
   &--viewing-today {
@@ -649,7 +688,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     @media (min-width: 768px) {
       display: grid;
       grid-template-columns:
-        32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
         120px 58px;
       gap: 2px 8px;
       padding: 8px 32px;
@@ -661,7 +700,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
 
     @media (min-width: 1024px) {
       grid-template-columns:
-        32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
         62px 48px 77px 58px;
       gap: 8px;
     }
@@ -669,13 +708,13 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     .work-item-table--editable & {
       @media (min-width: 768px) {
         grid-template-columns:
-          32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
           120px 58px 100px;
       }
 
       @media (min-width: 1024px) {
         grid-template-columns:
-          32px 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
           62px 48px 77px 58px 208px;
       }
     }
@@ -819,6 +858,18 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       @media (min-width: 1024px) {
         grid-row: auto;
         grid-column: auto;
+      }
+    }
+
+    // 搜尋結果模式的工作日期：手機卡片自成最上面一行（項次欄在手機原本是隱藏的），
+    // 平板、桌面沿用項次欄的位置
+    &--date {
+      display: flex;
+      flex: 1 0 100%;
+      order: -1;
+
+      @media (min-width: 768px) {
+        flex: none;
       }
     }
 
@@ -1509,6 +1560,27 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       left: 6px;
       width: 20px;
       height: auto;
+    }
+  }
+
+  // 搜尋結果的工作日期：連結樣式的按鈕，點了跳到那天
+  &__date-link {
+    padding: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-blue-700);
+    white-space: nowrap;
+    cursor: pointer;
+    background: none;
+    border: none;
+
+    &:hover {
+      color: var(--color-blue-800);
+      text-decoration: underline;
+    }
+
+    @media (min-width: 768px) {
+      font-size: 14px;
     }
   }
 

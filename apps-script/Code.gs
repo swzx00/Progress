@@ -771,6 +771,85 @@ function handleRange_(from, to) {
   return jsonOutput_({ items: items });
 }
 
+// ===== 搜尋（type=search）=====
+// 前端搜尋欄按下搜尋（Enter、搜尋按鈕、點推薦）時查全部資料（使用者決定）。比對規則跟前端
+// src/utils/search-work-items.ts 的 matchesSearch 一致（手動同步），改一處要一起改：
+// - 沒帶 field：交辦單位、交辦人員、專案名稱、專案Repo（#AAA）、工作目標、處理內容、狀態，
+//   用空白隔開的每個關鍵字都要出現（AND），不分大小寫
+// - 帶 field（點推薦）：交辦單位／交辦人員／專案名稱完全相同；專案Repo 包含那一個；工作目標包含那段文字
+// 結果照「工作日期新的在前、同一天照項次」排序，最多回傳 SEARCH_MAX_RESULTS 筆，total 是全部符合的筆數
+var SEARCH_FIELDS = ['交辦單位', '交辦人員', '專案名稱', '專案Repo', '工作目標'];
+var SEARCH_KEYWORD_MAX = 100;
+var SEARCH_MAX_RESULTS = 200;
+
+function normalizeSearch_(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .trim()
+    .toLowerCase();
+}
+
+function matchesSearch_(item, keyword, field) {
+  if (field === '交辦單位' || field === '交辦人員' || field === '專案名稱') {
+    return normalizeSearch_(item[field]) === keyword;
+  }
+  if (field === '專案Repo') {
+    return (item.專案Repo || []).some(function (repo) {
+      return normalizeSearch_(repo) === keyword;
+    });
+  }
+  if (field === '工作目標') {
+    return normalizeSearch_(item.工作目標).indexOf(keyword) !== -1;
+  }
+  var text = [item.交辦單位, item.交辦人員, item.專案名稱]
+    .concat(
+      (item.專案Repo || []).map(function (repo) {
+        return '#' + repo;
+      }),
+    )
+    .concat([item.工作目標, item.處理內容, item.狀態])
+    .join('\n')
+    .toLowerCase();
+  return keyword
+    .split(/\s+/)
+    .filter(function (word) {
+      return word.length > 0;
+    })
+    .every(function (word) {
+      return text.indexOf(word) !== -1;
+    });
+}
+
+function handleSearch_(q, field) {
+  var keyword = normalizeSearch_(q);
+  if (!keyword) return jsonOutput_({ error: '請輸入搜尋關鍵字' });
+  if (keyword.length > SEARCH_KEYWORD_MAX) {
+    return jsonOutput_({ error: '搜尋關鍵字不可超過 ' + SEARCH_KEYWORD_MAX + ' 字' });
+  }
+  if (field && SEARCH_FIELDS.indexOf(field) === -1) {
+    return jsonOutput_({ error: '不支援的搜尋欄位' });
+  }
+
+  var sheet = getDataSheet_();
+  if (!sheet || sheet.getLastRow() < 2) return jsonOutput_({ items: [], total: 0 });
+
+  var colMap = getColumnMap_(sheet);
+  var matched = sheet
+    .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
+    .getValues()
+    .map(function (row) {
+      return rowToItem_(colMap, row);
+    })
+    .filter(function (item) {
+      return !item.已刪除 && matchesSearch_(item, keyword, field);
+    })
+    .sort(function (a, b) {
+      // YYYY/MM/DD 補零固定長度，字串可以直接比大小
+      if (a.工作日期 !== b.工作日期) return a.工作日期 < b.工作日期 ? 1 : -1;
+      return a.項次 - b.項次;
+    });
+  return jsonOutput_({ items: matched.slice(0, SEARCH_MAX_RESULTS), total: matched.length });
+}
+
 function doGet(e) {
   var params = (e && e.parameter) || {};
   try {
@@ -780,6 +859,10 @@ function doGet(e) {
 
     if (params.type === 'range') {
       return handleRange_(params.from, params.to);
+    }
+
+    if (params.type === 'search') {
+      return handleSearch_(params.q, params.field);
     }
 
     var date = params.date;

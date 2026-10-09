@@ -72,10 +72,17 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 <template>
   <div class="date-nav">
-    <!-- 動作按鈕（複製本日、請假、新增）固定在第一列：桌面、平板靠右，手機三顆平均分配整列寬度；
-         沒傳 slot（未登入）時整列不渲染（使用者決定） -->
-    <div v-if="$slots.actions" class="date-nav__actions">
-      <slot name="actions" />
+    <!-- 第一列：搜尋欄＋動作按鈕（使用者決定）。
+         桌面、平板：搜尋欄靠左（最大寬度跟日期切換一樣寬），動作按鈕靠右；
+         手機：動作按鈕（三顆平均分配整列寬度）在上、搜尋欄在下，再下面才是日期切換。
+         動作按鈕沒傳 slot（未登入）時不渲染，只剩搜尋欄 -->
+    <div v-if="$slots.actions || $slots.search" class="date-nav__toolbar">
+      <div v-if="$slots.search" class="date-nav__search">
+        <slot name="search" />
+      </div>
+      <div v-if="$slots.actions" class="date-nav__actions">
+        <slot name="actions" />
+      </div>
     </div>
     <!-- 日期切換：桌面、平板靠左；手機撐滿整列（⏮ 最左、⏭ 最右，日期選擇器填滿中間） -->
     <div class="date-nav__switcher">
@@ -140,6 +147,10 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
 <style scoped lang="scss">
 .date-nav {
+  // 日期切換（⏮ ◀ 日期選擇器 ▶ ⏭）在桌面、平板的寬度：4 顆 32px 按鈕＋170px 日期選擇器＋4 個 8px 間距，
+  // 搜尋欄的最大寬度跟它一樣（使用者決定）。改按鈕、日期選擇器寬度或間距時要一起改
+  --switcher-width: calc(4 * 32px + 170px + 4 * 8px);
+
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -290,13 +301,38 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   align-items: center;
 }
 
-.date-nav__actions {
+.date-nav__toolbar {
   display: flex;
   flex: 1 0 100%;
+  flex-direction: column;
+  gap: 8px;
+
+  @media (min-width: 768px) {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.date-nav__search {
+  order: 1;
+
+  @media (min-width: 768px) {
+    flex: 1 1 var(--switcher-width);
+    order: 0;
+    max-width: var(--switcher-width);
+  }
+}
+
+.date-nav__actions {
+  display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   justify-content: flex-end;
+
+  @media (min-width: 768px) {
+    flex: 1 1 auto;
+  }
 }
 
 .date-nav__total {
