@@ -601,6 +601,58 @@ function getOptions_() {
   return result;
 }
 
+// 近期紀錄（前端表單的下拉推薦、填完工作目標後預填用，使用者決定）：近 RECENT_DAYS 天、排除請假的紀錄，
+// 只回傳推薦／預填用得到的欄位。這裡只負責撈資料，「最近一筆」怎麼找、怎麼推薦都在前端
+// src/utils/recent-history.ts；天數與排除請假的規則要跟那邊的 RECENT_DAYS／filterRecentItems 一致
+var RECENT_DAYS = 30;
+var RECENT_ITEM_FIELDS = [
+  ID_KEY,
+  '工作日期',
+  '項次',
+  '交辦單位',
+  '交辦人員',
+  '專案名稱',
+  '專案Repo',
+  '工作目標',
+  '預計期限',
+  '完成度',
+  '狀態',
+];
+
+function getRecentItems_() {
+  var tz = Session.getScriptTimeZone();
+  var cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - RECENT_DAYS);
+  var cutoff = Utilities.formatDate(cutoffDate, tz, 'yyyy/MM/dd');
+
+  // 近 30 天最多跨兩個月份分頁：cutoff 所在月份到本月
+  var ss = getSpreadsheet_();
+  var monthKeys = [getMonthKey_(cutoff), Utilities.formatDate(new Date(), tz, 'yyyy-MM')];
+  var result = [];
+  monthKeys
+    .filter(function (key, i) {
+      return monthKeys.indexOf(key) === i;
+    })
+    .forEach(function (monthKey) {
+      var sheet = ss.getSheetByName(monthKey);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      var colMap = getColumnMap_(sheet);
+      sheet
+        .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
+        .getValues()
+        .forEach(function (row) {
+          var item = rowToItem_(colMap, row);
+          if (item.已刪除 || isLeaveItem_(item) || item.工作日期 < cutoff) return;
+          var picked = {};
+          RECENT_ITEM_FIELDS.forEach(function (field) {
+            picked[field] = item[field];
+          });
+          result.push(picked);
+        });
+    });
+  return result;
+}
+
 // 新增/編輯工作紀錄時，把新的交辦單位/人員/專案名稱/Repo 寫回選項清單；
 // 請假列的固定值（人事室、--、休假）不寫回，避免出現在一般工作紀錄的下拉選單
 function syncOptionsFromItem_(item) {
@@ -694,7 +746,7 @@ function doGet(e) {
   var params = (e && e.parameter) || {};
   try {
     if (params.type === 'options') {
-      return jsonOutput_({ options: getOptions_() });
+      return jsonOutput_({ options: getOptions_(), recentItems: getRecentItems_() });
     }
 
     var date = params.date;

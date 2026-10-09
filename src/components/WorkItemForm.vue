@@ -1,14 +1,23 @@
 <script setup lang="ts">
 import { NSelect, type SelectOption } from 'naive-ui';
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, nextTick, onMounted, reactive, ref, watch, type VNode } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
 import { useOptions } from '@/composables/useOptions';
 import { fetchDaySummary } from '@/composables/useWorkItems';
+import { vAutoResize } from '@/directives/auto-resize';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
+import {
+  recentAssignee,
+  recentByTarget,
+  recentProject,
+  recentRepos,
+  recentUnit,
+  withRecentFirst,
+} from '@/utils/recent-history';
 import {
   DAILY_HOURS_MAX,
   LEAVE_FIXED_VALUES,
@@ -63,7 +72,13 @@ const emit = defineEmits<{
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
-const { options, loading: optionsLoading, error: optionsError, fetchOptions } = useOptions();
+const {
+  options,
+  recentItems,
+  loading: optionsLoading,
+  error: optionsError,
+  fetchOptions,
+} = useOptions();
 
 // 選項還在讀（或讀取失敗）時，四個可搜尋下拉選單顯示載入中／失敗狀態，不再是看起來像沒資料的空清單
 const showOptionsState = computed(() => optionsLoading.value || !!optionsError.value);
@@ -75,10 +90,48 @@ onMounted(fetchOptions);
 const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
   (values ?? []).map((value) => ({ label: value, value }));
 
-const unitOptions = computed(() => toSelectOptions(options.value?.交辦單位));
-const assigneeOptions = computed(() => toSelectOptions(options.value?.交辦人員));
-const projectOptions = computed(() => toSelectOptions(options.value?.專案名稱));
-const repoOptions = computed(() => toSelectOptions(options.value?.專案Repo));
+// 交辦單位 ↔ 交辦人員、專案名稱 ↔ 專案 Repo：已選了一邊，另一邊的下拉選單把「近一個月最近一筆」
+// 搭配的值排最上面並標「最近」（使用者決定：只推薦、另一邊空的時候不自動填入）。規則見 utils/recent-history.ts
+const unitOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.交辦單位 ?? [], recentUnit(recentItems.value, form.交辦人員)),
+  ),
+);
+const assigneeOptions = computed(() =>
+  markRecent(
+    withRecentFirst(
+      options.value?.交辦人員 ?? [],
+      recentAssignee(recentItems.value, form.交辦單位),
+    ),
+  ),
+);
+const projectOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案名稱 ?? [], recentProject(recentItems.value, form.專案Repo)),
+  ),
+);
+const repoOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案Repo ?? [], recentRepos(recentItems.value, form.專案名稱)),
+  ),
+);
+
+/**
+ * 推薦的選項：淡藍底（option 的 class）＋右側「最近」標籤。
+ * 用 render-option 在選項外包一層放標籤，不用 render-label：render-label 也會套用到輸入框裡已選的值，
+ * 選了推薦值時輸入框會跟著出現「最近」。下拉選單是 Naive UI teleport 到 body 的，不吃 scoped 樣式，
+ * 這幾個 class 都在 style 裡用 :global 寫
+ */
+const RECENT_OPTION_CLASS = 'work-item-form-recent-option';
+const markRecent = (list: SelectOption[]): SelectOption[] =>
+  list.map((option) => (option.recent ? { ...option, class: RECENT_OPTION_CLASS } : option));
+const renderRecentOption = ({ node, option }: { node: VNode; option: SelectOption }): VNode =>
+  option.recent
+    ? h('div', { class: 'work-item-form-recent-wrap' }, [
+        node,
+        h('span', { class: 'work-item-form-recent-tag', 'aria-hidden': 'true' }, '最近'),
+      ])
+    : node;
 const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
 const leaveTypeOptions = toSelectOptions(LEAVE_TYPES);
 
@@ -152,6 +205,57 @@ const statusModel = selectModel('狀態');
 // 請假模式的假別存在「工作目標」
 const leaveTypeModel = selectModel('工作目標');
 
+/**
+ * 填完工作目標後預填（使用者決定，只在「新增」工作項目時；編輯、單項複製、請假不預填）：
+ * 工作目標離開焦點時，找近一個月「工作目標相同」的最近一筆（開頭有單號就比單號，沒有才比整段文字，
+ * 見 recentByTarget），找到就：
+ * - 預計期限、完成度、狀態：還是預設值（空白、0、待辦）才帶入，不蓋掉手動改過的值
+ * - 交辦單位、交辦人員：兩個都空才一起帶入
+ * - 專案名稱、專案 Repo：兩個都空才一起帶入
+ * 有帶入任何欄位就在工作目標下方提示帶入了哪些欄位、依據哪天的紀錄
+ */
+const prefillHint = ref('');
+
+const prefillFromTarget = (): void => {
+  if (props.item || copying || isLeaveMode.value || props.saving) return;
+  const source = recentByTarget(recentItems.value, form.工作目標);
+  if (!source) return;
+
+  const filled: string[] = [];
+  if (form.預計期限 === '' && source.預計期限) {
+    form.預計期限 = source.預計期限;
+    filled.push('預計期限');
+  }
+  if (
+    (form.完成度 === '' || form.完成度 === DEFAULT_PROGRESS) &&
+    source.完成度 !== DEFAULT_PROGRESS
+  ) {
+    form.完成度 = source.完成度;
+    filled.push('完成度');
+  }
+  if (
+    form.狀態 === DEFAULT_STATUS &&
+    source.狀態 !== DEFAULT_STATUS &&
+    (STATUS_OPTIONS as readonly string[]).includes(source.狀態)
+  ) {
+    form.狀態 = source.狀態;
+    filled.push('狀態');
+  }
+  if (!form.交辦單位 && !form.交辦人員 && (source.交辦單位 || source.交辦人員)) {
+    form.交辦單位 = source.交辦單位;
+    form.交辦人員 = source.交辦人員;
+    filled.push('交辦單位', '交辦人員');
+  }
+  if (!form.專案名稱 && form.專案Repo.length === 0 && (source.專案名稱 || source.專案Repo.length)) {
+    form.專案名稱 = source.專案名稱;
+    form.專案Repo = [...source.專案Repo];
+    filled.push('專案名稱', '專案 Repo');
+  }
+  if (filled.length > 0) {
+    prefillHint.value = `已依 ${source.工作日期.replaceAll('-', '/')} 的紀錄帶入：${filled.join('、')}`;
+  }
+};
+
 const resetForm = (item: WorkItem | null | undefined): void => {
   form.工作日期 = item?.工作日期 ?? props.defaultDate ?? toDateString(new Date());
   form.交辦單位 = item?.交辦單位 ?? '';
@@ -172,6 +276,7 @@ const resetForm = (item: WorkItem | null | undefined): void => {
   }
   errors.value = {};
   submitAttempted = false;
+  prefillHint.value = '';
   snapshot.value = JSON.stringify(form);
   blankSnapshot.value = snapshot.value;
 };
@@ -564,6 +669,7 @@ const onSubmit = async (): Promise<void> => {
             {{ LEAVE_RULES.處理內容.label }}
             <textarea
               v-model="form.處理內容"
+              v-auto-resize
               rows="2"
               placeholder="請填寫請假備註"
               :maxlength="LEAVE_RULES.處理內容.maxLength"
@@ -592,6 +698,7 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="unitOptions"
+              :render-option="renderRecentOption"
               :loading="optionsLoading"
               :status="errors.交辦單位 ? 'error' : undefined"
               placeholder="請選擇交辦單位"
@@ -621,6 +728,7 @@ const onSubmit = async (): Promise<void> => {
               filterable
               tag
               :options="assigneeOptions"
+              :render-option="renderRecentOption"
               :loading="optionsLoading"
               :status="errors.交辦人員 ? 'error' : undefined"
               placeholder="請選擇交辦人員"
@@ -650,6 +758,7 @@ const onSubmit = async (): Promise<void> => {
             filterable
             tag
             :options="projectOptions"
+            :render-option="renderRecentOption"
             :loading="optionsLoading"
             :status="errors.專案名稱 ? 'error' : undefined"
             placeholder="請選擇專案名稱"
@@ -674,6 +783,7 @@ const onSubmit = async (): Promise<void> => {
             multiple
             tag
             :options="repoOptions"
+            :render-option="renderRecentOption"
             :loading="optionsLoading"
             :status="errors.專案Repo ? 'error' : undefined"
             placeholder="請選擇專案 Repo (選填)"
@@ -699,13 +809,18 @@ const onSubmit = async (): Promise<void> => {
           </span>
           <textarea
             v-model="form.工作目標"
+            v-auto-resize
             rows="2"
             placeholder="請填寫工作目標"
             required
             :maxlength="WORK_ITEM_RULES.工作目標.maxLength"
             :disabled="saving"
+            @blur="prefillFromTarget"
           />
           <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
+          <span v-if="prefillHint" class="work-item-form__hint" role="status">{{
+            prefillHint
+          }}</span>
         </label>
 
         <label
@@ -716,6 +831,7 @@ const onSubmit = async (): Promise<void> => {
           處理內容
           <textarea
             v-model="form.處理內容"
+            v-auto-resize
             rows="2"
             placeholder="請填寫處理內容"
             :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
@@ -1037,8 +1153,9 @@ const onSubmit = async (): Promise<void> => {
       }
     }
 
+    // 高度隨內容自動調整（v-auto-resize），不需要手動拉
     textarea {
-      resize: vertical;
+      resize: none;
     }
 
     // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
@@ -1088,6 +1205,47 @@ const onSubmit = async (): Promise<void> => {
 
   &__required {
     color: var(--color-red-600);
+  }
+
+  // 填完工作目標後預填的提示
+  &__hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-blue-700);
+  }
+
+  // 交辦單位／交辦人員下拉選單的「最近」推薦：選單 teleport 到 body，要用 :global。
+  // 底色畫在 Naive UI 選項自己用來畫底色的 ::before 上，滑過、已選取時維持 Naive UI 原本的顏色
+  :global(
+    .n-base-select-option.work-item-form-recent-option:not(
+        .n-base-select-option--pending,
+        .n-base-select-option--selected
+      )::before
+  ) {
+    background-color: var(--color-blue-050);
+  }
+
+  // 右側留位置給「最近」標籤（已選取時 Naive UI 的勾勾也在右側，標籤放在勾勾左邊）
+  :global(.n-base-select-option.work-item-form-recent-option) {
+    padding-right: 76px;
+  }
+
+  :global(.work-item-form-recent-wrap) {
+    position: relative;
+  }
+
+  :global(.work-item-form-recent-tag) {
+    position: absolute;
+    top: 50%;
+    right: 36px;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--color-blue-700);
+    pointer-events: none;
+    background: var(--color-blue-100);
+    border-radius: 999px;
+    transform: translateY(-50%);
   }
 
   &__footer {

@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw';
 import schema from '../../shared/validation-schema.json';
 
 import { isLeaveItem, type WorkItem, type WorkItemOptions } from '@/types/work-item';
+import { filterRecentItems, RECENT_DAYS } from '@/utils/recent-history';
 import { dailyHoursMessage } from '@/validation/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
@@ -214,7 +215,13 @@ export const handlers = [
     const url = new URL(request.url);
 
     if (url.searchParams.get('type') === 'options') {
-      return HttpResponse.json({ options });
+      // 跟 Code.gs 的 getRecentItems_ 一樣：近 RECENT_DAYS 天、未刪除、排除請假
+      const cutoff = toDateString(addDays(new Date(), -RECENT_DAYS));
+      const recentItems = filterRecentItems(
+        items.filter((item) => !item.已刪除),
+        cutoff,
+      );
+      return HttpResponse.json({ options, recentItems });
     }
 
     const date = url.searchParams.get('date') ?? today;
