@@ -108,11 +108,10 @@ const goToDate = (date: string): void => {
   selectedDate.value = date;
 };
 
-const searchSummary = computed(() => {
-  if (!searchQuery.value) return '';
-  const { keyword, field } = searchQuery.value;
-  return field ? `${SEARCH_FIELD_LABELS[field]}「${keyword}」` : `「${keyword}」`;
-});
+// 搜尋摘要：點推薦時前面加欄位名稱，關鍵字本身粗體（template 裡用 strong）
+const searchSummaryLabel = computed(() =>
+  searchQuery.value?.field ? SEARCH_FIELD_LABELS[searchQuery.value.field] : '',
+);
 
 /** 新增、編輯、刪除後：重讀選到的那天；搜尋中也重新搜尋一次，結果才不會過時 */
 const refreshAfterChange = async (): Promise<void> => {
@@ -638,7 +637,10 @@ const onWorkHoursUnauthorized = (): void => {
       <template v-else-if="searchResult">
         <div class="home-view__search-summary" role="status">
           <span>
-            搜尋結果：{{ searchSummary }}，共 {{ searchResult.total }} 筆<template
+            搜尋結果：{{ searchSummaryLabel }}「<strong class="home-view__search-keyword">{{
+              searchQuery.keyword
+            }}</strong
+            >」，共 {{ searchResult.total }} 筆<template
               v-if="searchResult.total > searchResult.items.length"
               >，只顯示最新的 {{ SEARCH_MAX_RESULTS }} 筆</template
             >
@@ -982,6 +984,10 @@ const onWorkHoursUnauthorized = (): void => {
     @media (min-width: 768px) {
       padding: 0 32px 12px;
     }
+  }
+
+  &__search-keyword {
+    font-weight: 700;
   }
 
   &__retry-btn {
