@@ -85,7 +85,7 @@
 **前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
 
 **doPost(e)**
-- body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性，取出 email 並比對是否為 swzx00@gmail.com，不符合直接拒絕
+- body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性就不檢查 `aud`）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
 - 依 `action` 分派：
   - `create`：工作紀錄分頁不存在時建立，產生 UUID 當 ID，項次用 `getNextDailyIndex_` 依工作日期計算（**每天**從 1 開始，見上方「項次」欄位說明），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
   - `update`：用 `id` 在工作紀錄分頁定位那一列，原地改寫（工作日期改到別天、別的月份也一樣，不用搬分頁；原本的 `originalDate` 參數已拿掉）。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天，在新的那天用 `getNextDailyIndex_` 重新編號
@@ -113,12 +113,20 @@
 
 **工作紀錄分頁建立機制**：`create`／`batchCreate` 寫入時分頁不存在就建立（`getOrCreateDataSheet_`），讀取時分頁不存在就回傳空的。原本每月 1 號建立月份分頁的觸發器（`ensureMonthlySheet()`／`installTrigger()`）已拿掉，`mergeMonthSheets()` 執行時會順便刪掉已安裝的觸發器
 
-**可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 建議存在 Apps Script 的 `PropertiesService`（指令碼屬性），不寫死在程式碼裡。
+**可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 存在 Apps Script 的指令碼屬性 `SHEET_ID`（`PropertiesService`，`getSheetId_`），不寫死在程式碼裡；同一處另有 `GOOGLE_CLIENT_ID`（前端 `.env` 那組，驗證 ID Token 的 `aud` 用）。部署步驟寫在 `Code.gs` 開頭的註解。
 
 # 前端架構（Vue 3 + TypeScript，部署於 GitHub Pages）
 
 ```
 src/
+  main.ts                  # 掛載前先 initTheme()；DEV 且沒關 MSW 時先啟動 MSW
+  router/
+    index.ts               # 只有一個路由（/ → HomeView），createWebHistory(BASE_URL)
+  types/
+    work-item.ts           # WorkItem 型別、STATUS_OPTIONS／STATUS_KEYS／LEAVE_STATUS、isOverdue
+  mocks/
+    handlers.ts            # MSW 假後端（npm run dev 預設啟用），規則跟 Code.gs 手動同步
+    browser.ts
   pages/
     HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
@@ -160,8 +168,9 @@ src/
     tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），[data-theme='dark'] 底下是深色模式的值，元件一律吃變數不寫死 hex
 shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
-apps-script/                # clasp 專案（Apps Script 原始碼版控）
+apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
   Code.gs
+  LegacyImport.gs           # 一次性匯入舊版「工作進度-2026H1／H2」試算表，用法見檔案開頭註解，匯入完可從 Apps Script 專案刪掉
   build/schema.gs           # （規劃中，尚未實作）由 shared/validation-schema.json 產生
 ```
 
@@ -252,7 +261,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   4. **色階怎麼選色**：今天／非今天用的底色不是隨便挑的中間值，是直接拿 `blue`／`black` 色階上對應深淺位置的既有色階（`-000`／`-050`／`-100`），見上方「色彩 token：統一用色階，不分用途」
 - **`WorkItemTable` 桌面（≥768px）版面：留白責任從「容器」移到「列」**——`.work-item-table` 本身不留左右 padding，列的背景／底線因此橫向撐滿到 `.home-view` 的邊緣（跟 `DateNav` 一樣是無側邊留白的全寬區塊，不會被關進一個縮排的框裡），改成 `.work-item-table__row` 自己吃 `padding: 0 32px`，讓儲存格內容的起始位置對齊 `DateNav` 的 32px 內距。這是取捨過的結果：容器留白會讓表格看起來卡在一個框裡、跟滿版的 `DateNav` 不協調；容器和 `DateNav` 一起不留白，`DateNav` 的按鈕又會貼到畫面邊緣，兩種都試過、都不好看，所以拆成「列背景滿版、列內容對齊」。手機（< 768px）維持原本容器留白＋卡片式列表（各自有 border/border-radius/margin），這條只套用在桌面的表格版面
 - **桌面表格資料列（不含表頭）用斑馬紋**：單數列（第 1、3、5…筆）底色比雙數列略深，方便橫向對齊閱讀；今天／非今天各自用一組色階（見上方「今天／非今天要有視覺區別」第 3 點）。資料列包在 `.work-item-table__body` 裡、表頭在外面，所以「第 1 筆資料」對應 `:nth-child(odd)`。只在桌面套用（手機卡片各自有留白間隔，斑馬紋在卡片版面上沒有意義）
-- **每日工時上限**：`DateNav` 的「今日工時合計：Xhr」文字不變，合計**超過** 8 小時（`shared/validation-schema.json` 的 `dailyHours.warn`，`DateNav.vue` 透過 `DAILY_HOURS_WARN` 讀取，剛好 8 不算）才加上 `date-nav__total--over`：只把文字換成紅色 `--color-red-700`，不加粗、不用膠囊框（使用者決定）。合計**超過** 24 小時（`dailyHours.max`）不能存：`WorkItemForm` 用 `fetchDaySummary` 查當天其他紀錄（編輯時排除自己）的工時合計 `otherHours`，加上本筆超過就在今日工時（請假時數）欄位顯示錯誤「當天工時合計不可超過 24 小時（其他紀錄已 X 小時，已超出Y小時）」（使用者決定；前端 `dailyHoursMessage`、`Code.gs` 的 `dailyHoursError_`、MSW 三處格式相同，數字四捨五入到小數兩位避免浮點誤差）。送出前前端一定先算出當天合計再決定是否放行：`otherHours` 還沒查到（查詢中或先前失敗）就在 `onSubmit` 當場再查一次（期間「儲存」按鈕顯示「檢查中…」並停用，用表單自己的 `checkingDayHours`，不動父層的 `saving`），查不到就擋下並在今日工時欄位提示「無法確認當天工時合計，請稍後再試」；剛好 24 可以存。後端也檢查（`Code.gs` 的 `handleCreate_`／`handleUpdate_` 寫入前也檢查，跨月編輯在刪舊列之前就檢查）
+- **每日工時上限**：`DateNav` 的「今日工時合計：Xhr」文字不變，合計**超過** 8 小時（`shared/validation-schema.json` 的 `dailyHours.warn`，`DateNav.vue` 透過 `DAILY_HOURS_WARN` 讀取，剛好 8 不算）才加上 `date-nav__total--over`：只把文字換成紅色 `--color-red-700`，不加粗、不用膠囊框（使用者決定）。合計**超過** 24 小時（`dailyHours.max`）不能存：`WorkItemForm` 用 `fetchDaySummary` 查當天其他紀錄（編輯時排除自己）的工時合計 `otherHours`，加上本筆超過就在今日工時（請假時數）欄位顯示錯誤「當天工時合計不可超過 24 小時（其他紀錄已 X 小時，已超出Y小時）」（使用者決定；前端 `dailyHoursMessage`、`Code.gs` 的 `dailyHoursError_`、MSW 三處格式相同，數字四捨五入到小數兩位避免浮點誤差）。送出前前端一定先算出當天合計再決定是否放行：`otherHours` 還沒查到（查詢中或先前失敗）就在 `onSubmit` 當場再查一次（期間「儲存」按鈕顯示「檢查中…」並停用，用表單自己的 `checkingDayHours`，不動父層的 `saving`），查不到就擋下並在今日工時欄位提示「無法確認當天工時合計，請稍後再試」；剛好 24 可以存。後端也檢查（`Code.gs` 的 `handleCreate_`／`handleUpdate_` 寫入前也檢查；編輯時用新的工作日期算、排除自己）
 - 完成度用進度條呈現；預計期限已過但完成度 < 100 的列，用顏色標示逾期（紅色標線＋「逾期」標籤）。列的順序一律照項次，逾期不再自動排到最前面（使用者決定，手動調整的順序才不會被打亂）。預計期限是選填，沒填不算逾期（`types/work-item.ts` 的 `isOverdue` 要先排除空字串：空字串在字串比較上永遠小於任何日期）
 - **項次調整**（使用者決定）：已登入時可以調整同一天紀錄的順序（請假列也能排），每次移動就立即呼叫 `reorder` 存檔（`HomeView` 的 `onReorder`）：先在畫面上套用新順序，失敗就還原成移動前的資料並用 Toast 顯示錯誤，登入錯誤時登出；存檔中暫時停用拖曳與上移／下移（`WorkItemTable` 的 `reordering` prop）
   - 上移／下移按鈕（Lucide `chevron-up`／`chevron-down`，ISC 授權）：平板、桌面放在項次欄，數字上下各一顆；手機卡片沒有項次欄，放在操作列最前面。第一筆不能上移、最後一筆不能下移（按鈕停用）
@@ -364,7 +373,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **儲存失敗的處理**（`HomeView.vue` 的 `onSave`／`handleSaveError`）：不在頁面上顯示錯誤文字，一律用 `AppToast` 顯示錯誤訊息
   - 登入錯誤（前端沒有 `idToken`，或後端回 `code: 'UNAUTHORIZED'`，例如 token 過期）：關閉 `WorkItemForm` Drawer 並執行 `signOut()`，畫面回到唯讀模式並顯示登入按鈕
   - 其他錯誤（欄位驗證失敗、找不到紀錄、網路錯誤等）：Drawer **維持開啟**、保留已填內容，維持登入狀態，讓使用者修正或等網路恢復後直接重送（使用者決定）
-  - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）用在「複製本日」完成、本日總結「複製」成功（使用者決定保留）。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
+  - Toast 規格：畫面上方置中（不擋手機底部操作區），一次只顯示一則、新的取代舊的，4 秒自動消失，有關閉按鈕；`z-index: 200` 疊在 Drawer／Modal（`100`）之上；外層 `aria-live` 區域常駐、內容用 `role="alert"`（success 用 `role="status"`），螢幕閱讀器才唸得出來。`showToast(message, type)` 的 `type` 預設 `error`（紅色）；`success`（綠色 `green-800` 文字、`green-000` 底、`green-200` 框，圖示 ✓）用在「複製本日」完成、本日總結「複製」成功、匯出 Excel 完成、工時設定儲存／清除成功（使用者決定保留）。手刻元件，不用 Naive UI 的 message（照「UI 元件庫」原則，只有自己刻成本高的元件才用 Naive UI）
   - 刪除工作紀錄失敗（`HomeView` 的 `confirmDelete`）比照儲存：用 Toast 顯示錯誤；登入錯誤關閉確認對話框並登出，其他錯誤確認對話框維持開啟，可以直接重試或取消。選項清單管理的錯誤也用 Toast（見上方「選項清單管理」）
 - **工具下拉選單**（使用者決定）：右上角已登入區塊原本的「選項清單」按鈕改成「工具」下拉按鈕（`NDropdown`，點擊開啟；按鈕旁的下拉箭頭是行內 SVG，圖形取自 Naive UI `NSelect` 內建的 ChevronDown，MIT 授權），裡面五項：
   - 「選項清單」：開 `OptionsManagerModal`（原本的功能）
@@ -467,6 +476,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 
 # 開發階段拆分
 
+> 1～4 已完成，5 尚未開始（計畫見專案檔案 `plans/2026-10-09-production-deploy-plan.md`）。
+
 1. Google Sheet 準備：建立「選項清單」分頁、確認分頁欄位含工作日期／ID／已刪除、Apps Script 專案初始化
 2. Apps Script 後端：doGet／doPost、自動建分頁邏輯、ID Token 驗證、共用 schema 驗證、選項清單讀寫
 3. 前端基礎建設：Vite + Vue 3 + TS 專案、ESLint/Prettier/.editorconfig、CSS token 架構、GIS 登入串接
@@ -476,6 +487,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 # 分支策略與部署
 
 Trunk-based，單人開發，不開 `release`/長期分支：
+
+> 目前（2026-10-10）遠端只有 `dev` 與各功能分支，`main`、`gh-pages`、`.github/workflows/` 都還沒建立，下面是規劃。
 
 - `main`：穩定分支，唯一的正式部署來源，對應正式站 GitHub Pages 網址（repo 根路徑）
 - `dev`：日常開發測試分支，功能開發完先進這裡驗證
@@ -506,7 +519,7 @@ Trunk-based，單人開發，不開 `release`/長期分支：
 
 判斷 `feat` vs `chore` 的原則：這筆改動是「使用者用得到的新功能/畫面/行為」用 `feat`；是「讓開發更順、跟使用者功能無關」的工具鏈/建置/依賴，用 `chore`。
 
-**scope**：對應改動範圍，例如 `manage-view`、`public-view`、`apps-script`、`sheet`、`auth`、`deploy`
+**scope**：對應改動範圍，目前用過的有 `manage-view`（主畫面，`HomeView` 與其元件）、`search`、`theme`、`auth`、`apps-script`；之後可能用到 `sheet`、`deploy`。原本規劃的 `public-view` 已不適用（管理／檢視頁已合併成 `HomeView`）
 
 **範例**：
 ```
