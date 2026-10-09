@@ -1,9 +1,12 @@
 import { ref } from 'vue';
 
 import type { WorkItem } from '@/types/work-item';
+import type { SearchQuery } from '@/utils/search-work-items';
 
 interface DoGetResponse {
   items: WorkItem[];
+  /** 搜尋（type=search）才有：全部符合的筆數（items 最多只回傳 SEARCH_MAX_RESULTS 筆） */
+  total?: number;
   error?: string;
 }
 
@@ -70,7 +73,7 @@ const postAction = async (idToken: string, payload: object): Promise<void> => {
 };
 
 /** 打 doGet 讀取未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
-const requestItems = async (params: Record<string, string>): Promise<WorkItem[]> => {
+const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
   const url = new URL(API_BASE_URL, window.location.origin);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   const res = await fetch(url.toString());
@@ -78,14 +81,20 @@ const requestItems = async (params: Record<string, string>): Promise<WorkItem[]>
   if (data.error) {
     throw new Error(data.error);
   }
-  return data.items
-    .filter((item) => !item.已刪除)
-    .map((item) => ({
-      ...item,
-      工作日期: fromApiDate(item.工作日期),
-      預計期限: fromApiDate(item.預計期限),
-    }));
+  return {
+    ...data,
+    items: data.items
+      .filter((item) => !item.已刪除)
+      .map((item) => ({
+        ...item,
+        工作日期: fromApiDate(item.工作日期),
+        預計期限: fromApiDate(item.預計期限),
+      })),
+  };
 };
+
+const requestItems = async (params: Record<string, string>): Promise<WorkItem[]> =>
+  (await requestGet(params)).items;
 
 /** 讀取某一天未刪除的紀錄 */
 const requestItemsByDate = (date: string): Promise<WorkItem[]> =>
@@ -97,6 +106,26 @@ const requestItemsByDate = (date: string): Promise<WorkItem[]> =>
  */
 export const fetchByRange = (from: string, to: string): Promise<WorkItem[]> =>
   requestItems({ type: 'range', from: toApiDate(from), to: toApiDate(to) });
+
+export interface SearchResult {
+  /** 符合的紀錄（工作日期新的在前、同一天照項次），最多 SEARCH_MAX_RESULTS 筆 */
+  items: WorkItem[];
+  /** 全部符合的筆數，大於 items.length 代表結果被截掉了 */
+  total: number;
+}
+
+/**
+ * 搜尋欄：到後端查全部資料（doGet type=search，比對規則見 utils/search-work-items.ts），
+ * 不會動到 useWorkItems() 的 items 狀態。field 有值時只搜那個欄位（點推薦）
+ */
+export const searchItems = async (query: SearchQuery): Promise<SearchResult> => {
+  const data = await requestGet({
+    type: 'search',
+    q: query.keyword.trim(),
+    ...(query.field && { field: query.field }),
+  });
+  return { items: data.items, total: data.total ?? data.items.length };
+};
 
 export interface DaySummary {
   /** 預計項次 */

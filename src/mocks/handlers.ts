@@ -4,6 +4,14 @@ import schema from '../../shared/validation-schema.json';
 
 import { isLeaveItem, type WorkItem, type WorkItemOptions } from '@/types/work-item';
 import { filterRecentItems, RECENT_DAYS } from '@/utils/recent-history';
+import {
+  compareSearchResults,
+  matchesSearch,
+  SEARCH_FIELDS,
+  SEARCH_KEYWORD_MAX,
+  SEARCH_MAX_RESULTS,
+  type SearchField,
+} from '@/utils/search-work-items';
 import { dailyHoursMessage } from '@/validation/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
@@ -257,6 +265,28 @@ export const handlers = [
         (item) => item.工作日期 >= from && item.工作日期 <= to && !item.已刪除,
       );
       return HttpResponse.json({ items: rangeItems });
+    }
+
+    // 跟 Code.gs 的 handleSearch_ 同一套規則（比對規則共用 matchesSearch）
+    if (url.searchParams.get('type') === 'search') {
+      const keyword = (url.searchParams.get('q') ?? '').trim();
+      const field = url.searchParams.get('field') || undefined;
+      if (!keyword) return HttpResponse.json({ error: '請輸入搜尋關鍵字' });
+      if (keyword.length > SEARCH_KEYWORD_MAX) {
+        return HttpResponse.json({ error: `搜尋關鍵字不可超過 ${SEARCH_KEYWORD_MAX} 字` });
+      }
+      if (field && !(SEARCH_FIELDS as readonly string[]).includes(field)) {
+        return HttpResponse.json({ error: '不支援的搜尋欄位' });
+      }
+      const matched = items
+        .filter(
+          (item) => !item.已刪除 && matchesSearch(item, { keyword, field: field as SearchField }),
+        )
+        .sort(compareSearchResults);
+      return HttpResponse.json({
+        items: matched.slice(0, SEARCH_MAX_RESULTS),
+        total: matched.length,
+      });
     }
 
     const date = url.searchParams.get('date') ?? today;

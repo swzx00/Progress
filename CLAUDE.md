@@ -78,6 +78,7 @@
 - 接受 `date` 參數（`YYYY/MM/DD`，例如 `2026/09/17`，見上方「日期欄位格式」），後端從工作紀錄分頁讀出當天且「已刪除≠TRUE」的列
 - 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見「UI/UX 定案」的「表單的推薦與預填」
 - 額外支援 `type=range&from=YYYY/MM/DD&to=YYYY/MM/DD`（`handleRange_`），讀出 from～to（含頭尾）的未刪除紀錄（含請假），回應 `{ items }`，給前端「匯出 Excel」用。沿用 `readRowsByDate_`，傳入範圍判斷函式（`YYYY/MM/DD` 補零固定長度，字串可直接比大小），一樣只先讀工作日期一欄。檢查日期格式（含 2/30 這類不存在的日期）、from ≤ to、跨度上限 366 天（`RANGE_MAX_DAYS`），不合格回 `{ error }`。公開讀取、不需登入，同上
+- 額外支援 `type=search&q=關鍵字[&field=欄位]`（`handleSearch_`），讀整張工作紀錄分頁找出符合的未刪除紀錄（含請假），給前端搜尋欄用，回應 `{ items, total }`：照「工作日期新的在前、同一天照項次」排序，最多回傳 `SEARCH_MAX_RESULTS`（200）筆，`total` 是全部符合的筆數。比對規則（`matchesSearch_`）跟前端 `src/utils/search-work-items.ts` 的 `matchesSearch` 手動同步，見「UI/UX 定案」的「搜尋欄」。關鍵字不可空白、上限 `SEARCH_KEYWORD_MAX`（100）字，`field` 只接受 `SEARCH_FIELDS`，不合格回 `{ error }`。公開讀取、不需登入
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
 **前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
@@ -120,6 +121,7 @@ src/
     HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
     WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式）
+    WorkItemSearch.vue    # 搜尋欄：輸入框＋推薦選擇下拉＋搜尋按鈕，放在 DateNav 的 search slot，見「UI/UX 定案」的「搜尋欄」
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次，見「UI/UX 定案」
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
@@ -142,6 +144,7 @@ src/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
+    search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
     recent-history.ts      # 近期紀錄：下拉推薦（recentUnit／recentAssignee／recentProject／recentRepos／withRecentFirst）、工作目標預填（targetKey／recentByTarget）、存檔後更新（upsertRecentItems）
   validation/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
@@ -197,6 +200,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - 色彩管理：一律用 CSS 變數（design token），不寫死 hex，符合開閉原則；初期只做白色系，右上角先放一個不可點擊的深色模式圖示（滑鼠移上顯示「即將推出」）當伏筆
 - **色彩 token：統一用色階，不分用途**：`src/styles/tokens.scss` 只有一種 token，命名一律是 `--color-<色系>-<階>`（例如 `--color-blue-000`、`--color-black-100`、`--color-red-050`）。元件裡的文字、背景、邊框都直接挑色階使用，**不另外定義 text／surface／border 這類依用途命名的 token**（使用者決定：同一套色階好記、好挑，不想維護兩層命名）
   - **色值來源**：公司共用設計系統的 primitive 色階，完整檔案在 `D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss`（另一個專案的檔案，不在本 repo 內）。色系名稱對應：`Candidate-Blue` → `blue`、`1111-Black` → `black`（中性灰階）、`1111-Rose` → `red`（危險／錯誤）、`1111-Teal`／`1111-Green`／`1111-Yellow`／`1111-Orange` → `teal`／`green`／`yellow`／`orange`。不自己配色，需要新顏色時先從這份檔案的色階挑
+  - 例外：`purple` 是推算的色階，不在設計系統裡（搜尋結果用），見「UI/UX 定案」的「搜尋欄」
   - 設計系統另有一組品牌紅 `Candidate-Red`（`#cf2323` 系列），跟上面對應成 `red` 的 `1111-Rose` 是不同色階；專案目前沒用到，之後真的需要時不能也叫 `red`，要另外取名（例如 `--color-brand-red-*`）
   - `tokens.scss` 放的是用到的色系的**完整色階**（`000`／`050`／`100`～`1000`），換深淺直接改階數，不用回來加 token；用到新色系（例如 Orange、Purple）時，整組色階從設計系統檔複製進來
   - 常用對照：主文字 `--color-black-800`、次要文字 `--color-black-500`、白底 `--color-black-000`、淺灰底 `--color-black-050`、細邊框 `--color-black-100`、主色 `--color-blue-500`、深藍文字 `--color-blue-700`、危險色 `--color-red-600`
@@ -376,6 +380,17 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - 預計期限用 UTC 午夜建 `Date`（ExcelJS 用 UTC 換算日期序號），不會差一天
   - **樣式**（ExcelJS 吃 ARGB hex，吃不了 CSS 變數，程式裡每個值旁邊註解對應色階，改 `tokens.scss` 時要手動同步）：表頭底 `blue-700`、字 `black-000` 粗體；資料列斑馬紋第 1、3、5…筆 `black-050`、雙數 `black-000`，字 `black-800`；請假列整列（蓋過斑馬紋）底 `teal-050`、字 `teal-800`；工時合計列底 `black-100`、字 `black-800` 粗體；格線 `black-100` 細線
   - ExcelJS 用動態 `import()` 只在按「匯出」時載入（`vendor-exceljs`，見「開發工具鏈」的建置拆檔）
+- **搜尋欄**（使用者決定，`WorkItemSearch.vue`，規則集中在 `src/utils/search-work-items.ts`）：搜尋**全部資料**（跨日期），登入與唯讀畫面都有
+  - **位置**：放在 `DateNav` 的 `search` slot，跟動作按鈕包在同一個 `date-nav__toolbar`。桌面、平板在動作按鈕左邊同一列，最大寬度跟日期切換（`date-nav__switcher`）一樣寬（`--switcher-width`：4 顆 32px 按鈕＋170px 日期選擇器＋4 個 8px 間距，改這幾個寬度時要一起改）；手機在動作按鈕和日期切換中間自成一列
+  - **推薦選擇**（打字時）：只用瀏覽器裡已經有的小資料，不打 API——選項清單（交辦單位、交辦人員、專案名稱、專案 Repo）＋近期紀錄（`useOptions` 的 `recentItems`，近 30 天）的工作目標，第一次聚焦時呼叫 `fetchOptions`。包含關鍵字的值（不分大小寫），開頭就符合的排前面，最多 8 筆（`buildSuggestions`），每筆左邊標分類、符合的那段 `blue-700` 粗體；清單第一項固定是「全部欄位｜搜尋「關鍵字」」。上下鍵移動、Enter 送出（沒選推薦就是搜尋全部欄位）、Esc 先關推薦，推薦已關時清除搜尋
+  - **搜尋結果**（按 Enter、搜尋按鈕或點推薦才查）：打後端 `doGet type=search`（`useWorkItems.ts` 的 `searchItems`），每次大約 1–2 秒
+    - 一般搜尋：交辦單位、交辦人員、專案名稱、專案 Repo（`#AAA` 或 `AAA` 都找得到）、工作目標、處理內容、狀態；不分大小寫，空白隔開的每個關鍵字都要出現（AND）
+    - 點推薦只搜那個欄位：交辦單位／交辦人員／專案名稱完全相同；專案 Repo 包含那一個；工作目標包含那段文字（同一件工作的目標常會多寫幾個字）
+  - **結果呈現**（`HomeView` 的 `searchQuery`／`searchResult`）：表格換成搜尋結果，上方一行「搜尋結果：專案名稱「官網改版」，共 N 筆」＋「結束搜尋」；超過 200 筆加註「只顯示最新的 200 筆」。`WorkItemTable` 的 `search-mode`：照傳進來的順序（工作日期新的在前）、項次欄換成工作日期（`--index-col` 從 32px 加寬成 84px；手機卡片在最上面一行），點日期 emit `goToDate` 跳到那天並結束搜尋；不顯示拖曳把手與上移／下移，編輯、複製、刪除照常（存檔、刪除、複製本日後重新搜尋一次，`refreshAfterChange`）；不套今天／放假的底色
+  - **狀態**：搜尋中 `AppLoading`「搜尋中…」；錯誤顯示訊息＋「重新載入」（用同一組條件再搜尋一次）；沒有符合時表格空狀態「找不到符合「關鍵字」的紀錄」。連續搜尋只採用最後一次的結果
+  - **色系：purple**（使用者決定），階數比照今天：表頭 `purple-100`、斑馬紋 `purple-050`／`purple-000`、邊框 `purple-200`、工作日期連結與「展開／收合」`purple-700`（滑過 `purple-800`）、展開列底 `purple-100`／框 `purple-300`；搜尋摘要列 `purple-700` 字、不加底色（使用者決定）；空狀態 `purple-700` 字＋`purple-000` 底。請假、逾期的列照常用自己的 teal／red。`purple` 不是設計系統原有的色階：色相取舊版 `--Purple`（薰衣草），每一階的深淺（OKLab 明度）對齊 `1111-Purple` 同一階推算出來（使用者決定），見 `tokens.scss` 的註解
+  - 顯示搜尋結果時（`DateNav` 的 `searching` prop），`DateNav` 只留搜尋欄：日期切換、放假徽章／工時合計／今天、動作按鈕都不顯示（使用者決定，搜尋結果跨日期，跟選到的那天無關）
+  - 清空搜尋欄（✕、Esc 或自己刪光）、按「結束搜尋」、點工作日期都會回到單日表格
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
 - `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
@@ -506,6 +521,7 @@ npm run format     # Prettier 格式化 src/
 - ~~重新部署 `Code.gs`（選項清單每欄連續存放、值當文字比對）。部署後在編輯器的「執行」選單手動執行一次 `compactOptionsSheet()`，把「選項清單」每一欄往上補齊、去掉重複值（例如重複的「11111」）。部署前真後端新增選項仍會寫在整張分頁的最後一列、純數字的選項仍刪不掉／改不了~~（已完成，2026-10-08 部署並執行 `compactOptionsSheet()`）
 - ~~重新部署 `Code.gs`（欄位驗證規則改版：處理內容、預計期限改選填，狀態改必填，今日工時 0–24／0.25，字數上限等）。部署前真後端仍是舊規則，前端送出空的處理內容或預計期限會被後端退回~~（已完成）
 - 重新部署 `Code.gs`（`type=options` 多回傳近 30 天的近期紀錄 `recentItems`）。部署前表單下拉選單不會有「最近」推薦、填完工作目標也不會預填，其他功能不受影響
+- 重新部署 `Code.gs`（`doGet` 新增 `type=search`，搜尋欄用）。部署前按下搜尋會出現錯誤「缺少 date 參數」（舊後端不認得 `type=search`），推薦選擇與其他功能不受影響
 - 重新部署 `Code.gs`（`doGet` 新增 `type=range`，匯出 Excel 用）。部署前按「匯出」會出現錯誤 Toast「缺少 date 參數」（舊後端不認得 `type=range`），其他功能不受影響
 
 ---

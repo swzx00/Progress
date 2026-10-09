@@ -1,7 +1,8 @@
 // 色彩 token：統一用色階命名 --color-<色系>-<階>，元件裡文字／背景／邊框都直接挑色階使用
 // 色值來自公司共用設計系統的 primitive 色階
 // D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss
-// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow／Orange → 同名
+// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow／Orange → 同名；
+// purple 是推算的色階（見下方 Purple 區塊註解）
 :root {
   // Blue（Candidate-Blue）
   --color-blue-000: #f5f8ff;
@@ -100,6 +101,22 @@
   --color-orange-800: #8a320b;
   --color-orange-900: #662509;
   --color-orange-1000: #471a06;
+
+  // Purple（搜尋結果用，使用者決定）：設計系統沒有完整的這組色階，是推算出來的——
+  // 色相取舊版 Purple（薰衣草，--Purple-100～1000），每一階的深淺（OKLab 明度）對齊 1111-Purple 的同一階，
+  // 在舊版 Purple 色階上內插取色（比最淺／最深還淺／深的階往白／黑延伸）
+  --color-purple-000: #faf5fd;
+  --color-purple-050: #f2e7f9;
+  --color-purple-100: #dbb4ea;
+  --color-purple-200: #c990dd;
+  --color-purple-300: #ad68c4;
+  --color-purple-400: #9d52b5;
+  --color-purple-500: #89429f;
+  --color-purple-600: #773688;
+  --color-purple-700: #612f6d;
+  --color-purple-800: #4c2255;
+  --color-purple-900: #3b1643;
+  --color-purple-1000: #290c30;
 }
 
 /* 深色模式預留位置，目前只做白色系，尚未提供 [data-theme="dark"] 對應值 */

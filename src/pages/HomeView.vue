@@ -11,14 +11,26 @@ import DateNav from '@/components/DateNav.vue';
 import ExportModal from '@/components/ExportModal.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
+import WorkItemSearch from '@/components/WorkItemSearch.vue';
 import WorkItemTable from '@/components/WorkItemTable.vue';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useOptions } from '@/composables/useOptions';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { useToast } from '@/composables/useToast';
-import { ApiError, fetchDaySummary, useWorkItems } from '@/composables/useWorkItems';
+import {
+  ApiError,
+  fetchDaySummary,
+  searchItems,
+  useWorkItems,
+  type SearchResult,
+} from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
+import {
+  SEARCH_FIELD_LABELS,
+  SEARCH_MAX_RESULTS,
+  type SearchQuery,
+} from '@/utils/search-work-items';
 import { DAILY_HOURS_MAX, dailyHoursMessage } from '@/validation/work-item';
 
 const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
@@ -52,6 +64,65 @@ watch(selectedDate, (date) => fetchByDate(date), { immediate: true });
 const totalHours = computed(() =>
   loading.value ? undefined : items.value.reduce((sum, item) => sum + item.今日工時, 0),
 );
+
+/**
+ * 搜尋（使用者決定）：搜尋欄按下搜尋（Enter、搜尋按鈕、點推薦）後到後端查全部資料，
+ * 表格換成「搜尋結果」（跨日期，工作日期新的在前），點工作日期跳到那天並結束搜尋。
+ * 結果列可以編輯、複製、刪除（存檔後重新搜尋一次），不能調整順序。
+ * 連續搜尋只採用最後一次的結果；清空搜尋欄就回到單日表格
+ */
+const searchText = ref('');
+const searchQuery = ref<SearchQuery | null>(null);
+const searchResult = ref<SearchResult | null>(null);
+const searchLoading = ref(false);
+const searchError = ref<string | null>(null);
+let searchSeq = 0;
+
+const runSearch = async (query: SearchQuery): Promise<void> => {
+  const seq = ++searchSeq;
+  searchQuery.value = query;
+  searchLoading.value = true;
+  searchError.value = null;
+  try {
+    const result = await searchItems(query);
+    if (seq !== searchSeq) return;
+    searchResult.value = result;
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    searchResult.value = null;
+    searchError.value = e instanceof Error ? e.message : '搜尋時發生未知錯誤';
+  } finally {
+    if (seq === searchSeq) searchLoading.value = false;
+  }
+};
+
+const clearSearch = (): void => {
+  searchSeq++;
+  searchText.value = '';
+  searchQuery.value = null;
+  searchResult.value = null;
+  searchError.value = null;
+  searchLoading.value = false;
+};
+
+const goToDate = (date: string): void => {
+  clearSearch();
+  selectedDate.value = date;
+};
+
+const searchSummary = computed(() => {
+  if (!searchQuery.value) return '';
+  const { keyword, field } = searchQuery.value;
+  return field ? `${SEARCH_FIELD_LABELS[field]}「${keyword}」` : `「${keyword}」`;
+});
+
+/** 新增、編輯、刪除後：重讀選到的那天；搜尋中也重新搜尋一次，結果才不會過時 */
+const refreshAfterChange = async (): Promise<void> => {
+  await Promise.all([
+    fetchByDate(selectedDate.value),
+    searchQuery.value ? runSearch(searchQuery.value) : Promise.resolve(),
+  ]);
+};
 
 const optionsManagerOpen = ref(false);
 const daySummaryOpen = ref(false);
@@ -139,7 +210,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
       await createItem(idToken.value, payload);
     }
     rememberItems([{ ...payload, id: editingItem.value?.id }]);
-    await fetchByDate(selectedDate.value);
+    await refreshAfterChange();
     formOpen.value = false;
   } catch (e) {
     handleSaveError(
@@ -210,6 +281,7 @@ const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> =
     } else {
       selectedDate.value = targetDate;
     }
+    if (searchQuery.value) void runSearch(searchQuery.value);
     showToast(`已複製 ${payloads.length} 筆紀錄到 ${formatDisplayDate(targetDate)}`, 'success');
   } catch (e) {
     // 登入錯誤：關閉對話框並登出；其他錯誤（含後端整批退回）：複製對話框維持開啟，讓使用者換日期重試
@@ -330,7 +402,7 @@ const confirmDelete = async (): Promise<void> => {
   try {
     await deleteItem(idToken.value, deleteTarget.value.id);
     deleteTarget.value = null;
-    await fetchByDate(selectedDate.value);
+    await refreshAfterChange();
   } catch (e) {
     if (e instanceof ApiError && e.code === 'UNAUTHORIZED') {
       handleDeleteUnauthorized(e.message);
@@ -393,7 +465,15 @@ const onOptionsUnauthorized = (): void => {
       <div v-else ref="signInButtonEl" class="home-view__signin"></div>
     </header>
 
-    <DateNav v-model="selectedDate" :total-hours="totalHours" :has-items="items.length > 0">
+    <DateNav
+      v-model="selectedDate"
+      :total-hours="totalHours"
+      :has-items="items.length > 0"
+      :searching="searchQuery !== null"
+    >
+      <template #search>
+        <WorkItemSearch v-model="searchText" @search="runSearch" @clear="clearSearch" />
+      </template>
       <template v-if="isAuthorized" #actions>
         <button
           v-if="canCopyDay"
@@ -481,7 +561,43 @@ const onOptionsUnauthorized = (): void => {
       </template>
     </DateNav>
 
-    <AppLoading v-if="loading" class="home-view__loading" />
+    <!-- 搜尋結果：載入中、錯誤（可重新搜尋）、結果（含沒有符合的空狀態） -->
+    <template v-if="searchQuery">
+      <AppLoading v-if="searchLoading" label="搜尋中…" class="home-view__loading" />
+      <div v-else-if="searchError" class="home-view__error">
+        <span class="home-view__error-icon" aria-hidden="true">⚠</span>
+        <span>{{ searchError }}</span>
+        <button type="button" class="home-view__retry-btn" @click="runSearch(searchQuery)">
+          重新載入
+        </button>
+      </div>
+      <template v-else-if="searchResult">
+        <div class="home-view__search-summary" role="status">
+          <span>
+            搜尋結果：{{ searchSummary }}，共 {{ searchResult.total }} 筆<template
+              v-if="searchResult.total > searchResult.items.length"
+              >，只顯示最新的 {{ SEARCH_MAX_RESULTS }} 筆</template
+            >
+          </span>
+          <button type="button" class="home-view__signout-btn" @click="clearSearch">
+            結束搜尋
+          </button>
+        </div>
+        <WorkItemTable
+          :items="searchResult.items"
+          :today="toDateString(new Date())"
+          :editable="isAuthorized"
+          search-mode
+          :search-keyword="searchQuery.keyword"
+          @edit="openEditForm"
+          @copy="openCopyForm"
+          @delete="openDeleteConfirm"
+          @go-to-date="goToDate"
+        />
+      </template>
+    </template>
+
+    <AppLoading v-else-if="loading" class="home-view__loading" />
     <div v-else-if="error" class="home-view__error">
       <span class="home-view__error-icon" aria-hidden="true">⚠</span>
       <span>{{ error }}</span>
@@ -759,6 +875,37 @@ const onOptionsUnauthorized = (): void => {
 
     @media (min-width: 768px) {
       flex: none;
+    }
+  }
+
+  // 搜尋結果上方的摘要（關鍵字、筆數）＋結束搜尋；左右內距跟 DateNav 對齊，文字色系跟搜尋結果表格一樣用 purple，不加底色（使用者決定）
+  &__search-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px 12px;
+    font-size: 13px;
+    color: var(--color-purple-700);
+
+    @media (min-width: 768px) {
+      padding: 0 32px 12px;
+    }
+  }
+
+  &__retry-btn {
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--color-black-600);
+    cursor: pointer;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-300);
+    border-radius: 6px;
+
+    &:hover {
+      color: var(--color-black-700);
+      background: var(--color-black-050);
     }
   }
 
