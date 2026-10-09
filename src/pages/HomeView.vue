@@ -10,6 +10,7 @@ import DaySummaryModal from '@/components/DaySummaryModal.vue';
 import DateNav from '@/components/DateNav.vue';
 import ExportModal from '@/components/ExportModal.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
+import WorkHoursSettingModal from '@/components/WorkHoursSettingModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
 import WorkItemSearch from '@/components/WorkItemSearch.vue';
 import WorkItemTable from '@/components/WorkItemTable.vue';
@@ -128,6 +129,7 @@ const refreshAfterChange = async (): Promise<void> => {
 const optionsManagerOpen = ref(false);
 const daySummaryOpen = ref(false);
 const exportOpen = ref(false);
+const workHoursOpen = ref(false);
 
 // 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前的選項前面打勾。
 // 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項
@@ -150,12 +152,13 @@ const onThemeSelect = (key: string): void => {
 };
 
 // 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）、
-// 匯出 Excel（選範圍下載 .xlsx 的 Modal）、樣式（子選單，切換深色模式）
-type ToolKey = 'options' | 'daySummary' | 'export';
+// 匯出 Excel（選範圍下載 .xlsx 的 Modal）、工時設定（上下班、午休時間的 Modal）、樣式（子選單，切換深色模式）
+type ToolKey = 'options' | 'daySummary' | 'export' | 'workHours';
 const toolOptions = computed<DropdownOption[]>(() => [
   { label: '選項清單', key: 'options' },
   { label: '本日總結', key: 'daySummary' },
   { label: '匯出 Excel', key: 'export' },
+  { label: '工時設定', key: 'workHours' },
   { label: '樣式', key: 'theme', children: themeOptions.value },
 ]);
 const onToolSelect = (key: ToolKey | string): void => {
@@ -163,6 +166,7 @@ const onToolSelect = (key: ToolKey | string): void => {
   else if (key === 'options') optionsManagerOpen.value = true;
   else if (key === 'daySummary') daySummaryOpen.value = true;
   else if (key === 'export') exportOpen.value = true;
+  else if (key === 'workHours') workHoursOpen.value = true;
 };
 
 const formOpen = ref(false);
@@ -440,6 +444,12 @@ const confirmDelete = async (): Promise<void> => {
 /** 選項清單管理遇到登入錯誤：關閉 Modal 並強制登出（錯誤訊息已由 Modal 用 Toast 顯示） */
 const onOptionsUnauthorized = (): void => {
   optionsManagerOpen.value = false;
+  signOut();
+};
+
+/** 工時設定遇到登入錯誤：比照選項清單管理，關閉 Modal 並強制登出 */
+const onWorkHoursUnauthorized = (): void => {
+  workHoursOpen.value = false;
   signOut();
 };
 </script>
@@ -743,6 +753,15 @@ const onOptionsUnauthorized = (): void => {
         v-if="exportOpen && isAuthorized"
         :default-date="selectedDate"
         @close="exportOpen = false"
+      />
+    </Transition>
+
+    <Transition name="work-hours-setting">
+      <WorkHoursSettingModal
+        v-if="workHoursOpen && isAuthorized && idToken"
+        :id-token="idToken"
+        @close="workHoursOpen = false"
+        @unauthorized="onWorkHoursUnauthorized"
       />
     </Transition>
 

@@ -12,6 +12,7 @@ import {
   SEARCH_MAX_RESULTS,
   type SearchField,
 } from '@/utils/search-work-items';
+import { validateWorkHoursSetting, type WorkHoursSetting } from '@/utils/work-hours';
 import { dailyHoursMessage } from '@/validation/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
@@ -129,6 +130,9 @@ let options: WorkItemOptions = {
   專案Repo: ['AAA', 'BBBB', 'member-web'],
 };
 
+// 工時設定（Code.gs 存在「選項清單」分頁的「工時設定」欄），預設未設定
+let workHours: WorkHoursSetting | null = null;
+
 // 請假列的固定欄位一律由後端覆蓋（跟 Code.gs 的 applyLeaveFixedValues_ 同一套規則）
 const applyLeaveFixedValues = <T extends Partial<WorkItem>>(item: T): T =>
   isLeaveItem(item as WorkItem)
@@ -206,6 +210,13 @@ interface DeleteOptionPayload {
   value: string;
 }
 
+interface SaveWorkHoursPayload {
+  action: 'saveWorkHours';
+  idToken: string;
+  /** null 代表清除 */
+  workHours: WorkHoursSetting | null;
+}
+
 type DoPostPayload =
   | CreatePayload
   | BatchCreatePayload
@@ -214,7 +225,8 @@ type DoPostPayload =
   | DeletePayload
   | AddOptionPayload
   | RenameOptionPayload
-  | DeleteOptionPayload;
+  | DeleteOptionPayload
+  | SaveWorkHoursPayload;
 
 // 匯出 Excel（type=range）一次最多可讀的天數，跟 Code.gs 的 RANGE_MAX_DAYS 一致
 const RANGE_MAX_DAYS = 366;
@@ -252,7 +264,7 @@ export const handlers = [
         items.filter((item) => !item.已刪除),
         cutoff,
       );
-      return HttpResponse.json({ options, recentItems });
+      return HttpResponse.json({ options, recentItems, workHours });
     }
 
     if (url.searchParams.get('type') === 'range') {
@@ -437,6 +449,25 @@ export const handlers = [
         [body.category]: options[body.category].filter((v) => v !== body.value),
       };
       return HttpResponse.json({ options });
+    }
+
+    // 跟 Code.gs 的 handleSaveWorkHours_ 同一套規則：驗證通過才存，回應帶回最新的工時設定
+    if (body.action === 'saveWorkHours') {
+      if (body.workHours) {
+        const workHoursError = validateWorkHoursSetting(body.workHours);
+        if (workHoursError) return HttpResponse.json({ error: workHoursError });
+      }
+      workHours = body.workHours
+        ? {
+            start: body.workHours.start,
+            end: body.workHours.end,
+            ...(body.workHours.breakStart && {
+              breakStart: body.workHours.breakStart,
+              breakEnd: body.workHours.breakEnd,
+            }),
+          }
+        : null;
+      return HttpResponse.json({ workHours });
     }
 
     return HttpResponse.json({ error: 'unknown action' });

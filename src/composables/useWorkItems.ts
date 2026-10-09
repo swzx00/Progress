@@ -134,6 +134,8 @@ export interface DaySummary {
   otherHours: number;
   /** 當天未刪除的紀錄筆數（「複製本日」判斷目標日是否已有紀錄） */
   itemCount: number;
+  /** 當天未刪除的紀錄（含請假）的 id、項次、今日工時，表單依項次推算工作時段用 */
+  entries: Pick<WorkItem, 'id' | '項次' | '今日工時'>[];
 }
 
 /**
@@ -142,7 +144,7 @@ export interface DaySummary {
  *   只是給表單顯示的參考值，實際項次由後端寫入當下決定
  * - 其他紀錄工時合計：排除 excludeId（編輯時是自己），跟 Code.gs 的 getDayHoursExcluding_
  *   同一套規則，給表單檢查每日工時上限
- * 改其中一邊要一起改。
+ * 改其中一邊要一起改。另外附上當天各紀錄的項次與工時（entries），表單依項次推算工作時段用。
  */
 export const fetchDaySummary = async (date: string, excludeId?: string): Promise<DaySummary> => {
   const dayItems = await requestItemsByDate(date);
@@ -152,6 +154,7 @@ export const fetchDaySummary = async (date: string, excludeId?: string): Promise
       .filter((item) => item.id !== excludeId)
       .reduce((sum, item) => sum + (Number(item.今日工時) || 0), 0),
     itemCount: dayItems.length,
+    entries: dayItems.map(({ id, 項次, 今日工時 }) => ({ id, 項次, 今日工時 })),
   };
 };
 
