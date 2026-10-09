@@ -160,6 +160,9 @@ onBeforeUnmount(() => {
     overflow: hidden;
     word-break: break-all;
 
+    // 保留使用者在表單按 Enter 打的換行（處理內容、工作目標），不然會被當成空白連成一段
+    white-space: pre-wrap;
+
     // 佔位：把「…展開」推到最後一行（高度＝收合高度扣掉一行）
     &::before {
       float: right;
@@ -175,6 +178,7 @@ onBeforeUnmount(() => {
   &__more {
     float: right;
     clear: both;
+    white-space: normal;
   }
 
   // 「展開／收合」：依列的色系（--expand-toggle），滑過變深並出現底線；
@@ -187,6 +191,9 @@ onBeforeUnmount(() => {
     font-size: 0.875em;
     font-weight: 500;
     color: var(--expand-toggle, var(--color-black-700));
+
+    // 按鈕文字前後的空白不要被 pre-wrap 保留
+    white-space: normal;
     cursor: pointer;
     background: none;
     border: none;

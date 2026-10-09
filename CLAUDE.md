@@ -256,6 +256,7 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
 - **`DateNav` 右側動作按鈕的 hover**（使用者決定，`HomeView.vue` 的 `home-view__add-btn`）：實心底的「＋ 新增」滑過變深（`blue-500` → `blue-700`）；框線按鈕滑過改成淡色底＋深一階的文字與框線——請假 `teal-050` 底／`teal-800`，複製本日 `black-050` 底／`black-700`
 - **複製**（使用者決定）：欄位規則集中在 `src/utils/copy-work-item.ts` 的 `buildCopyPayload`，單項複製跟複製本日共用，改一處兩邊一起生效；項次一律由後端照新日期的每日編號規則接續
 - **文字刪節**（使用者決定）：表格的工作目標、處理內容、專案名稱/Repo 收合時截斷，桌面、平板 2 行，手機 3 行（共用元件 `ClampText.vue`，儲存格本身不再設 `line-clamp`）
+  - 保留使用者在表單按 Enter 打的換行（`ClampText` 的 `__body` 設 `white-space: pre-wrap`，「…<展開>」「<收合>」按鈕另外設回 `normal`），換行後的行數一樣計入 2／3 行的截斷
   - 只有「真的被截斷」才算：`ClampText` 用 `ResizeObserver` 比較內容實際高度與顯示高度，子元素加 `data-ellipsis` 的（Repo 膠囊單行「…」截斷）寬度被截斷也算；視窗縮放、內容變動都會重新判斷
   - 有滑鼠的裝置（`(hover: hover) and (pointer: fine)`）滑過被截斷的文字，用 `NTooltip` 顯示全文（延遲 0.3 秒、寬度上限 360px、內容保留換行，太長在框內捲動）；觸控裝置不做 tooltip。tooltip 只在收合狀態出現
   - **展開／收合是行內按鈕**（使用者決定）：收合且被截斷時，「…<展開>」（按鈕文字含角括號）接在最後一行（桌面平板第 2 行、手機第 3 行）的尾端，文字在它前面斷開；做法是 float 繞排（`__body` 用 `max-height: N × 1lh` 控制行數，`::before` 佔位 `float: right; height: calc(100% - 1lh)` 把 `__more` 推到最後一行，`__more` 再 `float: right; clear: both`），不用拿底色蓋文字，斑馬紋、今天、放假、請假等各種底色都不會穿幫。專案名稱/Repo 這一欄例外：Repo 膠囊本身已經有「…」，所以不加「…」也不接在行尾，「<展開>」直接放在截斷內容的下一行（`ClampText` 的 `inline-toggle="false"`，使用者決定）。點任一個「展開」**整列**都不截斷，每格全文的下一行出現「<收合>」，點任一個整列收回。按鈕由 `ClampText` 渲染（emit `toggle`），有 `aria-expanded`，`::after` 往外撐開點擊範圍。判斷是否被截斷時會先暫時拿掉「…展開」再量，避免剛好放得下的文字被按鈕擠出一行而誤判（以上「展開／收合」都指含角括號的按鈕文字）
