@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { VueDraggable, type SortableEvent } from 'vue-draggable-plus';
 
 import ClampText from '@/components/ClampText.vue';
+import HighlightText from '@/components/HighlightText.vue';
 import { getStatusKey, isLeaveItem, isOverdue, type WorkItem } from '@/types/work-item';
+import {
+  highlightTerms,
+  splitHighlight,
+  splitRepoHighlight,
+  type HighlightField,
+  type SearchField,
+  type SearchQuery,
+  type TextSegment,
+} from '@/utils/search-work-items';
 
 const props = withDefaults(
   defineProps<{
@@ -20,8 +30,10 @@ const props = withDefaults(
      * （工作日期新的在前）；項次欄換成工作日期（點了跳到那天），不能調整順序，其他操作照常
      */
     searchMode?: boolean;
-    /** 搜尋結果是空的時候，空狀態顯示的關鍵字 */
+    /** 搜尋的關鍵字：空狀態顯示用，搜尋結果也用它標示符合的字 */
     searchKeyword?: string;
+    /** 點推薦搜尋時只搜的那個欄位，只標示那個欄位；一般搜尋沒有 */
+    searchField?: SearchField;
   }>(),
   {
     editable: false,
@@ -29,6 +41,7 @@ const props = withDefaults(
     reordering: false,
     searchMode: false,
     searchKeyword: '',
+    searchField: undefined,
   },
 );
 
@@ -119,6 +132,20 @@ const onDragStart = (event: SortableEvent): void => {
   const id = event.item.dataset.id;
   if (id) collapseRow(id);
 };
+
+/**
+ * 搜尋結果標示符合的字（使用者決定）：只在搜尋模式；比對規則見 utils/search-work-items.ts 的 highlightTerms。
+ * 非搜尋模式時 highlightQuery 是 null，切出來就是整段不標示
+ */
+const highlightQuery = computed<SearchQuery | null>(() =>
+  props.searchMode && props.searchKeyword
+    ? { keyword: props.searchKeyword, field: props.searchField }
+    : null,
+);
+const highlight = (text: string, field: HighlightField): TextSegment[] =>
+  splitHighlight(text, highlightTerms(highlightQuery.value, field));
+const highlightRepo = (repo: string): TextSegment[] =>
+  splitRepoHighlight(repo, highlightQuery.value);
 
 const titleFullText = (item: WorkItem): string =>
   [item.專案名稱, item.專案Repo.map((repo) => `#${repo}`).join(' ')].filter(Boolean).join('\n');
@@ -285,23 +312,24 @@ const moveRow = (index: number, direction: -1 | 1): void => {
             :inline-toggle="false"
             @toggle="toggleRow(item.id, $event)"
           >
-            <div class="work-item-table__title-text">{{ item.專案名稱 }}</div>
+            <div class="work-item-table__title-text">
+              <HighlightText :segments="highlight(item.專案名稱, '專案名稱')" />
+            </div>
             <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
               <span
                 v-for="repo in item.專案Repo"
                 :key="repo"
                 class="work-item-table__repo-tag"
                 data-ellipsis
-                >#{{ repo }}</span
-              >
+                ><HighlightText :segments="highlightRepo(repo)"
+              /></span>
             </div>
           </ClampText>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--status" role="cell">
-          <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)">{{
-            item.狀態
-          }}</span
+          <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)"
+            ><HighlightText :segments="highlight(item.狀態, '狀態')" /></span
           ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
         </div>
 
@@ -339,16 +367,20 @@ const moveRow = (index: number, direction: -1 | 1): void => {
         <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
         <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
           <span class="work-item-table__assignee-stacked">
-            <span class="work-item-table__assignee-unit">{{ item.交辦單位 }}</span>
-            <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person">{{
-              item.交辦人員
-            }}</span>
+            <span class="work-item-table__assignee-unit"
+              ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
+            /></span>
+            <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person"
+              ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')"
+            /></span>
           </span>
-          <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline">{{
-            item.交辦單位
-          }}</span>
+          <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline"
+            ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
+          /></span>
           <span v-else class="work-item-table__assignee-inline"
-            >{{ item.交辦人員 }}（{{ item.交辦單位 }}）</span
+            ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')" />（<HighlightText
+              :segments="highlight(item.交辦單位, '交辦單位')"
+            />）</span
           >
         </div>
 
@@ -357,8 +389,8 @@ const moveRow = (index: number, direction: -1 | 1): void => {
             :full-text="item.工作目標"
             :expanded="isExpanded(item.id)"
             @toggle="toggleRow(item.id, $event)"
-            >{{ item.工作目標 }}</ClampText
-          >
+            ><HighlightText :segments="highlight(item.工作目標, '工作目標')"
+          /></ClampText>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
@@ -367,8 +399,8 @@ const moveRow = (index: number, direction: -1 | 1): void => {
             :expanded="isExpanded(item.id)"
             @toggle="toggleRow(item.id, $event)"
             ><span class="work-item-table__mobile-label">處理內容：</span
-            >{{ item.處理內容 }}</ClampText
-          >
+            ><HighlightText :segments="highlight(item.處理內容, '處理內容')"
+          /></ClampText>
         </div>
 
         <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
