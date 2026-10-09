@@ -10,6 +10,7 @@ import { fetchDaySummary } from '@/composables/useWorkItems';
 import { vAutoResize } from '@/directives/auto-resize';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
+import { todayString } from '@/utils/date';
 import {
   recentAssignee,
   recentByTarget,
@@ -69,8 +70,6 @@ const emit = defineEmits<{
   save: [payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>];
   cancel: [];
 }>();
-
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
 const {
   options,
@@ -172,7 +171,7 @@ const validate = (values: WorkItemFormValues): WorkItemErrors => {
 };
 
 const form = reactive<WorkItemFormValues>({
-  工作日期: toDateString(new Date()),
+  工作日期: todayString(),
   交辦單位: '',
   交辦人員: '',
   專案名稱: '',
@@ -257,7 +256,7 @@ const prefillFromTarget = (): void => {
 };
 
 const resetForm = (item: WorkItem | null | undefined): void => {
-  form.工作日期 = item?.工作日期 ?? props.defaultDate ?? toDateString(new Date());
+  form.工作日期 = item?.工作日期 ?? props.defaultDate ?? todayString();
   form.交辦單位 = item?.交辦單位 ?? '';
   form.交辦人員 = item?.交辦人員 ?? '';
   form.專案名稱 = item?.專案名稱 ?? '';

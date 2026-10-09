@@ -27,14 +27,13 @@ import {
 } from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
+import { todayString } from '@/utils/date';
 import {
   SEARCH_FIELD_LABELS,
   SEARCH_MAX_RESULTS,
   type SearchQuery,
 } from '@/utils/search-work-items';
 import { DAILY_HOURS_MAX, dailyHoursMessage } from '@/validation/work-item';
-
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
 
 const { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOut } =
   useGoogleAuth();
@@ -44,7 +43,7 @@ watch(signInButtonEl, (el) => {
   if (el) renderSignInButton(el);
 });
 
-const selectedDate = ref(toDateString(new Date()));
+const selectedDate = ref(todayString());
 const {
   items,
   loading,
@@ -58,7 +57,7 @@ const {
 } = useWorkItems();
 const { getDayOffLabel } = useTaiwanHolidays();
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
-const isViewingToday = computed(() => selectedDate.value === toDateString(new Date()));
+const isViewingToday = computed(() => selectedDate.value === todayString());
 
 watch(selectedDate, (date) => fetchByDate(date), { immediate: true });
 
@@ -638,7 +637,7 @@ const onOptionsUnauthorized = (): void => {
         </div>
         <WorkItemTable
           :items="searchResult.items"
-          :today="toDateString(new Date())"
+          :today="todayString()"
           :editable="isAuthorized"
           search-mode
           :search-keyword="searchQuery.keyword"
@@ -658,7 +657,7 @@ const onOptionsUnauthorized = (): void => {
     <WorkItemTable
       v-else
       :items="items"
-      :today="toDateString(new Date())"
+      :today="todayString()"
       :editable="isAuthorized"
       :viewing-today="isViewingToday"
       :day-off-label="dayOffLabel"

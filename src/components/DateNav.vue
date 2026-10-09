@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import { NDatePicker } from 'naive-ui';
 
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
+import { addDays, parseLocalDate, toLocalDateString, todayString } from '@/utils/date';
 import { DAILY_HOURS_WARN } from '@/validation/work-item';
 
 const props = defineProps<{
@@ -19,15 +20,11 @@ const emit = defineEmits<{
   'update:modelValue': [value: string];
 }>();
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
-
 const shift = (days: number): void => {
-  const d = new Date(props.modelValue);
-  d.setDate(d.getDate() + days);
-  emit('update:modelValue', toDateString(d));
+  emit('update:modelValue', addDays(props.modelValue, days));
 };
 
-const todayStr = computed(() => toDateString(new Date()));
+const todayStr = computed(() => todayString());
 const isToday = computed(() => props.modelValue === todayStr.value);
 
 // 每日工時警示門檻（shared/validation-schema.json 的 dailyHours.warn），合計超過才換成紅字（剛好等於不算超過）
@@ -44,22 +41,19 @@ const goToday = (): void => {
   emit('update:modelValue', todayStr.value);
 };
 
-const pickerValue = computed(() => new Date(`${props.modelValue}T00:00:00`).getTime());
+// NDatePicker 的值是本地午夜的時間戳，進出都用本地時間換算
+const pickerValue = computed(() => parseLocalDate(props.modelValue).getTime());
 
 const onPickerUpdate = (value: number | null): void => {
   if (value === null) return;
-  emit('update:modelValue', toDateString(new Date(value)));
+  emit('update:modelValue', toLocalDateString(new Date(value)));
 };
 
 const { getDayOffLabel, isWorkday, findNextWorkday } = useTaiwanHolidays();
 
 const dayOffLabel = computed(() => getDayOffLabel(props.modelValue));
 
-const adjacentDate = (days: number): string => {
-  const d = new Date(props.modelValue);
-  d.setDate(d.getDate() + days);
-  return toDateString(d);
-};
+const adjacentDate = (days: number): string => addDays(props.modelValue, days);
 
 // 「上一個工作日」的用途是跳過假日，如果緊鄰的那一天本來就是工作日，按下去
 // 效果跟「上一天」一樣，沒有額外用途，所以停用
