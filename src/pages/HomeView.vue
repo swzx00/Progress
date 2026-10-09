@@ -129,7 +129,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
   saving.value = true;
   try {
     if (editingItem.value) {
-      await updateItem(idToken.value, editingItem.value.id, editingItem.value.工作日期, payload);
+      await updateItem(idToken.value, editingItem.value.id, payload);
     } else {
       await createItem(idToken.value, payload);
     }
@@ -323,7 +323,7 @@ const confirmDelete = async (): Promise<void> => {
   }
   deleting.value = true;
   try {
-    await deleteItem(idToken.value, deleteTarget.value.id, deleteTarget.value.工作日期);
+    await deleteItem(idToken.value, deleteTarget.value.id);
     deleteTarget.value = null;
     await fetchByDate(selectedDate.value);
   } catch (e) {
