@@ -68,7 +68,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
-      include: ['src/**/*.spec.ts'],
+      include: ['src/**/*.spec.ts', 'tests/**/*.spec.ts'],
       // 日期相關的測試要固定在台灣時區，換機器（CI 是 UTC）結果才一致
       globalSetup: ['./vitest.global-setup.ts'],
     },
