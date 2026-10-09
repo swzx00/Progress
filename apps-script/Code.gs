@@ -730,11 +730,56 @@ function compactOptionsSheet() {
 
 // ===== doGet =====
 
+// 匯出 Excel（type=range）一次最多可讀的天數（含頭尾），閏年整年 366 天剛好放得下
+var RANGE_MAX_DAYS = 366;
+
+// YYYY/MM/DD 轉成 UTC 午夜的毫秒數，只用來算兩個日期差幾天；格式或日期本身不合法回 NaN
+function apiDateToUtc_(value) {
+  if (!API_DATE_PATTERN.test(String(value))) return NaN;
+  var parts = String(value).split('/').map(Number);
+  var time = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+  var check = new Date(time);
+  // 2026/02/30 這類不存在的日期，Date.UTC 會自動進位成 3 月，比對回去對不上就是不合法
+  if (check.getUTCMonth() !== parts[1] - 1 || check.getUTCDate() !== parts[2]) return NaN;
+  return time;
+}
+
+// 讀出 from～to（含頭尾）的未刪除紀錄（含請假），給前端「匯出 Excel」用
+function handleRange_(from, to) {
+  var fromTime = apiDateToUtc_(from);
+  var toTime = apiDateToUtc_(to);
+  if (isNaN(fromTime) || isNaN(toTime)) {
+    return jsonOutput_({ error: 'from／to 日期格式不正確' });
+  }
+  if (fromTime > toTime) {
+    return jsonOutput_({ error: '開始日期不能晚於結束日期' });
+  }
+  var days = Math.round((toTime - fromTime) / 86400000) + 1;
+  if (days > RANGE_MAX_DAYS) {
+    return jsonOutput_({ error: '日期範圍不可超過 ' + RANGE_MAX_DAYS + ' 天' });
+  }
+
+  var sheet = getDataSheet_();
+  if (!sheet) return jsonOutput_({ items: [] });
+
+  // YYYY/MM/DD 補零固定長度，字串可以直接比大小
+  var items = readRowsByDate_(sheet, getColumnMap_(sheet), function (d) {
+    return d >= from && d <= to;
+  }).map(function (entry) {
+    return entry.item;
+  });
+  return jsonOutput_({ items: items });
+}
+
 function doGet(e) {
   var params = (e && e.parameter) || {};
   try {
     if (params.type === 'options') {
       return jsonOutput_({ options: getOptions_(), recentItems: getRecentItems_() });
+    }
+
+    if (params.type === 'range') {
+      return handleRange_(params.from, params.to);
     }
 
     var date = params.date;

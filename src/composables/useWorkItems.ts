@@ -69,10 +69,10 @@ const postAction = async (idToken: string, payload: object): Promise<void> => {
   }
 };
 
-/** 讀取某一天未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
-const requestItemsByDate = async (date: string): Promise<WorkItem[]> => {
+/** 打 doGet 讀取未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
+const requestItems = async (params: Record<string, string>): Promise<WorkItem[]> => {
   const url = new URL(API_BASE_URL, window.location.origin);
-  url.searchParams.set('date', toApiDate(date));
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   const res = await fetch(url.toString());
   const data = (await res.json()) as DoGetResponse;
   if (data.error) {
@@ -86,6 +86,17 @@ const requestItemsByDate = async (date: string): Promise<WorkItem[]> => {
       預計期限: fromApiDate(item.預計期限),
     }));
 };
+
+/** 讀取某一天未刪除的紀錄 */
+const requestItemsByDate = (date: string): Promise<WorkItem[]> =>
+  requestItems({ date: toApiDate(date) });
+
+/**
+ * 讀取 from～to（YYYY-MM-DD，含頭尾）未刪除的紀錄（含請假），「匯出 Excel」用，
+ * 不會動到 useWorkItems() 的 items 狀態。後端限制跨度最多 366 天，超過會回錯誤
+ */
+export const fetchByRange = (from: string, to: string): Promise<WorkItem[]> =>
+  requestItems({ type: 'range', from: toApiDate(from), to: toApiDate(to) });
 
 export interface DaySummary {
   /** 預計項次 */

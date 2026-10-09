@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CopyDayDialog from '@/components/CopyDayDialog.vue';
 import DaySummaryModal from '@/components/DaySummaryModal.vue';
 import DateNav from '@/components/DateNav.vue';
+import ExportModal from '@/components/ExportModal.vue';
 import OptionsManagerModal from '@/components/OptionsManagerModal.vue';
 import WorkItemForm from '@/components/WorkItemForm.vue';
 import WorkItemTable from '@/components/WorkItemTable.vue';
@@ -54,16 +55,20 @@ const totalHours = computed(() =>
 
 const optionsManagerOpen = ref(false);
 const daySummaryOpen = ref(false);
+const exportOpen = ref(false);
 
-// 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）
-type ToolKey = 'options' | 'daySummary';
+// 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）、
+// 匯出 Excel（選範圍下載 .xlsx 的 Modal）
+type ToolKey = 'options' | 'daySummary' | 'export';
 const toolOptions: DropdownOption[] = [
   { label: '選項清單', key: 'options' },
   { label: '本日總結', key: 'daySummary' },
+  { label: '匯出 Excel', key: 'export' },
 ];
 const onToolSelect = (key: ToolKey): void => {
   if (key === 'options') optionsManagerOpen.value = true;
-  else daySummaryOpen.value = true;
+  else if (key === 'daySummary') daySummaryOpen.value = true;
+  else exportOpen.value = true;
 };
 
 const formOpen = ref(false);
@@ -561,6 +566,14 @@ const onOptionsUnauthorized = (): void => {
         :date="formatDisplayDate(selectedDate)"
         :items="items"
         @close="daySummaryOpen = false"
+      />
+    </Transition>
+
+    <Transition name="export-modal">
+      <ExportModal
+        v-if="exportOpen && isAuthorized"
+        :default-date="selectedDate"
+        @close="exportOpen = false"
       />
     </Transition>
 
