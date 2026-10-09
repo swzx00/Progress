@@ -40,9 +40,6 @@ const { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOu
   useGoogleAuth();
 
 const signInButtonEl = ref<HTMLElement | null>(null);
-watch(signInButtonEl, (el) => {
-  if (el) renderSignInButton(el);
-});
 
 const selectedDate = ref(toDateString(new Date()));
 const {
@@ -132,6 +129,11 @@ const exportOpen = ref(false);
 // 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前的選項前面打勾。
 // 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項
 const { mode: themeMode, isDark, setMode: setThemeMode } = useTheme();
+
+// Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換樣式：深色 filled_black、淺色 outline
+watch([signInButtonEl, isDark], ([el, dark]) => {
+  if (el) void renderSignInButton(el, dark);
+});
 const THEME_KEY_PREFIX = 'theme:';
 const themeOptions = computed<DropdownOption[]>(() =>
   THEME_MODES.map(({ mode, label }) => ({

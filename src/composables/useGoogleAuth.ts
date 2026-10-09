@@ -89,10 +89,16 @@ const ensureInitialized = async (): Promise<void> => {
   initialized = true;
 };
 
-const renderSignInButton = async (el: HTMLElement): Promise<void> => {
+/**
+ * 顯示 Google 官方登入按鈕。dark 為 true 時用深色樣式（filled_black），淺色用 outline。
+ * 切換主題時直接再呼叫一次：先清空容器再重新產生按鈕，不會重新初始化 GIS，也不影響登入狀態
+ */
+const renderSignInButton = async (el: HTMLElement, dark = false): Promise<void> => {
   await ensureInitialized();
+  // 清空放在 await 之後：連續切換主題時，只留最後一次產生的按鈕
+  el.replaceChildren();
   window.google?.accounts.id.renderButton(el, {
-    theme: 'outline',
+    theme: dark ? 'filled_black' : 'outline',
     size: 'medium',
     text: 'signin',
     shape: 'rectangular',

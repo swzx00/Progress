@@ -401,7 +401,8 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
   - **例外（B 版，使用者決定）**：`blue`／`orange`／`yellow`／`purple` 的 `000`、`050` 不對調，改用 `black` 的深色值（`#000`／`#141618`）。表格的今天／放假／搜尋在深色模式只靠表頭（`100`，等於原本的 `800`）與邊框帶色系，斑馬紋維持中性黑灰；手機卡片沒有表頭，只靠卡片外框區分
   - 實心按鈕（「＋ 新增」、搜尋按鈕等）的文字是 `black-000`，深色模式下是淺藍底＋黑字，不另外開不對調的例外 token
   - 寫死的半透明顏色：表單送出中的遮罩用 `color-mix(in srgb, var(--color-black-000) 70%, transparent)`，跟著主題變色；Modal 背景遮罩、陰影維持原本的 `rgb()`
-  - 不受影響：匯出的 Excel 維持淺色；Google 登入按鈕維持 `outline` 樣式
+  - 不受影響：匯出的 Excel 維持淺色
+  - Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換：淺色 `outline`、深色 `filled_black`。`HomeView` 監看 `isDark`，切換時呼叫 `useGoogleAuth` 的 `renderSignInButton(el, dark)`，先清空容器再重新 `renderButton`，不會重新初始化 GIS，也不影響登入狀態
 - 逾期只做視覺標示，不做主動通知（Email 提醒等）
 - Google 登入狀態存在登入 session 內，不用每次操作重新登入
 - `DateNav` 的 `NDatePicker` 顯示「`2026/09/25 (五)`」格式（日期＋星期），選到的日期若不是工作日（國定假日或純週末），旁邊多顯示一個「放假原因」徽章，文字與邊框用放假色（預設 orange、今天放假改 yellow，見上方「放假色」），跟「逾期」用的紅色（`--color-red-600`）做區隔，避免使用者混淆兩種不同性質的提醒。細節見下方「台灣國定假日顯示」
