@@ -1,5 +1,7 @@
 import { ref } from 'vue';
 
+import { addDays } from '@/utils/date';
+
 interface HolidayEntry {
   date: string;
   week: string;
@@ -82,27 +84,19 @@ const isWorkday = (dateStr: string): boolean => {
   return !isWeekendFallback(dateStr);
 };
 
-const toDateString = (d: Date): string => d.toISOString().slice(0, 10);
-
 /**
  * 從 fromDate 往指定方向（1 或 -1）找下一個工作日，跳過連續的假日／週末
  * （含補班日的例外情形）。maxSteps 避免官方資料異常時無限迴圈。
- *
- * 日期解析要跟專案裡其他地方（例如 DateNav.vue 的 shift()）用同一套慣例：
- * `new Date(fromDate)`（純日期字串，視為 UTC 午夜）搭配 setDate/getDate（本地時間）
- * 再用 toISOString() 轉回字串。這套組合對正 UTC 偏移的時區（例如台灣 UTC+8）剛好互相抵銷、
- * 結果正確；如果改成 `${fromDate}T00:00:00`（本地午夜）解析、卻仍用 toISOString() 轉字串，
- * 兩邊時區基準不一致，換算回來的日期會少一天。
+ * 日期加減一律用 utils/date.ts 的 addDays（本地時間解析與格式化）
  */
 const findNextWorkday = async (
   fromDate: string,
   direction: 1 | -1,
   maxSteps = 60,
 ): Promise<string> => {
-  const cursor = new Date(fromDate);
+  let iso = fromDate;
   for (let i = 0; i < maxSteps; i++) {
-    cursor.setDate(cursor.getDate() + direction);
-    const iso = toDateString(cursor);
+    iso = addDays(iso, direction);
     await ensureYearLoaded(iso.slice(0, 4));
     if (isWorkday(iso)) return iso;
   }
