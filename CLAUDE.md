@@ -127,6 +127,7 @@ src/
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次，見「UI/UX 定案」
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
     ConfirmDialog.vue     # 通用確認對話框（刪除工作紀錄、刪除選項清單的值、表單放棄變更都用這個），按鈕配置照 Apple HIG，見「UI/UX 定案」
+    HighlightText.vue     # 搜尋結果標示符合的字：把切好的片段逐段渲染（不用 v-html），見「UI/UX 定案」的「搜尋欄」
     ClampText.vue         # 文字刪節：收合時截斷（手機 3 行、平板桌面 2 行），判斷是否真的被截斷，有滑鼠的裝置用 NTooltip 顯示全文；展開狀態由使用端控制，見「UI/UX 定案」的「文字刪節」
     OptionsDropdownState.vue # 可搜尋下拉選單（交辦單位、交辦人員、專案名稱、專案 Repo）放在 NSelect empty slot 的狀態畫面：載入中（AppLoading＋「選項載入中」）／載入失敗（「選項清單載入失敗」＋「重新載入」）
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
@@ -412,6 +413,9 @@ apps-script/                # clasp 專案（Apps Script 原始碼版控）
     - 一般搜尋：交辦單位、交辦人員、專案名稱、專案 Repo（`#AAA` 或 `AAA` 都找得到）、工作目標、處理內容、狀態；不分大小寫，空白隔開的每個關鍵字都要出現（AND）
     - 點推薦只搜那個欄位：交辦單位／交辦人員／專案名稱完全相同；專案 Repo 包含那一個；工作目標包含那段文字（同一件工作的目標常會多寫幾個字）
   - **結果呈現**（`HomeView` 的 `searchQuery`／`searchResult`）：表格換成搜尋結果，上方一行「搜尋結果：專案名稱「官網改版」，共 N 筆」＋「結束搜尋」；超過 200 筆加註「只顯示最新的 200 筆」。`WorkItemTable` 的 `search-mode`：照傳進來的順序（工作日期新的在前）、項次欄換成工作日期（`--index-col` 從 32px 加寬成 84px；手機卡片在最上面一行），點日期 emit `goToDate` 跳到那天並結束搜尋；不顯示拖曳把手與上移／下移，編輯、複製、刪除照常（存檔、刪除、複製本日後重新搜尋一次，`refreshAfterChange`）；不套今天／放假的底色
+  - **標示符合的字**（使用者決定，只在 `search-mode`）：`WorkItemTable` 收 `search-keyword`／`search-field`，每個欄位的文字用 `utils/search-work-items.ts` 的 `highlightTerms`＋`splitHighlight`（Repo 標籤用 `splitRepoHighlight`）切成片段，由 `HighlightText.vue` 逐段渲染，符合的包在 `<mark class="highlight-text__match">`：文字 `purple-700`＋底線、不加底色，請假、逾期列也一樣，深色模式跟著 token 換色。**不用 `v-html`**（使用者輸入的內容不能當 HTML），保留換行，不影響 `ClampText` 的截斷判斷與「…展開」排版；tooltip 全文不標示
+    - 一般搜尋：所有被搜尋的欄位（交辦單位、交辦人員、專案名稱、專案 Repo 標籤、工作目標、處理內容、狀態）標出每個關鍵字（空白隔開、不分大小寫，重疊的範圍合併）；Repo 用畫面上的 `#AAA` 比對，搜「#AAA」連 # 一起標、搜「AAA」只標名稱
+    - 點推薦（單一欄位）：只標示那個欄位，整段關鍵字當一個詞；Repo 是完全相同，只標那一個標籤，名稱只是部分相同的其他標籤不標
   - **狀態**：搜尋中 `AppLoading`「搜尋中…」；錯誤顯示訊息＋「重新載入」（用同一組條件再搜尋一次）；沒有符合時表格空狀態「找不到符合「關鍵字」的紀錄」。連續搜尋只採用最後一次的結果
   - **色系：purple**（使用者決定），階數比照今天：表頭 `purple-100`、斑馬紋 `purple-050`／`purple-000`、邊框 `purple-200`、工作日期連結與「展開／收合」`purple-700`（滑過 `purple-800`）、展開列底 `purple-100`／框 `purple-300`；搜尋摘要列 `purple-700` 字、不加底色（使用者決定）；空狀態 `purple-700` 字＋`purple-000` 底。請假、逾期的列照常用自己的 teal／red。`purple` 不是設計系統原有的色階：色相取舊版 `--Purple`（薰衣草），每一階的深淺（OKLab 明度）對齊 `1111-Purple` 同一階推算出來（使用者決定），見 `tokens.scss` 的註解
   - 顯示搜尋結果時（`DateNav` 的 `searching` prop），`DateNav` 只留搜尋欄：日期切換、放假徽章／工時合計／今天、動作按鈕都不顯示（使用者決定，搜尋結果跨日期，跟選到的那天無關）

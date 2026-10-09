@@ -72,6 +72,70 @@ export const matchesSearch = (item: SearchableItem, query: SearchQuery): boolean
   }
 };
 
+// ===== 搜尋結果標示符合的字 =====
+
+/** 搜尋結果表格上會標示的欄位（一般搜尋比對的全部欄位） */
+export type HighlightField = keyof SearchableItem;
+
+/** 切好的文字片段，match 為 true 的要標示 */
+export interface TextSegment {
+  text: string;
+  match: boolean;
+}
+
+/**
+ * 某個欄位在這次搜尋要標示哪些字（小寫），規則跟 matchesSearch 一致：
+ * - 一般搜尋：所有被搜尋的欄位都標示每個關鍵字（空白隔開）
+ * - 指定欄位（點推薦）：只標示那個欄位，整段關鍵字當一個詞（不拆空白），其他欄位不標示
+ */
+export const highlightTerms = (query: SearchQuery | null, field: HighlightField): string[] => {
+  if (!query) return [];
+  const keyword = normalize(query.keyword);
+  if (!keyword) return [];
+  if (!query.field) return parseKeywords(keyword);
+  return query.field === field ? [keyword] : [];
+};
+
+/**
+ * 把文字切成「符合／不符合」的片段（不分大小寫，重疊或相連的符合範圍合併成一段），
+ * 畫面用切好的陣列渲染，不用 v-html，使用者輸入的內容不會被當成 HTML
+ */
+export const splitHighlight = (text: string, terms: string[]): TextSegment[] => {
+  const lower = text.toLowerCase();
+  // 少數字元轉小寫後長度會變，位置對不上就不標示
+  if (!text || terms.length === 0 || lower.length !== text.length) return [{ text, match: false }];
+  const marks: boolean[] = new Array<boolean>(text.length).fill(false);
+  terms.forEach((term) => {
+    if (!term) return;
+    for (let i = lower.indexOf(term); i !== -1; i = lower.indexOf(term, i + 1)) {
+      marks.fill(true, i, i + term.length);
+    }
+  });
+  const segments: TextSegment[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const last = segments[segments.length - 1];
+    if (last && last.match === marks[i]) last.text += text[i];
+    else segments.push({ text: text[i] as string, match: marks[i] as boolean });
+  }
+  return segments;
+};
+
+/**
+ * 專案 Repo 標籤（畫面上是 #AAA）：一般搜尋用 #AAA 比對（搜「#AAA」或「AAA」都標得到）；
+ * 點推薦搜 Repo 是「完全相同」，只有那一個標籤整個標示，不會標到名稱只是部分相同的其他標籤
+ */
+export const splitRepoHighlight = (repo: string, query: SearchQuery | null): TextSegment[] => {
+  if (query?.field === '專案Repo') {
+    return normalize(repo) === normalize(query.keyword)
+      ? [
+          { text: '#', match: false },
+          { text: repo, match: true },
+        ]
+      : [{ text: `#${repo}`, match: false }];
+  }
+  return splitHighlight(`#${repo}`, highlightTerms(query, '專案Repo'));
+};
+
 /** 搜尋結果的順序：工作日期新的在前，同一天照項次 */
 export const compareSearchResults = (a: WorkItem, b: WorkItem): number =>
   b.工作日期.localeCompare(a.工作日期) || a.項次 - b.項次;

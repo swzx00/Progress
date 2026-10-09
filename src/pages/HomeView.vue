@@ -653,6 +653,7 @@ const onWorkHoursUnauthorized = (): void => {
           :editable="isAuthorized"
           search-mode
           :search-keyword="searchQuery.keyword"
+          :search-field="searchQuery.field"
           @edit="openEditForm"
           @copy="openCopyForm"
           @delete="openDeleteConfirm"
