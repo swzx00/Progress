@@ -1284,7 +1284,7 @@ const onSubmit = async (): Promise<void> => {
 
   // 送出中的滿版遮罩：疊在 panel 與背景之上（同一個 .work-item-form 內，DOM 順序在後），
   // Toast（z-index 200）仍在它上方，存檔失敗的訊息看得到。
-  // 半透明白無法用色階 token（CSS 變數的 hex 不能加透明度），同 __backdrop 寫死 rgb()
+  // 半透明的頁面底色：用 color-mix 把 black-000 調成 70% 不透明，淺色是半透明白、深色是半透明黑
   &__loading-mask {
     position: fixed;
     inset: 0;
@@ -1292,7 +1292,7 @@ const onSubmit = async (): Promise<void> => {
     align-items: center;
     justify-content: center;
     cursor: wait;
-    background: rgb(255 255 255 / 70%);
+    background: color-mix(in srgb, var(--color-black-000) 70%, transparent);
   }
 
   /*

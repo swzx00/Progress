@@ -1,9 +1,13 @@
 import { createApp } from 'vue';
 
 import App from './App.vue';
+import { initTheme } from './composables/useTheme';
 import router from './router';
 import './styles/tokens.scss';
 import './style.scss';
+
+// 掛載前先套用深色／淺色，第一個畫面就是正確的主題
+initTheme();
 
 async function bootstrap(): Promise<void> {
   // VITE_ENABLE_MSW 沒設定時預設啟用（維持原本行為）；
