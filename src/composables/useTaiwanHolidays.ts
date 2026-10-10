@@ -31,6 +31,19 @@ const fetchingYears = new Map<string, Promise<void>>();
  */
 export const HOLIDAY_RETRY_AFTER_MS = 5 * 60 * 1000;
 const failedAt = new Map<string, number>();
+/** 失敗後排定的自動重抓（每年最多一個）：畫面上的放假標示是 computed，不會自己再查一次 */
+const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const scheduleRetry = (year: string): void => {
+  if (retryTimers.has(year)) return;
+  retryTimers.set(
+    year,
+    setTimeout(() => {
+      retryTimers.delete(year);
+      void ensureYearLoaded(year);
+    }, HOLIDAY_RETRY_AFTER_MS),
+  );
+};
 
 const ensureYearLoaded = (year: string): Promise<void> => {
   if (entriesByYear.value[year]) return Promise.resolve();
@@ -60,8 +73,9 @@ const ensureYearLoaded = (year: string): Promise<void> => {
       failedAt.delete(year);
     })
     .catch(() => {
-      // 查詢失敗就不顯示假日資訊、也視為工作日，不影響其他功能；過 HOLIDAY_RETRY_AFTER_MS 才重抓
+      // 查詢失敗就不顯示假日資訊、也視為工作日，不影響其他功能；過 HOLIDAY_RETRY_AFTER_MS 自動重抓
       failedAt.set(year, Date.now());
+      scheduleRetry(year);
     })
     .finally(() => {
       fetchingYears.delete(year);

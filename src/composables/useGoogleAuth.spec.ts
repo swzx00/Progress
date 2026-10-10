@@ -118,6 +118,27 @@ describe('token 過期', () => {
     expect(gis.disableAutoSelect).toHaveBeenCalled();
   });
 
+  it('本機時鐘快了兩小時：用 iat 校正，剛登入的 token 不會被當成過期，重新整理後也一樣', async () => {
+    const realNow = Date.now();
+    const token = makeToken({
+      email: 'swzx00@gmail.com',
+      iat: Math.floor(realNow / 1000),
+      exp: Math.floor(realNow / 1000) + 3600,
+    });
+    vi.spyOn(Date, 'now').mockReturnValue(realNow + 2 * 60 * 60 * 1000);
+    const auth = await load();
+    await auth.renderSignInButton(document.createElement('div'));
+    const config = gis.initialize.mock.calls[0]![0] as {
+      callback: (r: { credential: string }) => void;
+    };
+    config.callback({ credential: token });
+    expect(auth.ensureFreshLogin()).toBe(true);
+
+    const reloaded = await load();
+    expect(reloaded.isAuthorized.value).toBe(true);
+    expect(reloaded.ensureFreshLogin()).toBe(true);
+  });
+
   it('沒有 exp：交給後端判斷，不當作過期', async () => {
     sessionStorage.setItem(STORAGE_KEY, OWNER_TOKEN);
     const auth = await load();

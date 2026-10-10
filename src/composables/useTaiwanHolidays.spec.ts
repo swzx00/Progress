@@ -185,6 +185,19 @@ describe('資料載入與快取', () => {
     now.mockRestore();
   });
 
+  it('失敗後過一段時間自動重抓，畫面不用換日期也會拿到資料', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const holidays = await load();
+    await holidays.ensureYearLoaded('2030');
+    expect(holidays.getDayOffLabel('2030-09-12')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(HOLIDAY_RETRY_AFTER_MS);
+    expect(fetchedYears()).toEqual(['2030', '2030']);
+    expect(holidays.getDayOffLabel('2030-09-12')).toBe('中秋節');
+    vi.useRealTimers();
+  });
+
   it('離線時找下一個工作日不會每天都重打一次', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
     const holidays = await load();
