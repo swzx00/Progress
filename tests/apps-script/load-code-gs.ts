@@ -28,6 +28,7 @@ export interface CodeGs {
   SEARCH_MAX_RESULTS: number;
   validateItem_: (item: Record<string, unknown>) => string[];
   validateWorkHours_: (setting: unknown) => string | null;
+  validateOptionValue_: (category: string, value: string) => string | null;
   dailyHoursError_: (otherHours: number, hours: number) => string;
   matchesSearch_: (item: Record<string, unknown>, keyword: string, field?: string) => boolean;
   normalizeSearch_: (value: unknown) => string;

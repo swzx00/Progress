@@ -5,7 +5,7 @@
  * - getRange 超出分頁的列數、或列數是 0 時丟錯（新分頁預設 1000 列）
  * - getLastRow／getLastColumn 是最後一個有值的列／欄
  * - getDataRange 是有值的範圍（空白分頁是 A1）；clear 清值與格式，clearContent 只清值
- * - deleteRow 會刪掉那一列（後面的列往上補），insertRowsAfter 補的列沿用上一列的儲存格格式
+ * - deleteRow／deleteRows 會刪掉那幾列（後面的列往上補），insertRowsAfter 補的列沿用上一列的儲存格格式
  * - 日期用 Code.gs 那個 vm 環境的 Date 建立，Code.gs 裡的 instanceof Date 才認得
  */
 export type CellValue = string | number | boolean | Date;
@@ -105,6 +105,10 @@ export class FakeSheet {
 
   deleteRow(row: number): void {
     this.rows.splice(row - 1, 1);
+  }
+
+  deleteRows(row: number, howMany: number): void {
+    this.rows.splice(row - 1, howMany);
   }
 
   insertRowsAfter(after: number, howMany: number): void {

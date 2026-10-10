@@ -59,7 +59,7 @@
 
 `tests/apps-script/fake-spreadsheet.ts` 只實作 `Code.gs` 用到的 `SpreadsheetApp` API，行為盡量貼近真的 Sheet：寫入時自動轉型（純數字字串 → 數字、`TRUE` → 布林、`YYYY/MM/DD` → 日期、`HH:mm` → 時間，儲存格是純文字格式 `@` 就維持字串）、`getRange` 超出分頁列數會丟錯（新分頁預設 1000 列）、`insertRowsAfter` 補的列沿用上一列的格式、排序時空白排最後、`getDataRange` 在空白分頁回傳 A1。`load-code-gs-backend.ts` 用 `node:vm` 執行 `Code.gs`，其他服務（指令碼屬性、UUID、日期格式化、tokeninfo 登入驗證）也換成假的；idToken `'token'` 是擁有者本人，JSON 字串的 idToken 直接當成 tokeninfo 的回應。試算表裡的日期是 vm 那邊的 `Date`，測試裡判斷日期要用 `Object.prototype.toString`，不能用 `instanceof`。
 
-`tests/apps-script/sheet.spec.ts` 測共同規格看不到的 Sheet 細節：自動建分頁與表頭、儲存格型別、文字欄位不被轉型、每次寫入後排序、超過 1000 列自動補列、手動編輯過的分頁照樣讀得到、已刪除紀錄分頁、選項清單的數字值與連續、`compactOptionsSheet`、工時設定、登入驗證、近期紀錄、搜尋與匯出範圍。
+`tests/apps-script/sheet.spec.ts` 測共同規格看不到的 Sheet 細節：自動建分頁與表頭、儲存格型別、文字欄位不被轉型、每次寫入後排序、超過 1000 列自動補列、手動編輯過的分頁照樣讀得到、已刪除紀錄分頁、選項清單的數字值與連續、`compactOptionsSheet`（`Migrations.gs`，`beforeEach` 用 `extraFiles` 一起載入）、工時設定、登入驗證、近期紀錄、搜尋與匯出範圍、寫入加鎖（`lockCalls`；`lockAvailable: false` 模擬拿不到鎖）。假環境的指令碼時區刻意設成跟試算表不同，`Utilities.formatDate` 收到試算表以外的時區就丟錯，確保日期一律用試算表時區讀。
 
 `tests/apps-script/legacy-import.spec.ts` 測一次性匯入 `LegacyImport.gs`：`loadCodeGsBackend({}, { extraFiles: ['LegacyImport.gs'] })` 跟 `Code.gs` 一起載入（同一個 Apps Script 專案共用全域），兩份舊表用 `backend.newSpreadsheet()` 建、放進 `backend.books`（`openById` 用 ID 找）。測分頁名稱與期限的日期解析、Repo 拆行、狀態對應、請假判斷、略過的分頁、項次補號、選項清單排序、預覽不動資料，以及正式匯入後用 `doGet` 讀回來。
 

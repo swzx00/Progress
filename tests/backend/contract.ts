@@ -403,6 +403,41 @@ export const describeBackendContract = (getClient: () => BackendClient): void =>
       expect(data.error).toBeTruthy();
       expectCodeGsMessage(data.error);
     });
+
+    it.each([
+      [
+        '新增超過 50 字',
+        { action: 'addOption', category: '交辦單位', value: '字'.repeat(51) },
+        '交辦單位不可超過 50 字',
+      ],
+      [
+        '新增的 Repo 含逗號',
+        { action: 'addOption', category: '專案Repo', value: 'web,api' },
+        '專案 Repo 不可包含「,」',
+      ],
+      [
+        '重新命名超過 50 字',
+        {
+          action: 'renameOption',
+          category: '交辦單位',
+          oldValue: '資訊部',
+          newValue: '字'.repeat(51),
+        },
+        '交辦單位不可超過 50 字',
+      ],
+    ])('%s：跟工作紀錄同一套規則擋下，選項清單不變', async (_label, body, message) => {
+      const data = await post(body);
+      expect(data.error).toBe(message);
+      const { options } = (await get({ type: 'options' })) as { options: WorkItemOptions };
+      expect(options.專案Repo).not.toContain('web,api');
+      expect(options.交辦單位).toContain('資訊部');
+    });
+
+    it('剛好 50 字可以新增', async () => {
+      const value = '字'.repeat(50);
+      const data = await post({ action: 'addOption', category: '交辦人員', value });
+      expect((data.options as WorkItemOptions).交辦人員).toContain(value);
+    });
   });
 
   describe('讀取', () => {

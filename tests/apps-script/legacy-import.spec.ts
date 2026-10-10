@@ -291,10 +291,20 @@ describe('單一分頁的轉換', () => {
       ['事假', '', '事假'],
       ['請假', '', '其他'],
       ['休假一天', '', '其他'],
-      ['首頁切版', '下午請特休', '特休'],
     ])('工作內容「%s」／處理情形「%s」→ 假別 %s', (target, notes, type) => {
       const { entries } = convert([legacyRow({ 工作內容: target, 今日處理情形: notes })]);
       expect(entries[0]!.item).toMatchObject({ 工作目標: type, 狀態: '休假' });
+    });
+
+    it('只有今日處理情形提到請假：仍是工作紀錄，記下來給使用者確認', () => {
+      const { entries, log } = convert([
+        legacyRow({ 工作內容: '首頁切版', 今日處理情形: '同事請假，代為處理\n修正 RWD' }),
+      ]);
+      expect(entries[0]!.item).toMatchObject({ 工作目標: '首頁切版', 狀態: '進行中' });
+      expect(entries[0]!.item.交辦單位).not.toBe('人事室');
+      expect(log).toEqual([
+        '2026H2「1009」 第 2 列：今日處理情形提到請假，仍當工作紀錄匯入，請確認：同事請假，代為處理',
+      ]);
     });
 
     it('固定欄位照請假規則覆蓋，備註是工作內容＋處理情形', () => {
@@ -355,7 +365,27 @@ describe('讀兩份舊表（buildLegacyImport_）', () => {
     expect(result.items).toHaveLength(2);
     expect(result.log).toEqual([
       '2026H1「0701」：日期 2026/07/01 不在 2026H1 的月份範圍內（仍照常匯入）',
-      '2026H2「07/01」：日期 2026/07/01 跟 2026H1「0701」 重複（兩邊都匯入）',
+      '2026H2「07/01」：日期 2026/07/01 跟 2026H1「0701」 重複（兩邊都匯入，這個分頁的項次接在後面重新編號）',
+    ]);
+  });
+
+  it('兩份表日期重複：後讀到的分頁照原項次順序接在後面，項次不重複', () => {
+    addDay(h1, '0701', [
+      legacyRow({ 項次: 1, 工作內容: 'A' }),
+      legacyRow({ 項次: 2, 工作內容: 'B' }),
+    ]);
+    addDay(h2, '07/01', [
+      legacyRow({ 項次: '', 工作內容: 'Z' }),
+      legacyRow({ 項次: 2, 工作內容: 'Y' }),
+      legacyRow({ 項次: 1, 工作內容: 'X' }),
+    ]);
+    const items = build().items.map((e) => [e.item.項次, e.item.工作目標]);
+    expect(items).toEqual([
+      [1, 'A'],
+      [2, 'B'],
+      [3, 'X'],
+      [4, 'Y'],
+      [5, 'Z'],
     ]);
   });
 
