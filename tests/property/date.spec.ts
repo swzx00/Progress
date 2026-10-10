@@ -24,7 +24,7 @@ describe('toLocalDateString／parseLocalDate', () => {
     fc.assert(
       fc.property(realDate(), fc.integer({ min: 0, max: DAY_MS - 1 }), (date, ms) => {
         const moment = new Date(date.getTime() + ms);
-        // 加上的毫秒數沒跨到隔天才比（台灣沒有夏令時間，一天固定 24 小時）
+        // 加上的毫秒數沒跨到隔天才比（realDate 從 1980 年開始，台灣之後沒有日光節約時間，一天固定 24 小時）
         fc.pre(moment.getDate() === date.getDate());
         expect(toLocalDateString(moment)).toBe(toLocalDateString(date));
       }),
