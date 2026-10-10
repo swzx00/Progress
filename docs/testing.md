@@ -13,8 +13,11 @@
 | `src/utils/*.spec.ts`、`src/types/*.spec.ts` | 純函式單元測試：日期、工時換算、搜尋比對與標示、本日總結、近期推薦與預填、複製、匯出範圍與檔名、日出日落 |
 | `src/validation/*.spec.ts` | 表單驗證：`shared/validation-schema.json` 的每條規則、請假規則、每日工時合計訊息 |
 | `tests/apps-script/*.spec.ts` | 前後端一致性：在 Node 載入 `apps-script/Code.gs`，跟前端用同一組案例比對（見下方） |
-| `src/components/*.spec.ts` | 元件測試：`WorkItemForm`（項次、送出、24 小時檢查、請假、複製、未儲存確認、預填、工作時段）、`ConfirmDialog`、`HighlightText` |
-| `src/testing/fixtures.ts` | 測試用的假資料（`makeItem`／`makeRecent`），只覆寫測試在意的欄位 |
+| `src/composables/*.spec.ts` | API 邊界（`useWorkItems`、`useOptions`）：日期格式只在這裡轉換、回應一律 200 只看 `error`、`UNAUTHORIZED` 的 `ApiError`、已刪除過濾、預計項次與工時合計；台灣假日（`useTaiwanHolidays`）：補班日、連假、跨年、資料抓不到時的備援 |
+| `src/components/*.spec.ts` | 元件測試：`WorkItemForm`（項次、送出、24 小時檢查、請假、複製、未儲存確認、預填、工作時段）、`DateNav`（工作日按鈕停用、放假徽章與工時合計）、`ConfirmDialog`、`HighlightText` |
+| `src/pages/HomeView.spec.ts` | 主畫面流程：存檔、刪除、複製本日、項次調整失敗時的處理（登入錯誤關閉畫面並登出，其他錯誤保留畫面）、複製本日的工時檢查與覆蓋確認 |
+| `tests/msw/*.spec.ts` | MSW 假後端跟 `Code.gs` 同規則（見下方） |
+| `src/testing/` | 測試用的假資料：`fixtures.ts`（`makeItem`／`makeRecent`，只覆寫測試在意的欄位）、`taiwan-calendar.ts`（產生一整年的假行事曆，可指定國定假日與補班日） |
 
 測試檔放在被測檔案旁邊（`work-hours.ts` ↔ `work-hours.spec.ts`），`describe`／`it` 用中文寫規則本身（例如「跨過整段午休，扣掉 1.5 小時」），跑測試的輸出就是一份規則清單。
 
@@ -23,7 +26,9 @@
 - **改規則時 spec 一起改**：CLAUDE.md 裡「使用者決定」的規則，對應的測試案例就是那條規則的定義；規則改了測試會失敗，照新規則改測試，不要只改到測試通過
 - **時區固定台灣**：`vitest.global-setup.ts` 把 `TZ` 設成 `Asia/Taipei`，日期相關的測試在 Windows 本機、UTC 的 CI 結果都一樣
 - **元件測試只測元件自己的行為**：欄位連動、什麼時候查詢、送出的內容、確認對話框；換算、驗證的數字對不對交給單元測試。API（`useOptions`、`fetchDaySummary`）用 `vi.mock` 換成假的，`NSelect` 換成空殼，需要選值的情境改用「編輯既有紀錄」帶入
-- 元件測試檔開頭加 `// @vitest-environment happy-dom`，其他測試跑在 Node，比較快
+- 元件測試檔開頭加 `// @vitest-environment happy-dom`，其他測試跑在 Node，比較快（composable 用到 `window.location` 的也要加）
+- **API 用 `vi.stubGlobal('fetch', …)` 換成假的**，不打真的 API；API 網址在模組載入時決定、`useOptions` 與假日資料有模組層級的快取，所以這些測試每個案例都 `vi.resetModules()` 再動態 `import`，網址用 `vi.stubEnv` 指定，不吃本機 `.env`
+- `HomeView` 的子元件全部換成空殼，用 `findComponent(...).vm.$emit(...)` 模擬使用者在子元件裡的操作；`DateNav` 的空殼保留 slot，動作按鈕才點得到
 
 ## 前後端一致性測試
 
@@ -32,7 +37,9 @@
 - 常數：`VALIDATION_RULES` ↔ `shared/validation-schema.json`、`LEAVE_RULES`、`STATUS_OPTIONS`、每日工時上限、工時設定標準、近期紀錄天數、匯出天數上限、搜尋欄位與上限
 - 函式（同一組案例跑兩邊，結果要相同）：`validateItem_` ↔ `validateWorkItem`／`validateLeave`、`dailyHoursError_` ↔ `dailyHoursMessage`、`validateWorkHours_` ↔ `validateWorkHoursSetting`、`matchesSearch_` ↔ `matchesSearch`
 
-改 `Code.gs` 或前端任一邊，這裡失敗就代表另一邊忘了改。碰到 Sheet 的函式（讀寫、排序、項次寫入）測不到，部署後用實機測試清單手動驗證。
+改 `Code.gs` 或前端任一邊，這裡失敗就代表另一邊忘了改。
+
+`tests/msw/handlers.spec.ts` 用 `msw/node` 直接對 MSW handlers 發請求（`npm run dev` 預設打的假後端），測每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步；錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。MSW 只模擬工時相關的欄位驗證，其他欄位驗證不測。碰到 Sheet 的函式（讀寫、排序、項次寫入）測不到，部署後用實機測試清單手動驗證。
 
 ## 沒有自動測試的部分
 
