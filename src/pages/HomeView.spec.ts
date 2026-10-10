@@ -543,3 +543,88 @@ describe('設定類 Modal 的登入錯誤', () => {
     expect(exists(wrapper, name)).toBe(false);
   });
 });
+
+describe('搜尋', () => {
+  const result = (keyword: string, total = 1) => ({
+    items: [makeItem({ id: `r-${keyword}`, 工作目標: keyword })],
+    total,
+  });
+
+  const tableItems = (wrapper: VueWrapper): WorkItem[] =>
+    wrapper.findComponent({ name: 'WorkItemTable' }).props('items') as WorkItem[];
+
+  it('搜尋：顯示搜尋結果表格與筆數；超過上限時提示只顯示最新的筆數', async () => {
+    mocks.searchItems.mockResolvedValue(result('官網', 250));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    expect(mocks.searchItems).toHaveBeenCalledWith({ keyword: '官網' });
+    expect(wrapper.get('[role="status"]').text()).toContain('共 250 筆，只顯示最新的 200 筆');
+    expect(tableItems(wrapper).map((i) => i.id)).toEqual(['r-官網']);
+  });
+
+  it('點推薦搜尋：摘要前面加欄位名稱', async () => {
+    mocks.searchItems.mockResolvedValue(result('官網改版'));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網改版', field: '專案名稱' });
+    expect(wrapper.get('[role="status"]').text()).toContain('搜尋結果：專案名稱「官網改版」');
+  });
+
+  it('連續搜尋：先送出的比較晚回來，不會蓋掉後面的結果', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    mocks.searchItems
+      .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
+      .mockResolvedValueOnce(result('第二次'));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '第一次' });
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '第二次' });
+    resolveFirst(result('第一次'));
+    await flushPromises();
+    expect(tableItems(wrapper).map((i) => i.id)).toEqual(['r-第二次']);
+  });
+
+  it('清除後才回來的結果不會再顯示', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.searchItems.mockReturnValue(new Promise((r) => (resolve = r)));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    await emitFrom(wrapper, 'WorkItemSearch', 'clear');
+    resolve(result('官網'));
+    await flushPromises();
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    expect(tableItems(wrapper).map((i) => i.id)).toEqual(['a', 'b']);
+  });
+
+  it('失敗：顯示錯誤與「重新載入」，重試成功後顯示結果', async () => {
+    mocks.searchItems
+      .mockRejectedValueOnce(new Error('搜尋失敗'))
+      .mockResolvedValueOnce(result('官網'));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    expect(wrapper.text()).toContain('搜尋失敗');
+    await wrapper.get('.home-view__retry-btn').trigger('click');
+    await flushPromises();
+    expect(mocks.searchItems).toHaveBeenCalledTimes(2);
+    expect(tableItems(wrapper).map((i) => i.id)).toEqual(['r-官網']);
+  });
+
+  it('點結果的日期：結束搜尋、切到那天', async () => {
+    mocks.searchItems.mockResolvedValue(result('官網'));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    mocks.fetchByDate.mockClear();
+    await emitFrom(wrapper, 'WorkItemTable', 'goToDate', '2026-09-30');
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-30');
+  });
+
+  it('「結束搜尋」回到單日表格', async () => {
+    mocks.searchItems.mockResolvedValue(result('官網'));
+    const wrapper = await mountView();
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '結束搜尋')!
+      .trigger('click');
+    expect(tableItems(wrapper).map((i) => i.id)).toEqual(['a', 'b']);
+  });
+});
