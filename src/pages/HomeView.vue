@@ -33,7 +33,10 @@ import { buildCopyPayload } from '@/utils/copy-work-item';
 import { isValidDateString, todayString } from '@/utils/date';
 import {
   SEARCH_FIELD_LABELS,
+  SEARCH_FIELDS,
+  SEARCH_KEYWORD_MAX,
   SEARCH_MAX_RESULTS,
+  type SearchField,
   type SearchQuery,
 } from '@/utils/search-work-items';
 import { DAILY_HOURS_MAX, dailyHoursMessage } from '@/validation/work-item';
@@ -50,35 +53,15 @@ const {
 
 const signInButtonEl = ref<HTMLElement | null>(null);
 
-/**
- * 網址帶 ?date=YYYY-MM-DD 時開到那天（格式不對或日期不存在就退回今天，並把錯的參數從網址拿掉）。
- * 切換日期時用 router.replace 同步網址，重新整理、分享連結都會停在同一天；
- * 用 replace 不用 push，切日期不會塞一堆瀏覽紀錄，按上一頁直接離開網站
- */
+// 網址參數的規則見下方 syncUrl
 const route = useRoute();
 const router = useRouter();
-const queryDate = (): string | null => {
+const urlDate = (): string | null => {
   const value = route.query.date;
   return typeof value === 'string' && isValidDateString(value) ? value : null;
 };
 
-const selectedDate = ref(queryDate() ?? todayString());
-if (route.query.date !== undefined && queryDate() === null) {
-  const query = { ...route.query };
-  delete query.date;
-  void router.replace({ query });
-}
-watch(selectedDate, (date) => {
-  if (route.query.date !== date) void router.replace({ query: { ...route.query, date } });
-});
-// 網址被程式改掉（例如之後加了連結）時跟著切過去
-watch(
-  () => route.query.date,
-  () => {
-    const date = queryDate();
-    if (date && date !== selectedDate.value) selectedDate.value = date;
-  },
-);
+const selectedDate = ref(urlDate() ?? todayString());
 const {
   items,
   loading,
@@ -145,6 +128,65 @@ const goToDate = (date: string): void => {
   clearSearch();
   selectedDate.value = date;
 };
+
+/**
+ * 網址參數（使用者決定）：重新整理、分享連結都會回到同一個畫面
+ * - date=YYYY-MM-DD：開到那天；一開始沒帶就維持乾淨的網址，切過日期才寫進去
+ * - q（關鍵字）＋ field（點推薦時的欄位，值同 API 的 field）：開頁面就直接搜尋，搜尋欄也填好；
+ *   結束搜尋（清空、點工作日期跳到那天）就拿掉。搜尋中 date 照樣留著，結束搜尋回到那天
+ * - 格式不對（日期不存在、關鍵字空白或超過 SEARCH_KEYWORD_MAX、field 不是 SEARCH_FIELDS）就不採用，從網址拿掉
+ * 一律用 router.replace（不用 push），不會塞一堆瀏覽紀錄，按上一頁直接離開網站。
+ * 網址只由 syncUrl 從畫面狀態整個算出來：日期和搜尋同時改（例如點工作日期）時，
+ * 分開 replace 會拿到還沒更新的 route.query 互相蓋掉
+ */
+const URL_KEYS = ['date', 'q', 'field'];
+
+const urlSearch = (): SearchQuery | null => {
+  const { q, field } = route.query;
+  if (typeof q !== 'string' || !q.trim() || q.length > SEARCH_KEYWORD_MAX) return null;
+  if (field === undefined) return { keyword: q };
+  return typeof field === 'string' && (SEARCH_FIELDS as readonly string[]).includes(field)
+    ? { keyword: q, field: field as SearchField }
+    : null;
+};
+
+let dateInUrl = urlDate() !== null;
+
+const syncUrl = (): void => {
+  const query = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => !URL_KEYS.includes(key)),
+  );
+  if (dateInUrl) query.date = selectedDate.value;
+  if (searchQuery.value) {
+    query.q = searchQuery.value.keyword;
+    if (searchQuery.value.field) query.field = searchQuery.value.field;
+  }
+  const same =
+    Object.keys(query).length === Object.keys(route.query).length &&
+    Object.entries(query).every(([key, value]) => route.query[key] === value);
+  if (!same) void router.replace({ query });
+};
+
+const initialSearch = urlSearch();
+if (initialSearch) {
+  searchText.value = initialSearch.keyword;
+  void runSearch(initialSearch);
+}
+syncUrl();
+
+watch(selectedDate, () => {
+  dateInUrl = true;
+  syncUrl();
+});
+watch(searchQuery, syncUrl);
+// 網址的 date 被程式改掉（例如之後加了連結）時跟著切過去
+watch(
+  () => route.query.date,
+  () => {
+    const date = urlDate();
+    if (date && date !== selectedDate.value) selectedDate.value = date;
+  },
+);
 
 // 搜尋摘要：點推薦時前面加欄位名稱，關鍵字本身粗體（template 裡用 strong）
 const searchSummaryLabel = computed(() =>

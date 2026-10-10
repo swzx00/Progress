@@ -741,3 +741,60 @@ describe('搜尋', () => {
     expect(tableItems(wrapper).map((i) => i.id)).toEqual(['a', 'b']);
   });
 });
+
+describe('網址的 ?q=／?field=', () => {
+  beforeEach(() => {
+    mocks.searchItems.mockResolvedValue({ items: [], total: 0 });
+  });
+
+  it('帶 q：開頁面就搜尋，搜尋欄填好關鍵字', async () => {
+    const wrapper = await mountView('/?q=官網');
+    expect(mocks.searchItems).toHaveBeenCalledWith({ keyword: '官網' });
+    expect(wrapper.findComponent({ name: 'WorkItemSearch' }).props('modelValue')).toBe('官網');
+  });
+
+  it('帶 q＋field：只搜那個欄位，date 也一起套用', async () => {
+    await mountView('/?date=2026-09-01&q=官網改版&field=專案名稱');
+    expect(mocks.searchItems).toHaveBeenCalledWith({ keyword: '官網改版', field: '專案名稱' });
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-01');
+    expect(router.currentRoute.value.query).toEqual({
+      date: '2026-09-01',
+      q: '官網改版',
+      field: '專案名稱',
+    });
+  });
+
+  it.each([
+    ['q 空白', '/?q=%20%20&foo=1'],
+    ['q 超過 100 字', `/?q=${'a'.repeat(101)}&foo=1`],
+    ['field 不是可搜尋的欄位', '/?q=官網&field=處理內容&foo=1'],
+    ['只有 field', '/?field=專案名稱&foo=1'],
+  ])('不正確（%s）：不搜尋，把 q／field 從網址拿掉、保留其他參數', async (_label, path) => {
+    await mountView(path);
+    expect(mocks.searchItems).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.query).toEqual({ foo: '1' });
+  });
+
+  it('搜尋時用 replace 寫進網址，換一次搜尋就換掉', async () => {
+    const wrapper = await mountView();
+    const push = vi.spyOn(router, 'push');
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網改版', field: '專案名稱' });
+    expect(router.currentRoute.value.query).toEqual({ q: '官網改版', field: '專案名稱' });
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '首頁' });
+    expect(router.currentRoute.value.query).toEqual({ q: '首頁' });
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('清空搜尋：拿掉 q／field，date 留著', async () => {
+    const wrapper = await mountView('/?date=2026-09-01&q=官網');
+    await emitFrom(wrapper, 'WorkItemSearch', 'clear');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-01' });
+  });
+
+  it('點結果的工作日期：拿掉 q／field，date 換成那天', async () => {
+    const wrapper = await mountView('/?q=官網&field=專案名稱');
+    await emitFrom(wrapper, 'WorkItemTable', 'go-to-date', '2026-09-05');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-05' });
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-05');
+  });
+});

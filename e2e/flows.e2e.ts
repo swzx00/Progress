@@ -244,3 +244,22 @@ test('網址的 date 不正確：退回今天，並把參數從網址拿掉', as
   await expect(dataRows(page)).toHaveCount(3);
   await expect(page).toHaveURL(/\/$/);
 });
+
+test('網址帶 ?q=：開頁面就搜尋，搜尋同步網址，點工作日期離開搜尋、網址換成那天', async ({
+  page,
+}) => {
+  await page.goto('/?q=官網');
+  const box = page.getByRole('combobox', { name: '搜尋全部紀錄' });
+  await expect(box).toHaveValue('官網');
+  await expect(page.getByRole('status').filter({ hasText: '搜尋結果' })).toContainText('官網');
+
+  await box.fill('首頁');
+  await box.press('Enter');
+  await expect(page).toHaveURL(/\?q=%E9%A6%96%E9%A0%81$/);
+
+  await page.reload();
+  await expect(box).toHaveValue('首頁');
+  await dataRows(page).last().locator('.work-item-table__date-link').click();
+  await expect(page.getByText('搜尋結果')).toBeHidden();
+  await expect(page).toHaveURL(/\?date=2026-10-06$/);
+});
