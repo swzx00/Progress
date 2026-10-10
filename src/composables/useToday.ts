@@ -27,6 +27,15 @@ const refreshAndSchedule = (): void => {
 };
 
 /**
+ * 立刻重新對一次日期（例如按「回到今天」時）：電腦睡眠喚醒、分頁一直在前景時，
+ * 午夜的計時器可能還沒觸發，不先對一次「今天」會停在昨天
+ */
+export const refreshToday = (): void => {
+  if (typeof window === 'undefined') refresh();
+  else refreshAndSchedule();
+};
+
+/**
  * 響應式的「今天」。computed(() => todayString()) 沒有響應式依賴、會一直沿用第一次的值，
  * 所以改成在下一個午夜更新；電腦睡眠時計時器會延後，分頁切回來（visibilitychange）時也重新對一次
  */

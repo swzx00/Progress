@@ -126,7 +126,7 @@ src/
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
     useTheme.ts            # 深色模式：自動（依日出日落）／淺色／深色，套用 <html data-theme>
-    useToday.ts            # 響應式的「今天」（模組層級），每分鐘與分頁切回來時檢查，頁面開著跨過午夜會跟著換
+    useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
   utils/

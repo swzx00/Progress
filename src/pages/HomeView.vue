@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
-import { computed, h, ref, watch } from 'vue';
+import { computed, h, ref, toRaw, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
@@ -396,7 +396,8 @@ const cancelCopyDayReplace = (): void => {
 
 /**
  * 項次調整（上移／下移、拖曳）：每次移動立即存檔。先在畫面上套用新順序（項次改成 1、2、3…），
- * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）
+ * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）。
+ * 送出期間切到別天（或切走再切回來）時，items 已經換成重新讀到的資料，就不還原
  */
 const reordering = ref(false);
 
@@ -407,20 +408,24 @@ const onReorder = async (ids: string[]): Promise<void> => {
     signOut();
     return;
   }
-  if (!requireFreshLogin()) return;
-  const byId = new Map(items.value.map((item) => [item.id, item]));
-  items.value = ids.flatMap((id, index) => {
+  const before = items.value;
+  if (!requireFreshLogin()) {
+    // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
+    items.value = [...before];
+    return;
+  }
+  const byId = new Map(before.map((item) => [item.id, item]));
+  const reordered = ids.flatMap((id, index) => {
     const item = byId.get(id);
     return item ? [{ ...item, 項次: index + 1 }] : [];
   });
-  const date = selectedDate.value;
+  items.value = reordered;
   reordering.value = true;
   try {
-    await reorderItems(idToken.value, date, ids);
+    await reorderItems(idToken.value, selectedDate.value, ids);
   } catch (e) {
-    // 改成重新讀取那天的資料（不還原送出前的快照）：送出期間切到別天再切回來時，
-    // 快照會蓋掉剛讀到的資料；已經切到別天就不用動，畫面是那天的資料
-    if (selectedDate.value === date) void fetchByDate(date);
+    // items 還是這次套用的順序才還原；切過日期的話已經是重新讀到的資料，不能用快照蓋掉
+    if (toRaw(items.value) === reordered) items.value = before;
     showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
     if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
   } finally {

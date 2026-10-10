@@ -357,18 +357,18 @@ describe('項次調整', () => {
     expect(wrapper.findComponent({ name: 'WorkItemTable' }).props('reordering')).toBe(false);
   });
 
-  it('失敗：重新讀取那天的紀錄（回到後端的順序），Toast，不登出', async () => {
+  it('失敗：還原成移動前的順序，Toast，不登出', async () => {
     mocks.reorderItems.mockRejectedValue(new ApiError('紀錄已變更，請重新整理後再排序'));
     const wrapper = await mountView();
-    mocks.fetchByDate.mockClear();
+    const before = mocks.items.value;
     await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a']);
 
-    expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(mocks.items.value).toBe(before);
     expect(mocks.showToast).toHaveBeenCalledWith('紀錄已變更，請重新整理後再排序');
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
 
-  it('失敗前已經切到別天：不動目前畫面，也不重讀原本那天', async () => {
+  it('失敗前已經切到別天：不動目前畫面', async () => {
     let reject!: (e: unknown) => void;
     mocks.reorderItems.mockReturnValue(new Promise<void>((_, r) => (reject = r)));
     const wrapper = await mountView();
@@ -378,33 +378,49 @@ describe('項次調整', () => {
     const otherDay = [makeItem({ id: 'c', 項次: 1, 工作日期: '2030-01-02' })];
     await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2030-01-02');
     mocks.items.value = otherDay;
-    mocks.fetchByDate.mockClear();
     reject(new ApiError('紀錄已變更，請重新整理後再排序'));
     await flushPromises();
 
     expect(mocks.items.value).toEqual(otherDay);
-    expect(mocks.fetchByDate).not.toHaveBeenCalled();
     expect(mocks.showToast).toHaveBeenCalledWith('紀錄已變更，請重新整理後再排序');
   });
 
-  it('登入錯誤：重新讀取並登出', async () => {
+  it('失敗前切走又切回同一天：不用快照蓋掉重新讀到的資料', async () => {
+    let reject!: (e: unknown) => void;
+    mocks.reorderItems.mockReturnValue(new Promise<void>((_, r) => (reject = r)));
+    const wrapper = await mountView();
+    wrapper.findComponent({ name: 'WorkItemTable' }).vm.$emit('reorder', ['b', 'a']);
+    await wrapper.vm.$nextTick();
+
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2030-01-02');
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', today);
+    const refetched = [makeItem({ id: 'b', 項次: 1, 工作日期: today })];
+    mocks.items.value = refetched;
+    reject(new ApiError('紀錄已變更，請重新整理後再排序'));
+    await flushPromises();
+
+    expect(mocks.items.value).toEqual(refetched);
+  });
+
+  it('登入錯誤：還原並登出', async () => {
     mocks.reorderItems.mockRejectedValue(unauthorized());
     const wrapper = await mountView();
-    mocks.fetchByDate.mockClear();
+    const before = mocks.items.value;
     await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a']);
 
-    expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(mocks.items.value).toBe(before);
     expect(mocks.signOut).toHaveBeenCalled();
   });
 
-  it('登入已過期：不送出、不改順序，提示重新登入', async () => {
+  it('登入已過期：不送出，重新指定原本的順序讓表格同步回來，提示重新登入', async () => {
     mocks.ensureFreshLogin.mockReturnValue(false);
     const wrapper = await mountView();
     const before = mocks.items.value;
     await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a']);
 
     expect(mocks.reorderItems).not.toHaveBeenCalled();
-    expect(mocks.items.value).toBe(before);
+    expect(mocks.items.value).not.toBe(before);
+    expect(mocks.items.value).toEqual(before);
     expect(mocks.showToast).toHaveBeenCalledWith('登入已過期，請重新登入');
   });
 

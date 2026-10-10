@@ -36,6 +36,15 @@ describe('useToday', () => {
     expect(today.value).toBe('2026-10-11');
   });
 
+  it('refreshToday：睡眠喚醒後計時器還沒觸發，按「回到今天」時立刻換成新的一天', async () => {
+    const mod = await import('./useToday');
+    const today = mod.useToday();
+    vi.setSystemTime(new Date(2026, 9, 11, 8, 0, 0));
+    expect(today.value).toBe('2026-10-10');
+    mod.refreshToday();
+    expect(today.value).toBe('2026-10-11');
+  });
+
   it('每次呼叫都先對一次時間（測試或系統時間調整後不會沿用舊值）', async () => {
     const useToday = await load();
     useToday();

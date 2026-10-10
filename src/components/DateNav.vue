@@ -4,8 +4,8 @@ import { computed } from 'vue';
 import { NDatePicker } from 'naive-ui';
 
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
-import { useToday } from '@/composables/useToday';
-import { addDays, parseLocalDate, toLocalDateString, todayString } from '@/utils/date';
+import { refreshToday, useToday } from '@/composables/useToday';
+import { addDays, parseLocalDate, toLocalDateString } from '@/utils/date';
 import { DAILY_HOURS_WARN } from '@/validation/work-item';
 
 const props = defineProps<{
@@ -39,8 +39,9 @@ const isOverHoursLimit = computed(
 );
 
 const goToday = (): void => {
-  // 用當下的日期，不用 todayStr：電腦睡眠喚醒後計時器可能還沒觸發，todayStr 會是昨天
-  emit('update:modelValue', todayString());
+  // 先對一次日期：電腦睡眠喚醒後計時器可能還沒觸發，todayStr 會停在昨天，「今天」標示也會跟著錯
+  refreshToday();
+  emit('update:modelValue', todayStr.value);
 };
 
 // NDatePicker 的值是本地午夜的時間戳，進出都用本地時間換算
