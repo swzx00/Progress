@@ -5,6 +5,7 @@
 - **Vitest**（測試執行器，沿用 `vite.config.ts` 的設定與 `@/` 別名）＋ **Vue Test Utils**、**happy-dom**（元件測試）
 - `npm run test`：watch 模式，改檔案自動重跑
 - `npm run test:run`：跑一次全部（CI、commit 前用）
+- `npm run test:e2e`：Playwright 瀏覽器測試（見下方「瀏覽器測試」），第一次在本機跑要先 `npx playwright install chromium`
 
 ## 測試放哪裡、測什麼
 
@@ -19,6 +20,7 @@
 | `tests/backend/contract.ts` | 後端共同規格：MSW 與 `Code.gs` 跑同一組案例（見下方） |
 | `tests/msw/*.spec.ts` | MSW 假後端跑後端共同規格 |
 | `tests/export/*.spec.ts` | 匯出 Excel 的檔案內容：真的產生 .xlsx 再用 ExcelJS 讀回來，檢查分頁、欄位、日期儲存格、樣式，顏色跟 `tokens.scss` 淺色模式比對 |
+| `e2e/*.e2e.ts` | Playwright 瀏覽器測試：RWD、深色模式、文字截斷（見下方） |
 | `src/testing/` | 測試用的假資料：`fixtures.ts`（`makeItem`／`makeRecent`，只覆寫測試在意的欄位）、`taiwan-calendar.ts`（產生一整年的假行事曆，可指定國定假日與補班日） |
 
 測試檔放在被測檔案旁邊（`work-hours.ts` ↔ `work-hours.spec.ts`），`describe`／`it` 用中文寫規則本身（例如「跨過整段午休，扣掉 1.5 小時」），跑測試的輸出就是一份規則清單。
@@ -58,7 +60,23 @@
 
 假的試算表終究不是真的 Sheet（例如科學記號、千分位、地區格式的自動轉型沒有模擬），部署後還是要照實機測試清單手動驗證一次。
 
+## 瀏覽器測試（Playwright）
+
+happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的行為用 Playwright 在真的 Chromium 裡測。`playwright.config.ts` 自己起 `vite`（port 5174，打 MSW 假後端，不吃本機 `.env`），每個測試跑三種寬度：`mobile`（Pixel 7）、`tablet`（820px）、`desktop`（1280px），對應 CLAUDE.md 的 RWD 斷點。
+
+- `rwd.e2e.ts`：沒有橫向捲軸、手機卡片／平板合併欄／桌面完整欄位、逾期紅線（顏色跟 `tokens.scss` 比對）、國定假日的徽章與空狀態
+- `theme.e2e.ts`：切深色後 `data-theme`、底色、文字色階對調，重新整理後維持；唯讀模式
+- `clamp-text.e2e.ts`：長文字收合時手機 3 行、平板桌面 2 行，「<展開>」「<收合>」，有滑鼠的裝置才有全文 tooltip
+
+`e2e/fixtures.ts` 的設定：
+
+- 時間固定在 2026/10/07（三）上午 10 點（`page.clock.setFixedTime`），MSW 的預設資料與「今天」才固定
+- 外部資源換成假的：Google 登入腳本（不連 Google，`renderButton` 放一顆假按鈕）、台灣行事曆（10/9、10/10 放假）、Google 字型（不下載）。要用 `context.route`，MSW 的 Service Worker 放行的請求從 Worker 發出，`page.route` 攔不到
+- `test.use({ loggedIn: true })`：在 sessionStorage 放一個擁有者的假 ID Token，直接進管理畫面（MSW 不驗證 token）
+
+已經有 Chromium、不想下載的環境（例如雲端容器）可以設 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。部署（第 5 階段）時再加：GitHub Pages 的 base path、重新整理不會 404、真的 Google 登入。
+
 ## 沒有自動測試的部分
 
 - 真的 Apps Script 後端接真的 Sheet、Google 登入：部署後手動驗證
-- 版面、RWD、深色模式、實際截斷（`ClampText` 需要真的排版，happy-dom 量不到高度）：之後要做再評估 Playwright
+- 部署後才有的行為（GitHub Pages 的 base path、重新整理路由、HTTPS 下的 Google 登入）：做部署時再加進 Playwright

@@ -13,5 +13,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["tests/**/*.ts"]
+  "include": ["tests/**/*.ts", "e2e/**/*.ts"]
 }
