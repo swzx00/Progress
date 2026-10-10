@@ -225,7 +225,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 
 單人開發，用 `release` 分支定版（使用者決定，2026-10-10）：日常開發在 `dev`，要上線時從 `dev` 開 `release/x.y.z` 定版、測試，完成後合併進 `main` 自動部署。release 分支讓「準備上線」跟「繼續開發」分開：開出來之後 `dev` 可以繼續合併新功能，不會跟著這次上線。
 
-> 目前（2026-10-10）遠端只有 `dev` 與各功能分支，`main`、`gh-pages`、`.github/workflows/` 都還沒建立，第一次上線的步驟見專案資料夾的 `plans/2026-10-10-上線計畫表.md`。
+> 部署 workflow 已建立：`.github/workflows/deploy.yml`，push `main` 時自動檢查（ESLint、Stylelint、Vitest）、建置並部署到 `gh-pages` 分支，需要在 GitHub 的 Actions Variables 設定 `VITE_APPS_SCRIPT_URL`、`VITE_GOOGLE_CLIENT_ID`。遠端 `main`、`gh-pages` 在第一次上線時建立，步驟見專案資料夾的 `plans/2026-10-10-上線計畫表.md`。
 
 | 分支 | 從哪裡開 | 用途 | 合併到哪裡 |
 |---|---|---|---|
