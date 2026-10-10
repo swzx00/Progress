@@ -108,6 +108,16 @@ const getDayHoursExcluding = (date: string, excludeId?: string): number =>
     .filter((i) => i.工作日期 === date && !i.已刪除 && i.id !== excludeId)
     .reduce((sum, i) => sum + (Number(i.今日工時) || 0), 0);
 
+// 請假時數超出範圍的訊息，格式跟 Code.gs 的 validateItem_（前端 validateLeave）一致
+const leaveHoursError = (item: Partial<WorkItem>): string | undefined => {
+  if (!isLeaveItem(item as WorkItem)) return undefined;
+  const rule = schema.leave.fields.今日工時;
+  const hours = Number(item.今日工時) || 0;
+  return hours < rule.min || hours > rule.max
+    ? `${rule.label}需介於 ${rule.min}–${rule.max}`
+    : undefined;
+};
+
 // 只模擬工時相關的後端檢查：請假時數上限、每日工時合計上限
 const validateHours = (
   item: Partial<WorkItem>,
@@ -115,9 +125,8 @@ const validateHours = (
   excludeId?: string,
 ): string | undefined => {
   const hours = Number(item.今日工時) || 0;
-  if (isLeaveItem(item as WorkItem) && hours > schema.leave.fields.今日工時.max) {
-    return `請假時數不可超過 ${schema.leave.fields.今日工時.max} 小時`;
-  }
+  const leaveError = leaveHoursError(item);
+  if (leaveError) return leaveError;
   const otherHours = getDayHoursExcluding(date, excludeId);
   if (otherHours + hours > schema.dailyHours.max) {
     return dailyHoursMessage(otherHours, hours);
@@ -156,6 +165,9 @@ const addOptionIfNew = (category: keyof WorkItemOptions, value: string): void =>
     options = { ...options, [category]: [...options[category], value] };
   }
 };
+
+// 跟 Code.gs 的 OPTION_CATEGORIES 一致
+const OPTION_CATEGORIES: readonly string[] = ['交辦單位', '交辦人員', '專案名稱', '專案Repo'];
 
 interface CreatePayload {
   action: 'create';
@@ -335,15 +347,12 @@ export const handlers = [
     // 合計超過上限就整批退回、不寫入任何一筆
     if (body.action === 'batchCreate') {
       if (body.items.length === 0) return HttpResponse.json({ error: '沒有要新增的紀錄' });
-      const leaveMax = schema.leave.fields.今日工時.max;
-      const invalidIndex = body.items.findIndex(
-        (item) => isLeaveItem(item as WorkItem) && Number(item.今日工時) > leaveMax,
-      );
-      if (invalidIndex !== -1) {
-        return HttpResponse.json({
-          error: `第 ${invalidIndex + 1} 筆：請假時數不可超過 ${leaveMax} 小時`,
-        });
-      }
+      // 錯誤訊息格式同 Code.gs：「第 N 筆：訊息」，多筆用「；」串起來
+      const itemErrors = body.items.flatMap((item, i) => {
+        const leaveError = leaveHoursError(item);
+        return leaveError ? [`第 ${i + 1} 筆：${leaveError}`] : [];
+      });
+      if (itemErrors.length > 0) return HttpResponse.json({ error: itemErrors.join('；') });
       const batchHours = new Map<string, number>();
       body.items.forEach((item) => {
         const hours = batchHours.get(item.工作日期) ?? 0;
@@ -381,6 +390,12 @@ export const handlers = [
     // 跟 Code.gs 的 handleReorder_ 同一套規則：ids 必須跟那天未刪除的紀錄完全一致，
     // 通過後項次依順序改成 1、2、3…
     if (body.action === 'reorder') {
+      if (!body.date || !/^\d{4}\/\d{2}\/\d{2}$/.test(body.date)) {
+        return HttpResponse.json({ error: '工作日期格式不正確' });
+      }
+      if (!Array.isArray(body.ids) || body.ids.length === 0) {
+        return HttpResponse.json({ error: '沒有要排序的紀錄' });
+      }
       const dayIds = items.filter((i) => i.工作日期 === body.date && !i.已刪除).map((i) => i.id);
       const valid =
         body.ids.length === dayIds.length &&
@@ -395,12 +410,12 @@ export const handlers = [
     }
 
     if (body.action === 'update') {
-      const existing = items.find((item) => item.id === body.id);
-      if (existing) {
-        const merged = { ...existing, ...body.item };
-        const hoursError = validateHours(merged, merged.工作日期, existing.id);
-        if (hoursError) return HttpResponse.json({ error: hoursError });
-      }
+      // 跟 Code.gs 的 handleUpdate_ 一樣：找不到（含已刪除的）就回錯誤
+      const existing = items.find((item) => item.id === body.id && !item.已刪除);
+      if (!existing) return HttpResponse.json({ error: '找不到這筆紀錄' });
+      const merged = applyLeaveFixedValues({ ...existing, ...body.item });
+      const hoursError = validateHours(merged, merged.工作日期, existing.id);
+      if (hoursError) return HttpResponse.json({ error: hoursError });
       let updated: WorkItem | undefined;
       items = items.map((item) => {
         if (item.id !== body.id) return item;
@@ -415,19 +430,28 @@ export const handlers = [
     }
 
     if (body.action === 'delete') {
+      if (!items.some((item) => item.id === body.id && !item.已刪除)) {
+        return HttpResponse.json({ error: '找不到這筆紀錄' });
+      }
       items = items.map((item) => (item.id === body.id ? { ...item, 已刪除: true } : item));
       return HttpResponse.json({ ok: true });
     }
 
     if (body.action === 'addOption') {
-      const value = body.value.trim();
+      if (!OPTION_CATEGORIES.includes(body.category)) {
+        return HttpResponse.json({ error: '未知的選項分類' });
+      }
+      const value = (body.value ?? '').trim();
       if (!value) return HttpResponse.json({ error: '新增的值不可為空' });
       addOptionIfNew(body.category, value);
       return HttpResponse.json({ options });
     }
 
     if (body.action === 'renameOption') {
-      const newValue = body.newValue.trim();
+      if (!OPTION_CATEGORIES.includes(body.category)) {
+        return HttpResponse.json({ error: '未知的選項分類' });
+      }
+      const newValue = (body.newValue ?? '').trim();
       if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' });
       if (!options[body.category].includes(body.oldValue)) {
         return HttpResponse.json({ error: '找不到這個值' });
@@ -443,6 +467,9 @@ export const handlers = [
     }
 
     if (body.action === 'deleteOption') {
+      if (!OPTION_CATEGORIES.includes(body.category)) {
+        return HttpResponse.json({ error: '未知的選項分類' });
+      }
       if (!options[body.category].includes(body.value)) {
         return HttpResponse.json({ error: '找不到這個值' });
       }
@@ -472,6 +499,6 @@ export const handlers = [
       return HttpResponse.json({ workHours });
     }
 
-    return HttpResponse.json({ error: 'unknown action' });
+    return HttpResponse.json({ error: '未知的 action' });
   }),
 ];
