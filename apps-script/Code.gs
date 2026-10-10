@@ -1101,7 +1101,12 @@ function handleBatchCreate_(items, replace) {
   for (var i = 0; i < dates.length; i++) {
     var day = days[dates[i]];
     // 覆蓋模式原本的紀錄會被搬走，工時只算這批、項次從 1 開始，不用讀既有紀錄
-    if (replace) continue;
+    if (replace) {
+      if (day.hours > DAILY_HOURS_MAX) {
+        return jsonOutput_({ error: dailyHoursError_(0, day.hours) });
+      }
+      continue;
+    }
     var dayRows = readDay_(sheet, colMap, dates[i]);
     var dayHours = getDayHoursExcluding_(dayRows, null);
     if (dayHours + day.hours > DAILY_HOURS_MAX) {
