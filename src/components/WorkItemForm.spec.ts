@@ -12,12 +12,15 @@ import WorkItemForm from './WorkItemForm.vue';
  * WorkItemForm 的元件測試：只測元件自己的行為（欄位連動、何時查詢、送出內容、確認對話框），
  * 換算、驗證規則本身在 utils／validation 的單元測試裡測過。
  * 選項清單（useOptions）與當天紀錄查詢（fetchDaySummary）都換成假的，不打 API；
- * NSelect 換成空殼，需要選值的情境改用「編輯既有紀錄」帶入
+ * NSelect 換成空殼，需要選值的情境改用「編輯既有紀錄」帶入；選項載入狀態改用只渲染 empty slot 的殼
  */
 const mocks = vi.hoisted(() => ({
   fetchDaySummary: vi.fn(),
   recentItems: null as unknown as { value: RecentItem[] },
   workHours: null as unknown as { value: WorkHoursSetting | null },
+  optionsLoading: null as unknown as { value: boolean },
+  optionsError: null as unknown as { value: Error | null },
+  fetchOptions: vi.fn(),
 }));
 
 vi.mock('@/composables/useWorkItems', () => ({
@@ -28,14 +31,16 @@ vi.mock('@/composables/useOptions', async () => {
   const { ref: vueRef } = await import('vue');
   mocks.recentItems = vueRef<RecentItem[]>([]);
   mocks.workHours = vueRef<WorkHoursSetting | null>(null);
+  mocks.optionsLoading = vueRef(false);
+  mocks.optionsError = vueRef<Error | null>(null);
   return {
     useOptions: () => ({
       options: vueRef({ 交辦單位: [], 交辦人員: [], 專案名稱: [], 專案Repo: [] }),
       recentItems: mocks.recentItems,
       workHours: mocks.workHours,
-      loading: vueRef(false),
-      error: vueRef(null),
-      fetchOptions: vi.fn(),
+      loading: mocks.optionsLoading,
+      error: mocks.optionsError,
+      fetchOptions: mocks.fetchOptions,
     }),
   };
 });
@@ -83,6 +88,9 @@ beforeEach(() => {
   mocks.fetchDaySummary.mockResolvedValue(daySummary([]));
   mocks.recentItems.value = [];
   mocks.workHours.value = null;
+  mocks.optionsLoading.value = false;
+  mocks.optionsError.value = null;
+  mocks.fetchOptions.mockReset();
 });
 
 describe('項次', () => {
@@ -468,5 +476,45 @@ describe('工作時段', () => {
     expect(errorTexts(wrapper)).toContain('結束時間需晚於開始時間');
     await submit(wrapper);
     expect(wrapper.emitted('save')).toBeUndefined();
+  });
+});
+
+describe('選項清單載入中／失敗', () => {
+  // NSelect 換成只渲染 empty slot 的殼，才看得到下拉選單裡的狀態畫面（Naive UI 的元件名稱是 Select）
+  const SelectWithEmpty = { template: '<div class="select-stub"><slot name="empty" /></div>' };
+  const mountWithSelect = async (): Promise<VueWrapper> => {
+    const wrapper = mount(WorkItemForm, {
+      props: { defaultDate: '2026-10-09' },
+      global: { stubs: { Select: SelectWithEmpty, Transition: false } },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    return wrapper;
+  };
+
+  it('開表單就讀選項清單', async () => {
+    await mountWithSelect();
+    expect(mocks.fetchOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('載入中：四個可搜尋下拉選單都顯示「選項載入中」', async () => {
+    mocks.optionsLoading.value = true;
+    const wrapper = await mountWithSelect();
+    const states = wrapper.findAll('.options-dropdown-state');
+    expect(states).toHaveLength(4);
+    expect(states.every((s) => s.text().includes('選項載入中'))).toBe(true);
+  });
+
+  it('載入失敗：顯示「選項清單載入失敗」，按「重新載入」再讀一次', async () => {
+    mocks.optionsError.value = new Error('網路錯誤');
+    const wrapper = await mountWithSelect();
+    expect(wrapper.findAll('.options-dropdown-state__message')).toHaveLength(4);
+    await wrapper.findAll('.options-dropdown-state__retry')[2]!.trigger('click');
+    expect(mocks.fetchOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('讀好了：不放狀態畫面（下拉選單顯示 Naive UI 本身的「無資料」）', async () => {
+    const wrapper = await mountWithSelect();
+    expect(wrapper.find('.options-dropdown-state').exists()).toBe(false);
   });
 });
