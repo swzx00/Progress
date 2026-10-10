@@ -223,18 +223,33 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 
 # 分支策略與部署
 
-Trunk-based，單人開發，不開 `release`/長期分支：
+單人開發，用 `release` 分支定版（使用者決定，2026-10-10）：日常開發在 `dev`，要上線時從 `dev` 開 `release/x.y.z` 定版、測試，完成後合併進 `main` 自動部署。release 分支讓「準備上線」跟「繼續開發」分開：開出來之後 `dev` 可以繼續合併新功能，不會跟著這次上線。
 
-> 目前（2026-10-10）遠端只有 `dev` 與各功能分支，`main`、`gh-pages`、`.github/workflows/` 都還沒建立，下面是規劃。
+> 目前（2026-10-10）遠端只有 `dev` 與各功能分支，`main`、`gh-pages`、`.github/workflows/` 都還沒建立，第一次上線的步驟見專案資料夾的 `plans/2026-10-10-上線計畫表.md`。
 
-- `main`：穩定分支，唯一的正式部署來源，對應正式站 GitHub Pages 網址（repo 根路徑）
-- `dev`：日常開發測試分支，功能開發完先進這裡驗證
-- `feat/xxx`：個別功能開發用，完成後合併回 `dev`，穩定後再合併回 `main`
+| 分支 | 從哪裡開 | 用途 | 合併到哪裡 |
+|---|---|---|---|
+| `feat/xxx`、`fix/xxx` 等 | `dev` | 開發單一功能／修正 | `dev` |
+| `dev` | — | 日常開發測試分支，功能做完、測過才合併進來 | 開 `release/x.y.z` |
+| `release/x.y.z` | `dev` | 定版：改版本號、測試，只修 bug、不加新功能 | `main`（打 tag），再合回 `dev` |
+| `main` | — | 穩定分支，唯一的正式部署來源，push 後自動部署到正式站（`https://swzx00.github.io/Progress/`） | — |
+| `hotfix/xxx` | `main` | 正式站緊急修正 | `main`（打 tag），再合回 `dev` |
+
+**上線流程**（每一步 commit、合併、push 前都先跟使用者確認）：
+1. 從 `dev` 開 `release/x.y.z`，執行 `npm version x.y.z --no-git-tag-version`（同時改 `package.json`、`package-lock.json`）
+2. 在 release 分支跑 `npm run lint`、`npm run test:run`、`npm run build`，用真後端走一輪實機測試；有 bug 就在 release 分支修
+3. 合併進 `main` 並 push，GitHub Actions 自動建置部署
+4. 打開正式站確認，在 `main` 打 tag `vx.y.z`
+5. release 分支合回 `dev`（帶回版本號與修正），刪掉 release 分支
+- `Code.gs` 有改時，先部署 Apps Script 再合併進 `main`，並記下部署前的 Apps Script 版本號，回滾用
+- 版本號從 `0.0.1` 開始（semver），版本靠 tag 記錄，不保留長期的 release 分支
+
+**回滾**：前端在 `main` 上 `git revert` 有問題的合併再 push，自動重新部署；後端在 Apps Script「管理部署作業」切回舊版本（網址不變）。不要 force push `main`。
 
 **dev 分支的測試方式**：
 - 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5173` 這個來源，這樣才能在本機測登入流程
-- 合併進 `main` 前，想驗證「接近正式環境」的行為（GitHub Pages 的 base path、路由 history 模式重新整理是否 404、HTTPS 環境下 Google 登入行為），用 GitHub Actions 把 `dev` 分支的 build 產物部署到一個獨立子路徑 **`/developer/`**（例如 `https://swzx00.github.io/Progress/developer/`），跟 `main` 部署的正式站分開，避免測試中的版本影響正式站
-  - 實作方式：`dev` push 觸發的 workflow 用 `vite build --base=/Progress/developer/`，再用 `peaceiris/actions-gh-pages` 搭配 `destination_dir: developer` 部署到 `gh-pages` 分支下的 `developer/` 資料夾；`main` push 觸發的 workflow 照常部署到 `gh-pages` 分支根目錄
+- （規劃中，尚未建立）想驗證「接近正式環境」的行為（GitHub Pages 的 base path、路由 history 模式重新整理是否 404、HTTPS 環境下 Google 登入行為），用 GitHub Actions 把 build 產物部署到一個獨立子路徑 **`/developer/`**（例如 `https://swzx00.github.io/Progress/developer/`），跟 `main` 部署的正式站分開
+  - 實作方式：push 觸發的 workflow 用 `vite build --base=/Progress/developer/`，再用 `peaceiris/actions-gh-pages` 搭配 `destination_dir: developer` 部署到 `gh-pages` 分支下的 `developer/` 資料夾；`main` push 觸發的 workflow 照常部署到 `gh-pages` 分支根目錄（要設 `keep_files: true`，不然會把 `developer/` 刪掉）
 
 # Commit 規範
 
