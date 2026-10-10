@@ -25,7 +25,26 @@ declare global {
   }
 }
 
-const idToken = ref<string | null>(sessionStorage.getItem(TOKEN_STORAGE_KEY));
+/**
+ * sessionStorage 在瀏覽器封鎖網站資料時存取會丟 SecurityError，模組載入時丟錯會讓整個 App 白畫面，
+ * 所以讀寫都包 try/catch：讀不到就當作沒登入，寫不進去只是重新整理後要重新登入
+ */
+const readStoredToken = (): string | null => {
+  try {
+    return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredToken = (token: string | null): void => {
+  try {
+    if (token === null) sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    else sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch {
+    // 存不進去不影響這次登入
+  }
+};
 
 const decodeJwtPayload = (token: string): Record<string, unknown> => {
   const base64Url = token.split('.')[1];
@@ -38,6 +57,26 @@ const decodeJwtPayload = (token: string): Record<string, unknown> => {
   );
   return JSON.parse(json) as Record<string, unknown>;
 };
+
+/** 提早一點視為過期，避免剛好在送出途中過期 */
+const EXPIRY_MARGIN_MS = 60 * 1000;
+
+/** ID Token 是否已過期（看 JWT 的 exp，單位秒）；解不開或沒有 exp 時交給後端判斷，不當作過期 */
+const isTokenExpired = (token: string): boolean => {
+  try {
+    const { exp } = decodeJwtPayload(token);
+    return typeof exp === 'number' && exp * 1000 - EXPIRY_MARGIN_MS <= Date.now();
+  } catch {
+    return false;
+  }
+};
+
+const initialToken = readStoredToken();
+// 重新整理時 sessionStorage 裡的 token 已經過期（約一小時），直接當作沒登入，不顯示管理功能
+const idToken = ref<string | null>(
+  initialToken && !isTokenExpired(initialToken) ? initialToken : null,
+);
+if (initialToken && !idToken.value) writeStoredToken(null);
 
 const userEmail = computed<string | null>(() => {
   if (!idToken.value) return null;
@@ -74,7 +113,7 @@ const loadGisScript = (): Promise<void> => {
 
 const handleCredential = (response: GoogleCredentialResponse): void => {
   idToken.value = response.credential;
-  sessionStorage.setItem(TOKEN_STORAGE_KEY, response.credential);
+  writeStoredToken(response.credential);
 };
 
 let initialized = false;
@@ -107,10 +146,30 @@ const renderSignInButton = async (el: HTMLElement, dark = false): Promise<void> 
 
 const signOut = (): void => {
   idToken.value = null;
-  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  writeStoredToken(null);
   window.google?.accounts.id.disableAutoSelect();
 };
 
+/**
+ * 開始編輯前確認登入還有效：token 過期就登出並回傳 false。
+ * 分頁開著超過一小時，token 會過期但畫面還是管理模式；在開表單／對話框前先擋下，
+ * 避免使用者打完一大段內容按儲存才被後端退回、表單關閉。真正把關仍在後端
+ */
+const ensureFreshLogin = (): boolean => {
+  if (!idToken.value) return false;
+  if (!isTokenExpired(idToken.value)) return true;
+  signOut();
+  return false;
+};
+
 export function useGoogleAuth() {
-  return { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOut };
+  return {
+    idToken,
+    userEmail,
+    isLoggedIn,
+    isAuthorized,
+    renderSignInButton,
+    signOut,
+    ensureFreshLogin,
+  };
 }

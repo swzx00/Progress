@@ -82,6 +82,71 @@ describe('登入狀態', () => {
   });
 });
 
+describe('token 過期', () => {
+  const nowSec = (): number => Math.floor(Date.now() / 1000);
+
+  it('重新整理時 sessionStorage 的 token 已過期：當作沒登入，並清掉', async () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      makeToken({ email: 'swzx00@gmail.com', exp: nowSec() - 10 }),
+    );
+    const auth = await load();
+    expect(auth.isLoggedIn.value).toBe(false);
+    expect(auth.isAuthorized.value).toBe(false);
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('還沒過期：維持登入，ensureFreshLogin 回傳 true', async () => {
+    const token = makeToken({ email: 'swzx00@gmail.com', exp: nowSec() + 3600 });
+    sessionStorage.setItem(STORAGE_KEY, token);
+    const auth = await load();
+    expect(auth.isAuthorized.value).toBe(true);
+    expect(auth.ensureFreshLogin()).toBe(true);
+    expect(auth.idToken.value).toBe(token);
+  });
+
+  it('分頁開著時過期：ensureFreshLogin 登出並回傳 false', async () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      makeToken({ email: 'swzx00@gmail.com', exp: nowSec() + 3600 }),
+    );
+    const auth = await load();
+    vi.spyOn(Date, 'now').mockReturnValue((nowSec() + 3600) * 1000);
+    expect(auth.ensureFreshLogin()).toBe(false);
+    expect(auth.isLoggedIn.value).toBe(false);
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(gis.disableAutoSelect).toHaveBeenCalled();
+  });
+
+  it('沒有 exp：交給後端判斷，不當作過期', async () => {
+    sessionStorage.setItem(STORAGE_KEY, OWNER_TOKEN);
+    const auth = await load();
+    expect(auth.ensureFreshLogin()).toBe(true);
+  });
+
+  it('沒登入：ensureFreshLogin 回傳 false', async () => {
+    const auth = await load();
+    expect(auth.ensureFreshLogin()).toBe(false);
+  });
+});
+
+describe('sessionStorage 被封鎖', () => {
+  it('讀取丟錯也不會讓模組載入失敗，當作沒登入；登入、登出照常', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    const auth = await load();
+    expect(auth.isLoggedIn.value).toBe(false);
+    expect(() => auth.signOut()).not.toThrow();
+  });
+});
+
 describe('登入按鈕', () => {
   it('用 .env 的 Client ID 初始化一次；登入成功後存 token，變成可以管理', async () => {
     const auth = await load();

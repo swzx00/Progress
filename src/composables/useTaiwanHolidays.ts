@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-import { addDays } from '@/utils/date';
+import { addDays, parseLocalDate } from '@/utils/date';
 
 interface HolidayEntry {
   date: string;
@@ -25,8 +25,20 @@ const YEAR_DATA_URL = (year: string): string =>
 const entriesByYear = ref<Record<string, Record<string, HolidayEntry>>>({});
 const fetchingYears = new Map<string, Promise<void>>();
 
+/**
+ * 網路錯誤後多久才重新抓。失敗不記下來的話，離線時每次 isWorkday／getDayOffLabel 都會再打一次，
+ * findNextWorkday 最多 60 圈每圈都要等一個失敗的請求，按鈕看起來像卡住
+ */
+export const HOLIDAY_RETRY_AFTER_MS = 5 * 60 * 1000;
+const failedAt = new Map<string, number>();
+
 const ensureYearLoaded = (year: string): Promise<void> => {
   if (entriesByYear.value[year]) return Promise.resolve();
+
+  const lastFailure = failedAt.get(year);
+  if (lastFailure !== undefined && Date.now() - lastFailure < HOLIDAY_RETRY_AFTER_MS) {
+    return Promise.resolve();
+  }
 
   const existing = fetchingYears.get(year);
   if (existing) return existing;
@@ -40,9 +52,11 @@ const ensureYearLoaded = (year: string): Promise<void> => {
         map[iso] = entry;
       });
       entriesByYear.value = { ...entriesByYear.value, [year]: map };
+      failedAt.delete(year);
     })
     .catch(() => {
-      // 查詢失敗就不顯示假日資訊、也視為工作日，不影響其他功能
+      // 查詢失敗就不顯示假日資訊、也視為工作日，不影響其他功能；過 HOLIDAY_RETRY_AFTER_MS 才重抓
+      failedAt.set(year, Date.now());
     })
     .finally(() => {
       fetchingYears.delete(year);
@@ -54,12 +68,11 @@ const ensureYearLoaded = (year: string): Promise<void> => {
 
 const WEEKDAY_LABELS = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
 
-const weekdayLabel = (dateStr: string): string =>
-  WEEKDAY_LABELS[new Date(`${dateStr}T00:00:00`).getDay()];
+const weekdayLabel = (dateStr: string): string => WEEKDAY_LABELS[parseLocalDate(dateStr).getDay()];
 
 /** 資料還沒抓回來時的備援猜測（只能猜一般週末，猜不到補班日），資料到位後一律以官方資料為準 */
 const isWeekendFallback = (dateStr: string): boolean => {
-  const day = new Date(`${dateStr}T00:00:00`).getDay();
+  const day = parseLocalDate(dateStr).getDay();
   return day === 0 || day === 6;
 };
 

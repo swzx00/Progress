@@ -4,6 +4,7 @@ import { makeItem, makeRecent } from '@/testing/fixtures';
 import type { WorkItemOptions } from '@/types/work-item';
 
 import {
+  SEARCH_KEYWORD_MAX,
   SUGGESTION_LIMIT,
   buildSuggestions,
   compareSearchResults,
@@ -208,6 +209,15 @@ describe('buildSuggestions', () => {
     expect(buildSuggestions('WEB', options, [])).toEqual([
       { field: '專案Repo', value: 'web-官網' },
     ]);
+  });
+
+  it(`超過 ${SEARCH_KEYWORD_MAX} 字的值不推薦（點了會被後端以關鍵字太長退回）`, () => {
+    const long = `官網${'字'.repeat(SEARCH_KEYWORD_MAX)}`;
+    const recent = [
+      makeRecent({ 工作日期: '2026-10-05', 工作目標: long }),
+      makeRecent({ 工作日期: '2026-10-01', 工作目標: '官網首頁' }),
+    ];
+    expect(buildSuggestions('官網', null, recent).map((s) => s.value)).toEqual(['官網首頁']);
   });
 
   it(`最多 ${SUGGESTION_LIMIT} 筆`, () => {

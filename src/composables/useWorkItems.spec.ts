@@ -228,6 +228,22 @@ describe('讀取單日（fetchByDate）', () => {
     expect(items.value).toEqual([]);
   });
 
+  it('連續切換日期：先送出的比較晚回來，不會蓋掉後面那天的結果', async () => {
+    const { useWorkItems } = await load();
+    let resolveFirst!: (value: unknown) => void;
+    fetchMock.mockReturnValueOnce(new Promise((r) => (resolveFirst = r)));
+    respond({ items: [apiItem({ id: 'later', 工作日期: '2026/10/10' })] });
+    const { items, loading, fetchByDate } = useWorkItems();
+    const first = fetchByDate('2026-10-09');
+    await fetchByDate('2026-10-10');
+    expect(loading.value).toBe(false);
+
+    resolveFirst({ ok: true, json: async () => ({ items: [apiItem({ id: 'earlier' })] }) });
+    await first;
+    expect(items.value.map((item) => item.id)).toEqual(['later']);
+    expect(loading.value).toBe(false);
+  });
+
   it('下一次讀取成功會清掉上一次的錯誤', async () => {
     const { useWorkItems } = await load();
     respond({ error: '壞掉了' });

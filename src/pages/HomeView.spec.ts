@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   loading: null as unknown as Ref<boolean>,
   error: null as unknown as Ref<string | null>,
   signOut: vi.fn(),
+  ensureFreshLogin: vi.fn(),
   showToast: vi.fn(),
   rememberItems: vi.fn(),
   fetchByDate: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('@/composables/useGoogleAuth', async () => {
       isAuthorized: computed(() => true),
       renderSignInButton: vi.fn(),
       signOut: mocks.signOut,
+      ensureFreshLogin: mocks.ensureFreshLogin,
     }),
   };
 });
@@ -167,6 +169,7 @@ beforeEach(() => {
   mocks.loading.value = false;
   mocks.error.value = null;
   mocks.fetchByDate.mockResolvedValue(undefined);
+  mocks.ensureFreshLogin.mockReturnValue(true);
 });
 
 describe('讀取', () => {
@@ -254,6 +257,16 @@ describe('存檔（新增／編輯）', () => {
     resolve();
     await flushPromises();
     expect(exists(wrapper, 'WorkItemForm')).toBe(false);
+  });
+
+  it('登入已過期：不打開表單，提示重新登入', async () => {
+    mocks.ensureFreshLogin.mockReturnValue(false);
+    const wrapper = await mountView();
+    await openCreate(wrapper);
+    await emitFrom(wrapper, 'WorkItemTable', 'edit', mocks.items.value[0]);
+
+    expect(exists(wrapper, 'WorkItemForm')).toBe(false);
+    expect(mocks.showToast).toHaveBeenCalledWith('登入已過期，請重新登入');
   });
 
   it('沒有 token：不送出，直接登出', async () => {
@@ -353,6 +366,23 @@ describe('項次調整', () => {
     expect(mocks.items.value).toBe(before);
     expect(mocks.showToast).toHaveBeenCalledWith('紀錄已變更，請重新整理後再排序');
     expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('失敗前已經切到別天：不把原本那天的順序還原到目前畫面', async () => {
+    let reject!: (e: unknown) => void;
+    mocks.reorderItems.mockReturnValue(new Promise<void>((_, r) => (reject = r)));
+    const wrapper = await mountView();
+    wrapper.findComponent({ name: 'WorkItemTable' }).vm.$emit('reorder', ['b', 'a']);
+    await wrapper.vm.$nextTick();
+
+    const otherDay = [makeItem({ id: 'c', 項次: 1, 工作日期: '2030-01-02' })];
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2030-01-02');
+    mocks.items.value = otherDay;
+    reject(new ApiError('紀錄已變更，請重新整理後再排序'));
+    await flushPromises();
+
+    expect(mocks.items.value).toEqual(otherDay);
+    expect(mocks.showToast).toHaveBeenCalledWith('紀錄已變更，請重新整理後再排序');
   });
 
   it('登入錯誤：還原並登出', async () => {

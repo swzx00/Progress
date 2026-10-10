@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeCalendar } from '@/testing/taiwan-calendar';
 
+import { HOLIDAY_RETRY_AFTER_MS } from './useTaiwanHolidays';
+
 /**
  * 台灣國定假日：放假原因、是否為工作日（補班日要算工作日）、上一個／下一個工作日。
  * 行事曆資料換成假的（2030 中秋連假＋補班日、2031 元旦跨年），快取在模組層級，每個測試重新載入模組
@@ -152,12 +154,25 @@ describe('資料載入與快取', () => {
     expect(await holidays.findNextWorkday('2030-09-13', 1)).toBe('2030-09-16');
   });
 
-  it('網路錯誤後下次會重新抓', async () => {
+  it('網路錯誤後一段時間內不重抓，過了才重新抓', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const holidays = await load();
     await holidays.ensureYearLoaded('2030');
     await holidays.ensureYearLoaded('2030');
+    expect(fetchedYears()).toEqual(['2030']);
+
+    now.mockReturnValue(1_000_000 + HOLIDAY_RETRY_AFTER_MS);
+    await holidays.ensureYearLoaded('2030');
     expect(fetchedYears()).toEqual(['2030', '2030']);
     expect(holidays.getDayOffLabel('2030-09-12')).toBe('中秋節');
+    now.mockRestore();
+  });
+
+  it('離線時找下一個工作日不會每天都重打一次', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    const holidays = await load();
+    expect(await holidays.findNextWorkday('2030-09-13', 1)).toBe('2030-09-16');
+    expect(fetchedYears()).toEqual(['2030']);
   });
 });

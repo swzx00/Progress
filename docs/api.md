@@ -9,7 +9,7 @@
 - 額外支援 `type=search&q=關鍵字[&field=欄位]`（`handleSearch_`），讀整張工作紀錄分頁找出符合的未刪除紀錄（含請假），給前端搜尋欄用，回應 `{ items, total }`：照「工作日期新的在前、同一天照項次」排序，最多回傳 `SEARCH_MAX_RESULTS`（200）筆，`total` 是全部符合的筆數。比對規則（`matchesSearch_`）跟前端 `src/utils/search-work-items.ts` 的 `matchesSearch` 手動同步，見 [search.md](ui/search.md)。關鍵字不可空白、上限 `SEARCH_KEYWORD_MAX`（100）字，`field` 只接受 `SEARCH_FIELDS`，不合格回 `{ error }`。公開讀取、不需登入
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
-**前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
+**前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`（瀏覽器封鎖網站資料時讀寫會丟錯，一律包 try/catch，讀不到就當作沒登入）。ID Token 約一小時過期：重新整理時 `sessionStorage` 裡的 token 已過期（看 JWT 的 `exp`，提早 1 分鐘）就當作沒登入；分頁開著過期時，開新增／編輯／刪除等表單或對話框前用 `ensureFreshLogin()` 先擋下、登出並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
 
 **doPost(e)**
 - body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性一律拒絕）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
