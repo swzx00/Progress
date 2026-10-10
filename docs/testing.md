@@ -7,6 +7,7 @@
 - `npm run test:run`：跑一次全部（CI、commit 前用）
 - `npm run test:coverage`：跑一次全部並產生覆蓋率報告（終端機摘要＋`coverage/index.html`），不設門檻，用來找沒測到的地方
 - `npm run test:e2e`：Playwright 瀏覽器測試（見下方「瀏覽器測試」），第一次在本機跑要先 `npx playwright install chromium`
+- `npm run test:e2e:safari`：同一套瀏覽器測試改用 WebKit（Safari 的核心）跑，第一次要先 `npx playwright install webkit`
 
 ## 測試放哪裡、測什麼
 
@@ -87,6 +88,10 @@ happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的�
 - 時間固定在 2026/10/07（三）上午 10 點（`page.clock.setFixedTime`），MSW 的預設資料與「今天」才固定
 - 外部資源換成假的：Google 登入腳本（不連 Google，`renderButton` 放一顆假按鈕）、台灣行事曆（10/9、10/10 放假）、Google 字型（不下載）。要用 `context.route`，MSW 的 Service Worker 放行的請求從 Worker 發出，`page.route` 攔不到
 - `test.use({ loggedIn: true })`：在 sessionStorage 放一個擁有者的假 ID Token，直接進管理畫面（MSW 不驗證 token）
+
+### Safari（WebKit）
+
+`npm run test:e2e:safari` 用 WebKit 跑同一套測試：`iphone`（iPhone 14，只跑版面相關，同 `mobile`）、`desktop-safari`（1280px，全部都跑）。`npm run test:e2e` 不包含這兩個專案，沒裝 WebKit 的環境照樣能跑。Playwright 的 WebKit 很接近 Safari，但不是真的 iPhone，日期選擇器這類原生元件還是要在手機上實際點一次。
 
 已經有 Chromium、不想下載的環境（例如雲端容器）可以設 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。部署（第 5 階段）時再加：GitHub Pages 的 base path、重新整理不會 404、真的 Google 登入。
 

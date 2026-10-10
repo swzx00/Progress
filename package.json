@@ -17,7 +17,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=mobile --project=tablet --project=desktop",
+    "test:e2e:safari": "playwright test --project=iphone --project=desktop-safari"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
