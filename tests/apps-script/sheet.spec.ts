@@ -372,6 +372,13 @@ describe('登入驗證（verifyIdToken_）', () => {
     expect(backend.spreadsheet.getSheets()).toHaveLength(0);
   });
 
+  it('沒設定指令碼屬性 GOOGLE_CLIENT_ID：一律 UNAUTHORIZED', () => {
+    backend = loadCodeGsBackend({ GOOGLE_CLIENT_ID: '' });
+    const data = backend.doPost({ idToken: 'token', action: 'create', item: input() });
+    expect(data).toEqual({ error: '未登入或無權限', code: 'UNAUTHORIZED' });
+    expect(backend.spreadsheet.getSheets()).toHaveLength(0);
+  });
+
   it('email_verified 是布林 true 也可以', () => {
     const data = backend.doPost({
       idToken: token({ email_verified: true }),

@@ -3,7 +3,7 @@
  *
  * 部署前要做的事（見 CLAUDE.md「需要使用者事先準備的東西」）：
  *   1. 「專案設定」→「指令碼屬性」新增 SHEET_ID（這份試算表的 ID）
- *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud）
+ *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud；沒設定時所有寫入都會被拒絕）
  *   3. 部署為網頁應用程式（執行身分：我；存取權限：所有人）
  * 第 3 步第一次執行會跳出 Google 授權畫面，屬於正常流程。
  * 從月份分頁改版成單一分頁時，另外要執行一次 mergeMonthSheets()（見該函式說明）。
@@ -477,7 +477,8 @@ function verifyIdToken_(idToken) {
 
   var payload = JSON.parse(res.getContentText());
   var clientId = PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID');
-  if (clientId && payload.aud !== clientId) return null;
+  // 沒設定 GOOGLE_CLIENT_ID 一律拒絕：不檢查 aud 的話，別的網站發給擁有者帳號的 token 也會通過
+  if (!clientId || payload.aud !== clientId) return null;
   if (payload.email !== OWNER_EMAIL) return null;
   if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
 

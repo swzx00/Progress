@@ -12,7 +12,7 @@
 **前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
 
 **doPost(e)**
-- body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性就不檢查 `aud`）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
+- body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性一律拒絕）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
 - 依 `action` 分派：
   - `create`：工作紀錄分頁不存在時建立，產生 UUID 當 ID，項次用 `getNextDailyIndex_` 依工作日期計算（**每天**從 1 開始，見 [sheet-schema.md](sheet-schema.md) 的「項次」），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
   - `update`：用 `id` 在工作紀錄分頁定位那一列，原地改寫（工作日期改到別天、別的月份也一樣，不用搬分頁）。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天，在新的那天用 `getNextDailyIndex_` 重新編號
