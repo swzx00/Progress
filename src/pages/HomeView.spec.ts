@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { NDropdown } from 'naive-ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ref } from 'vue';
+import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 
 import { makeItem } from '@/testing/fixtures';
 import type { WorkItem } from '@/types/work-item';
@@ -121,9 +122,19 @@ const stubNames = [
   'ExportModal',
 ];
 
-const mountView = async (): Promise<VueWrapper> => {
+let router: Router;
+
+/** path 是打開頁面時的網址（例如 /?date=2026-09-01），用來測 ?date= 開到指定日期 */
+const mountView = async (path = '/'): Promise<VueWrapper> => {
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { render: () => null } }],
+  });
+  await router.push(path);
+  await router.isReady();
   const wrapper = mount(HomeView, {
     global: {
+      plugins: [router],
       stubs: {
         ...Object.fromEntries(stubNames.map((name) => [name, true])),
         DateNav: DateNavStub,
@@ -173,9 +184,52 @@ beforeEach(() => {
 });
 
 describe('讀取', () => {
-  it('打開時讀今天的紀錄', async () => {
+  it('打開時讀今天的紀錄，網址不加 date', async () => {
     await mountView();
     expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+});
+
+describe('網址的 ?date=', () => {
+  it('格式正確：開到那天', async () => {
+    const wrapper = await mountView('/?date=2026-09-01');
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-01');
+    expect(mocks.fetchByDate).not.toHaveBeenCalledWith(today);
+    expect(wrapper.findComponent({ name: 'DateNav' }).props('modelValue')).toBe('2026-09-01');
+  });
+
+  it.each(['2026/09/01', '2026-9-1', '2026-02-30', 'abc', ''])(
+    '不正確（%s）：退回今天，把 date 從網址拿掉、保留其他參數',
+    async (date) => {
+      await mountView(`/?date=${encodeURIComponent(date)}&foo=1`);
+      expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+      expect(router.currentRoute.value.query).toEqual({ foo: '1' });
+    },
+  );
+
+  it('重複帶 date（陣列）也當成不正確', async () => {
+    await mountView('/?date=2026-09-01&date=2026-09-02');
+    expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it('切換日期：用 replace 更新網址，不新增瀏覽紀錄', async () => {
+    const wrapper = await mountView();
+    const push = vi.spyOn(router, 'push');
+    const replace = vi.spyOn(router, 'replace');
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2026-09-02');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-02' });
+    expect(replace).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-02');
+  });
+
+  it('網址的 date 被改掉時跟著切過去', async () => {
+    await mountView('/?date=2026-09-01');
+    await router.replace({ query: { date: '2026-09-03' } });
+    await flushPromises();
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-03');
   });
 });
 

@@ -24,3 +24,7 @@ export const addDays = (date: string, days: number): string => {
   d.setDate(d.getDate() + days);
   return toLocalDateString(d);
 };
+
+/** 是不是存在的 YYYY-MM-DD（格式對、日期也真的存在，2026-02-30 這種會被 Date 進位的不算） */
+export const isValidDateString = (value: string): boolean =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value) && toLocalDateString(parseLocalDate(value)) === value;

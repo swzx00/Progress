@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
 import { computed, h, ref, toRaw, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
@@ -29,7 +30,7 @@ import {
 } from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
-import { todayString } from '@/utils/date';
+import { isValidDateString, todayString } from '@/utils/date';
 import {
   SEARCH_FIELD_LABELS,
   SEARCH_MAX_RESULTS,
@@ -49,7 +50,35 @@ const {
 
 const signInButtonEl = ref<HTMLElement | null>(null);
 
-const selectedDate = ref(todayString());
+/**
+ * 網址帶 ?date=YYYY-MM-DD 時開到那天（格式不對或日期不存在就退回今天，並把錯的參數從網址拿掉）。
+ * 切換日期時用 router.replace 同步網址，重新整理、分享連結都會停在同一天；
+ * 用 replace 不用 push，切日期不會塞一堆瀏覽紀錄，按上一頁直接離開網站
+ */
+const route = useRoute();
+const router = useRouter();
+const queryDate = (): string | null => {
+  const value = route.query.date;
+  return typeof value === 'string' && isValidDateString(value) ? value : null;
+};
+
+const selectedDate = ref(queryDate() ?? todayString());
+if (route.query.date !== undefined && queryDate() === null) {
+  const query = { ...route.query };
+  delete query.date;
+  void router.replace({ query });
+}
+watch(selectedDate, (date) => {
+  if (route.query.date !== date) void router.replace({ query: { ...route.query, date } });
+});
+// 網址被程式改掉（例如之後加了連結）時跟著切過去
+watch(
+  () => route.query.date,
+  () => {
+    const date = queryDate();
+    if (date && date !== selectedDate.value) selectedDate.value = date;
+  },
+);
 const {
   items,
   loading,

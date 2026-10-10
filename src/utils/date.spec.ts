@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { addDays, parseLocalDate, toLocalDateString, todayString } from './date';
+import { addDays, isValidDateString, parseLocalDate, toLocalDateString, todayString } from './date';
 
 describe('測試環境', () => {
   it('時區固定在台灣（UTC+8）', () => {
@@ -64,5 +64,25 @@ describe('addDays', () => {
     ['2026-10-10', -10, '2026-09-30'],
   ])('%s 加 %i 天是 %s', (date, days, expected) => {
     expect(addDays(date, days)).toBe(expected);
+  });
+});
+
+describe('isValidDateString', () => {
+  it.each(['2026-10-10', '2028-02-29', '2026-12-31', '2026-01-01'])('%s 是正確的日期', (v) => {
+    expect(isValidDateString(v)).toBe(true);
+  });
+
+  it.each([
+    '2026/10/10',
+    '2026-1-1',
+    '2026-02-30',
+    '2027-02-29',
+    '2026-13-01',
+    '2026-00-10',
+    '2026-10-10T00:00',
+    ' 2026-10-10',
+    '',
+  ])('%s 不是正確的日期', (v) => {
+    expect(isValidDateString(v)).toBe(false);
   });
 });
