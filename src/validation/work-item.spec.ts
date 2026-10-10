@@ -154,6 +154,31 @@ describe('validateWorkItem', () => {
       });
     });
 
+    it.each([
+      '2026-02-30',
+      '2026-04-31',
+      '2026-06-31',
+      '2026-09-31',
+      '2026-11-31',
+      '2027-02-29',
+      '2026-13-01',
+      '2026-00-10',
+      '2026-10-00',
+      '2026-10-32',
+    ])('不存在的日期 %s 算格式不正確', (date) => {
+      expect(validateWorkItem(valid({ 工作日期: date, 預計期限: date }))).toEqual({
+        工作日期: '工作日期格式不正確',
+        預計期限: '預計期限格式不正確',
+      });
+    });
+
+    it.each(['2028-02-29', '2026-02-28', '2026-04-30', '2026-12-31'])(
+      '存在的日期 %s 合法',
+      (date) => {
+        expect(validateWorkItem(valid({ 工作日期: date, 預計期限: date }))).toEqual({});
+      },
+    );
+
     it('格式要是 YYYY-MM-DD（API 的 YYYY/MM/DD 不行）', () => {
       expect(validateWorkItem(valid({ 工作日期: '2026/10/09' }))).toEqual({
         工作日期: '工作日期格式不正確',
@@ -207,6 +232,12 @@ describe('validateLeave', () => {
 
   it('請假日期必填、錯誤訊息用「請假日期」', () => {
     expect(validateLeave(validLeave({ 工作日期: '' }))).toEqual({ 工作日期: '請選擇請假日期' });
+  });
+
+  it('請假日期不存在算格式不正確', () => {
+    expect(validateLeave(validLeave({ 工作日期: '2026-04-31' }))).toEqual({
+      工作日期: '請假日期格式不正確',
+    });
   });
 
   it('備註上限 2000 字', () => {

@@ -531,7 +531,9 @@ function validateNumberField_(rule, value) {
 
 function validateDateField_(rule, value) {
   if (isBlank_(value)) return rule.required ? '請選擇' + rule.label : null;
-  if (!API_DATE_PATTERN.test(String(value))) return rule.label + '格式不正確';
+  // 2/30、4/31、平年 2/29 這類不存在的日期也算格式不正確（apiDateToUtc_ 回 NaN），
+  // 跟前端 src/validation/work-item.ts 的 isExistingDate 同一套規則
+  if (isNaN(apiDateToUtc_(value))) return rule.label + '格式不正確';
   var year = Number(String(value).slice(0, 4));
   if (year < rule.minYear || year > rule.maxYear) {
     return rule.label + '的年份需介於 ' + rule.minYear + '–' + rule.maxYear;

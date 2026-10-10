@@ -21,7 +21,7 @@
   - `reorder`：payload 帶 `date` 與那天所有未刪除紀錄（含請假）依新順序排列的 `ids`（`handleReorder_`）。`ids` 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少、不能重複、不能混到已刪除或別天的），不一致代表資料已被別處改過，回「紀錄已變更，請重新整理後再排序」、不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見 [dialogs.md](ui/dialogs.md) 的「選項清單管理」
   - `saveWorkHours`：payload 帶 `workHours`（`{ start, end, breakStart?, breakEnd? }`，`null` 代表清除），寫入「選項清單」分頁的「工時設定」欄（`handleSaveWorkHours_`）。後端也驗證（`validateWorkHours_`，規則與訊息跟前端 `validateWorkHoursSetting` 手動同步）：格式 `HH:mm`、上班 < 午休開始 < 午休結束 < 下班、每日工時剛好 `WORK_HOURS_DAILY_STANDARD`（8）小時，不合格回 `{ error }`；回應帶回最新的 `{ workHours }`
-- 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
+- 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份（2/30、4/31、平年 2/29 這類不存在的日期算格式不正確，前端 `validateDate` 同一套規則）、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
 

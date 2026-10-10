@@ -73,6 +73,16 @@ export const dateInputRange = (field: '工作日期' | '預計期限'): { min: s
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * YYYY-MM-DD 是不是真的存在的日期（2/30、4/31、平年 2/29 不是）：Date.UTC 會把不存在的日期進位到下個月，
+ * 比對回去對不上就是不存在。Code.gs 的 validateDateField_ 用 apiDateToUtc_ 做同樣的檢查
+ */
+const isExistingDate = (value: string): boolean => {
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+
 const isMultipleOf = (value: number, step: number): boolean =>
   Math.abs(value / step - Math.round(value / step)) < 1e-9;
 
@@ -123,7 +133,7 @@ const validateNumber = (rule: FieldRule, value: number | ''): string | undefined
 
 const validateDate = (rule: FieldRule, value: string): string | undefined => {
   if (!value) return rule.required ? `請選擇${rule.label}` : undefined;
-  if (!ISO_DATE_PATTERN.test(value)) return `${rule.label}格式不正確`;
+  if (!ISO_DATE_PATTERN.test(value) || !isExistingDate(value)) return `${rule.label}格式不正確`;
   const year = Number(value.slice(0, 4));
   if (
     (rule.minYear !== undefined && year < rule.minYear) ||
