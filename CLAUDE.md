@@ -66,6 +66,7 @@
 # 關鍵慣例（容易踩雷）
 
 - **回應一律 HTTP 200**（Apps Script 平台限制），成功／失敗只看回應有沒有 `error`，不能用 `res.ok`。要分辨錯誤類型看 `code`（目前只有 `UNAUTHORIZED`），用 `e instanceof ApiError && e.code === 'UNAUTHORIZED'`，**不比對 `error` 文字**。新增錯誤代碼時 `Code.gs`、`src/mocks/handlers.ts`、`useWorkItems.ts` 的 `ApiErrorCode` 一起改。MSW 也一律回 200
+- **`doPost` 一律送 `Content-Type: text/plain;charset=utf-8`**（body 仍是 JSON），不要改成 `application/json` 或加自訂 header：跨網域會觸發 `OPTIONS` 預檢，Apps Script 不回應，正式站寫入全部被 CORS 擋。本機 MSW／dev proxy 不跨網域，測不出來，細節見 [docs/api.md](docs/api.md)
 - **日期格式**：Sheet 與 API 是 `YYYY/MM/DD`；前端內部是 `YYYY-MM-DD`（原生 `<input type="date">` 只吃這個）。兩者轉換**只在 `useWorkItems.ts`**（`toApiDate`／`fromApiDate`／`toApiItem`）。前端日期字串一律用 `src/utils/date.ts`（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`），**不要用 `toISOString()`**（台灣凌晨會變前一天，`NDatePicker` 的時間戳會少一天），也不要用 `new Date('YYYY-MM-DD')`（當成 UTC）。例外：`export-excel.ts` 刻意用 UTC 建 Excel 日期
 - **前端登入只是體驗層**：`useGoogleAuth.ts` 的允許清單決定要不要渲染管理功能，真正把關在後端 `doPost`
 - **手動同步清單**（改一處要一起改）：
