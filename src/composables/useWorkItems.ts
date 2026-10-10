@@ -52,7 +52,7 @@ const toApiItem = <T extends Partial<Pick<WorkItem, '工作日期' | '預計期�
  * CORS 限制（見 CLAUDE.md）。MSW 開著時維持原本網址，讓 MSW 的「結尾 exec」攔截規則正常比對。
  */
 const shouldUseDevProxy = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MSW === 'false';
-export const API_BASE_URL = shouldUseDevProxy
+const API_BASE_URL = shouldUseDevProxy
   ? '/apps-script-proxy'
   : import.meta.env.VITE_APPS_SCRIPT_URL;
 
@@ -81,15 +81,26 @@ const postAction = async (idToken: string, payload: object): Promise<void> => {
   await postApi(idToken, payload);
 };
 
-/** 打 doGet 讀取未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
-const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
+/**
+ * 打 doGet，回傳整個回應內容（useOptions.ts 讀選項清單也用這支）。
+ * 跟 postApi 一樣看回應的 error 欄位判斷失敗，失敗直接丟錯，由呼叫端決定怎麼處理
+ */
+export const getApi = async <T extends { error?: string }>(
+  params: Record<string, string>,
+): Promise<T> => {
   const url = new URL(API_BASE_URL, window.location.origin);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   const res = await fetch(url.toString());
-  const data = (await res.json()) as DoGetResponse;
+  const data = (await res.json()) as T;
   if (data.error) {
     throw new Error(data.error);
   }
+  return data;
+};
+
+/** 讀取未刪除的紀錄，日期轉回 ISO */
+const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
+  const data = await getApi<DoGetResponse>(params);
   return {
     ...data,
     items: data.items

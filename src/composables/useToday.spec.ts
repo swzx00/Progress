@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * 響應式的「今天」：頁面開著跨過午夜時要跟著換（每分鐘檢查一次、分頁切回來時立刻檢查）。
+ * 響應式的「今天」：頁面開著跨過午夜時要跟著換（午夜觸發計時器、分頁切回來時立刻檢查）。
  * 狀態是模組層級的，每個案例 resetModules 後重新 import
  */
 const load = async () => (await import('./useToday')).useToday;
@@ -18,11 +18,15 @@ afterEach(() => {
 });
 
 describe('useToday', () => {
-  it('跨過午夜後一分鐘內換成新的一天', async () => {
+  it('跨過午夜就換成新的一天，隔天午夜再換一次', async () => {
     const today = (await load())();
     expect(today.value).toBe('2026-10-10');
-    vi.advanceTimersByTime(60 * 1000);
+    vi.advanceTimersByTime(29 * 1000);
+    expect(today.value).toBe('2026-10-10');
+    vi.advanceTimersByTime(2 * 1000);
     expect(today.value).toBe('2026-10-11');
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    expect(today.value).toBe('2026-10-12');
   });
 
   it('分頁切回來時立刻更新', async () => {

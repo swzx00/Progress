@@ -407,8 +407,8 @@ const onReorder = async (ids: string[]): Promise<void> => {
     signOut();
     return;
   }
-  const before = items.value;
-  const byId = new Map(before.map((item) => [item.id, item]));
+  if (!requireFreshLogin()) return;
+  const byId = new Map(items.value.map((item) => [item.id, item]));
   items.value = ids.flatMap((id, index) => {
     const item = byId.get(id);
     return item ? [{ ...item, 項次: index + 1 }] : [];
@@ -418,8 +418,9 @@ const onReorder = async (ids: string[]): Promise<void> => {
   try {
     await reorderItems(idToken.value, date, ids);
   } catch (e) {
-    // 送出期間切到別天時，items 已經換成那天的資料，不能還原成原本那天的
-    if (selectedDate.value === date) items.value = before;
+    // 改成重新讀取那天的資料（不還原送出前的快照）：送出期間切到別天再切回來時，
+    // 快照會蓋掉剛讀到的資料；已經切到別天就不用動，畫面是那天的資料
+    if (selectedDate.value === date) void fetchByDate(date);
     showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
     if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
   } finally {

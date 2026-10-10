@@ -20,7 +20,9 @@ const serveCalendars = (): void => {
   fetchMock.mockImplementation(async (url: string) => {
     const year = /data\/(\d{4})\.json$/.exec(url)?.[1] ?? '';
     const data = CALENDARS[year];
-    return data ? { ok: true, json: async () => data } : { ok: false, json: async () => ({}) };
+    return data
+      ? { ok: true, json: async () => data }
+      : { ok: false, status: 404, json: async () => ({}) };
   });
 };
 
@@ -165,6 +167,20 @@ describe('資料載入與快取', () => {
     now.mockReturnValue(1_000_000 + HOLIDAY_RETRY_AFTER_MS);
     await holidays.ensureYearLoaded('2030');
     expect(fetchedYears()).toEqual(['2030', '2030']);
+    expect(holidays.getDayOffLabel('2030-09-12')).toBe('中秋節');
+    now.mockRestore();
+  });
+
+  it('伺服器暫時錯誤（503）：當成失敗，過一段時間會重抓，不會把那一年記成沒有資料', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+    const holidays = await load();
+    await holidays.ensureYearLoaded('2030');
+    await holidays.ensureYearLoaded('2030');
+    expect(fetchedYears()).toEqual(['2030']);
+
+    now.mockReturnValue(1_000_000 + HOLIDAY_RETRY_AFTER_MS);
+    await holidays.ensureYearLoaded('2030');
     expect(holidays.getDayOffLabel('2030-09-12')).toBe('中秋節');
     now.mockRestore();
   });

@@ -52,9 +52,6 @@ const monthValue = ref<number | null>(now);
 const defaultTimestamp = parseLocalDate(props.defaultDate).getTime();
 const rangeValue = ref<[number, number] | null>([defaultTimestamp, defaultTimestamp]);
 
-// 時間戳轉 YYYY-MM-DD 要用本地時間的年月日，不能用 toISOString（會換成 UTC，台灣時間凌晨會差一天）
-const toIsoDate = (timestamp: number): string => toLocalDateString(new Date(timestamp));
-
 const period = computed<ExportPeriod | null>(() => {
   if (mode.value === 'year') {
     return yearValue.value === null ? null : yearPeriod(new Date(yearValue.value).getFullYear());
@@ -70,7 +67,10 @@ const period = computed<ExportPeriod | null>(() => {
     return monthPeriod(d.getFullYear(), d.getMonth() + 1);
   }
   if (rangeValue.value === null) return null;
-  return rangePeriod(toIsoDate(rangeValue.value[0]), toIsoDate(rangeValue.value[1]));
+  return rangePeriod(
+    toLocalDateString(new Date(rangeValue.value[0])),
+    toLocalDateString(new Date(rangeValue.value[1])),
+  );
 });
 
 // 指定天數超過後端上限就先擋下，不送出

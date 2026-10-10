@@ -44,7 +44,12 @@ const ensureYearLoaded = (year: string): Promise<void> => {
   if (existing) return existing;
 
   const promise = fetch(YEAR_DATA_URL(year))
-    .then((res) => (res.ok ? (res.json() as Promise<HolidayEntry[]>) : []))
+    .then((res) => {
+      if (res.ok) return res.json() as Promise<HolidayEntry[]>;
+      // 404 是那一年還沒有資料（記成空的，不再重抓）；其他錯誤（503、429…）當成暫時失敗，過一段時間再抓
+      if (res.status === 404) return [];
+      throw new Error(`HTTP ${res.status}`);
+    })
     .then((entries) => {
       const map: Record<string, HolidayEntry> = {};
       entries.forEach((entry) => {

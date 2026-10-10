@@ -1,10 +1,10 @@
 import { ref } from 'vue';
 
 import {
-  API_BASE_URL,
   ApiError,
   type DoPostResponse,
   fromApiDate,
+  getApi,
   postApi,
 } from '@/composables/useWorkItems';
 import type { RecentItem, WorkItemOptions } from '@/types/work-item';
@@ -61,13 +61,7 @@ const fetchOptions = async (): Promise<void> => {
   error.value = null;
   fetchPromise = (async () => {
     try {
-      const url = new URL(API_BASE_URL, window.location.origin);
-      url.searchParams.set('type', 'options');
-      const res = await fetch(url.toString());
-      const data = (await res.json()) as DoGetOptionsResponse;
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      const data = await getApi<DoGetOptionsResponse>({ type: 'options' });
       options.value = data.options;
       recentItems.value = toIsoRecentItems(data.recentItems);
       workHours.value = data.workHours ?? null;

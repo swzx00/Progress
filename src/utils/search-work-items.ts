@@ -184,7 +184,7 @@ export const buildSuggestions = (
     ...targets.map((value) => ({ field: '工作目標' as const, value })),
   ].filter(
     (candidate) =>
-      candidate.value.trim().length <= SEARCH_KEYWORD_MAX &&
+      normalize(candidate.value).length <= SEARCH_KEYWORD_MAX &&
       normalize(candidate.value).includes(word),
   );
 
