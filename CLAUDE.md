@@ -60,6 +60,7 @@
 - `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定）、`type=range&from&to`（匯出用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
 - `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
+- `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
 
 # 關鍵慣例（容易踩雷）
@@ -76,6 +77,7 @@
   | 每日項次規則 | `Code.gs` 的 `getNextDailyIndex_` ↔ `useWorkItems.ts` 的 `fetchDaySummary` ↔ MSW |
   | 工時超過訊息 | 前端 `dailyHoursMessage` ↔ `Code.gs` 的 `dailyHoursError_` ↔ MSW |
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
+  | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
   | 工時設定驗證 | `src/utils/work-hours.ts` 的 `validateWorkHoursSetting` ↔ `Code.gs` 的 `validateWorkHours_` |
   | 近期紀錄 | 前端 `RECENT_DAYS`／`filterRecentItems` ↔ `Code.gs` 的 `getRecentItems_` |
   | MSW 假後端 | `src/mocks/handlers.ts` 整體跟 `Code.gs` 同規則 |
@@ -144,6 +146,7 @@ shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
   Code.gs
+  Migrations.gs             # 一次性資料整理（mergeMonthSheets 舊版月份分頁合併、compactOptionsSheet 選項清單整理），要用時才貼進 Apps Script 專案
   LegacyImport.gs           # 一次性匯入舊版「工作進度-2026H1／H2」試算表，用法見檔案開頭註解，匯入完可從 Apps Script 專案刪掉
   build/schema.gs           # （規劃中，尚未實作）由 shared/validation-schema.json 產生
 ```

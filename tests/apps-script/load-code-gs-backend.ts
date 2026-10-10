@@ -28,15 +28,22 @@ const tokenPayload = (idToken: string): Record<string, unknown> | null => {
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 
-/** Utilities.formatDate：測試時區固定台灣，所以直接用本地時間的年月日時分秒 */
-const formatDate = (date: Date, _tz: string, format: string): string =>
-  format
+/**
+ * Utilities.formatDate：測試時區固定台灣，所以直接用本地時間的年月日時分秒。
+ * 試算表時區是 Asia/Taipei、指令碼時區刻意設成別的（Session.getScriptTimeZone），
+ * 傳進來的不是試算表時區就丟錯：日期要用試算表時區格式化，不然兩邊設定不同時會差一天
+ */
+const SHEET_TIME_ZONE = 'Asia/Taipei';
+const formatDate = (date: Date, tz: string, format: string): string => {
+  if (tz !== SHEET_TIME_ZONE) throw new Error(`formatDate 用了試算表以外的時區：${tz}`);
+  return format
     .replace('yyyy', String(date.getFullYear()))
     .replace('MM', pad(date.getMonth() + 1))
     .replace('dd', pad(date.getDate()))
     .replace('HH', pad(date.getHours()))
     .replace('mm', pad(date.getMinutes()))
     .replace('ss', pad(date.getSeconds()));
+};
 
 export interface CodeGsBackend {
   spreadsheet: FakeSpreadsheet;
@@ -52,16 +59,20 @@ export interface CodeGsBackend {
   VmDate: DateConstructor;
   /** Logger.log 寫過的內容 */
   logs: string[];
+  /** LockService 的拿鎖（'lock'）、放鎖（'release'）紀錄 */
+  lockCalls: string[];
 }
 
 export interface LoadOptions {
   /** 跟 Code.gs 一起載入的其他指令碼檔案（同一個 Apps Script 專案共用全域），例如 'LegacyImport.gs' */
   extraFiles?: string[];
+  /** false：LockService 拿不到鎖（模擬其他寫入一直沒結束） */
+  lockAvailable?: boolean;
 }
 
 export const loadCodeGsBackend = (
   properties: Record<string, string> = {},
-  { extraFiles = [] }: LoadOptions = {},
+  { extraFiles = [], lockAvailable = true }: LoadOptions = {},
 ): CodeGsBackend => {
   const props: Record<string, string> = {
     SHEET_ID: 'sheet-id',
@@ -75,6 +86,7 @@ export const loadCodeGsBackend = (
   const spreadsheet = new FakeSpreadsheet(VmDate);
   const books = new Map<string, FakeSpreadsheet>();
   const logs: string[] = [];
+  const lockCalls: string[] = [];
 
   Object.assign(context, {
     SpreadsheetApp: {
@@ -92,7 +104,17 @@ export const loadCodeGsBackend = (
       getUuid: () => `uuid-${++uuid}`,
       formatDate,
     },
-    Session: { getScriptTimeZone: () => 'Asia/Taipei' },
+    Session: { getScriptTimeZone: () => 'America/New_York' },
+    // lockCalls 記錄拿鎖、放鎖，確認 doPost 有加鎖
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: () => {
+          lockCalls.push('lock');
+          return lockAvailable;
+        },
+        releaseLock: () => void lockCalls.push('release'),
+      }),
+    },
     UrlFetchApp: {
       fetch: (url: string) => {
         const idToken = decodeURIComponent(new URL(url).searchParams.get('id_token') ?? '');
@@ -129,6 +151,7 @@ export const loadCodeGsBackend = (
     newSpreadsheet: () => new FakeSpreadsheet(VmDate),
     VmDate,
     logs,
+    lockCalls,
     doGet: (params) =>
       parse((global.doGet as (e: unknown) => { content: string })({ parameter: params })),
     doPost: (body) =>

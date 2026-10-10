@@ -14,7 +14,7 @@ import {
   type SearchField,
 } from '@/utils/search-work-items';
 import { validateWorkHoursSetting, type WorkHoursSetting } from '@/utils/work-hours';
-import { dailyHoursMessage } from '@/validation/work-item';
+import { dailyHoursMessage, validateOptionValue } from '@/validation/work-item';
 
 // 貼近真實 Apps Script／Google Sheet 的日期字串格式（YYYY/MM/DD，見 useWorkItems.ts）
 // 用本地時間的年月日（toISOString 會換成 UTC，台灣凌晨會差一天）
@@ -443,6 +443,8 @@ export const handlers = [
       }
       const value = (body.value ?? '').trim();
       if (!value) return HttpResponse.json({ error: '新增的值不可為空' });
+      const invalid = validateOptionValue(body.category, value);
+      if (invalid) return HttpResponse.json({ error: invalid });
       addOptionIfNew(body.category, value);
       return HttpResponse.json({ options });
     }
@@ -453,6 +455,8 @@ export const handlers = [
       }
       const newValue = (body.newValue ?? '').trim();
       if (!newValue) return HttpResponse.json({ error: '新名稱不可為空' });
+      const invalidName = validateOptionValue(body.category, newValue);
+      if (invalidName) return HttpResponse.json({ error: invalidName });
       if (!options[body.category].includes(body.oldValue)) {
         return HttpResponse.json({ error: '找不到這個值' });
       }

@@ -13,13 +13,14 @@
 
 **doPost(e)**
 - body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性一律拒絕）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
+- 驗證通過後先拿 `LockService` 的指令碼鎖再執行（`handleAction_`），所有寫入排隊一個一個做：各動作都是「先找列號 → 再寫入 → 最後整張排序」，兩個請求同時進來時列號會被另一個請求打亂、寫到別筆紀錄上。等超過 `LOCK_WAIT_MS`（30 秒）拿不到鎖就回「目前有其他資料正在寫入，請稍後再試」，不動 Sheet。讀取（`doGet`）不加鎖
 - 依 `action` 分派：
   - `create`：工作紀錄分頁不存在時建立，產生 UUID 當 ID，項次用 `getNextDailyIndex_` 依工作日期計算（**每天**從 1 開始，見 [sheet-schema.md](sheet-schema.md) 的「項次」），寫入新列；若帶了新的交辦單位/交辦人員/專案名稱/專案Repo，同步寫回「選項清單」分頁
   - `update`：用 `id` 在工作紀錄分頁定位那一列，原地改寫（工作日期改到別天、別的月份也一樣，不用搬分頁）。項次：工作日期沒改就沿用原本的項次（忽略前端送來的值）；工作日期改到別天，在新的那天用 `getNextDailyIndex_` 重新編號
   - `delete`：用 `id` 在工作紀錄分頁定位，把整列搬到「已刪除紀錄」分頁並記錄刪除時間（見上方「已刪除紀錄分頁」）
   - `batchCreate`：payload 帶 `items` 陣列，一次新增多筆（前端「複製本日」用，`handleBatchCreate_`）。全部先驗證，任何一筆不合格（錯誤訊息標出第幾筆）、或任何一天的工時合計（既有紀錄＋這批）超過 24 小時，就**整批退回、不寫入任何一筆**；通過後項次依陣列順序照每日編號規則接續，整批的列一次 `setValues` 寫入，新值同步寫回「選項清單」（請假列一樣略過）。回應 `{ items: [...], replaced }`。另可帶 `replace: true`（「複製本日」覆蓋目標日用）：工時合計只算這批，驗證全部通過後，先把這批涉及的工作日期原本的紀錄（含請假）**搬到「已刪除紀錄」分頁**（`moveDayRowsToDeleted_`），再寫入，新紀錄從 1 開始編號，`replaced` 是被搬走的筆數。驗證沒過時原本的紀錄完全不動
   - `reorder`：payload 帶 `date` 與那天所有未刪除紀錄（含請假）依新順序排列的 `ids`（`handleReorder_`）。`ids` 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少、不能重複、不能混到已刪除或別天的），不一致代表資料已被別處改過，回「紀錄已變更，請重新整理後再排序」、不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動
-  - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見 [dialogs.md](ui/dialogs.md) 的「選項清單管理」
+  - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見 [dialogs.md](ui/dialogs.md) 的「選項清單管理」。新增與重新命名的值套用工作紀錄同一欄的字數上限與禁用字元（`validateOptionValue_`，前端 `validateOptionValue` 手動同步）
   - `saveWorkHours`：payload 帶 `workHours`（`{ start, end, breakStart?, breakEnd? }`，`null` 代表清除），寫入「選項清單」分頁的「工時設定」欄（`handleSaveWorkHours_`）。後端也驗證（`validateWorkHours_`，規則與訊息跟前端 `validateWorkHoursSetting` 手動同步）：格式 `HH:mm`、上班 < 午休開始 < 午休結束 < 下班、每日工時剛好 `WORK_HOURS_DAILY_STANDARD`（8）小時，不合格回 `{ error }`；回應帶回最新的 `{ workHours }`
 - 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份（2/30、4/31、平年 2/29 這類不存在的日期算格式不正確，前端 `validateDate` 同一套規則）、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 

@@ -6,6 +6,7 @@ import { useOptions } from '@/composables/useOptions';
 import { useToast } from '@/composables/useToast';
 import { ApiError } from '@/composables/useWorkItems';
 import type { WorkItemOptions } from '@/types/work-item';
+import { validateOptionValue } from '@/validation/work-item';
 
 const props = defineProps<{
   idToken: string;
@@ -80,6 +81,11 @@ const submitEdit = async (oldValue: string): Promise<void> => {
     cancelEdit();
     return;
   }
+  const invalid = validateOptionValue(selectedCategory.value, newValue);
+  if (invalid) {
+    showToast(invalid);
+    return;
+  }
   busy.value = true;
   try {
     await renameOption(props.idToken, selectedCategory.value, oldValue, newValue);
@@ -96,6 +102,11 @@ const submitAdd = async (): Promise<void> => {
   const category = selectedCategory.value;
   const value = newValueDrafts.value[category].trim();
   if (!value) return;
+  const invalid = validateOptionValue(category, value);
+  if (invalid) {
+    showToast(invalid);
+    return;
+  }
   busy.value = true;
   try {
     await addOption(props.idToken, category, value);

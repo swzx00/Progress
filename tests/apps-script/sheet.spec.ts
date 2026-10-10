@@ -20,7 +20,7 @@ import {
 let backend: CodeGsBackend;
 
 beforeEach(() => {
-  backend = loadCodeGsBackend();
+  backend = loadCodeGsBackend({}, { extraFiles: ['Migrations.gs'] });
 });
 
 const post = (body: Record<string, unknown>) => backend.doPost({ idToken: 'token', ...body });
@@ -222,6 +222,17 @@ describe('已刪除紀錄分頁', () => {
     const data = post({ action: 'batchCreate', replace: true, items: [input({ 工作目標: 'N' })] });
     expect(data.replaced).toBe(2);
     expect(deletedSheet().column('工作目標')).toEqual(['A', '特休']);
+    expect(dataSheet().column('工作目標')).toEqual(['N', 'X']);
+  });
+
+  it('同一天的列不連續（手動編輯過）：只搬那幾列，中間的列不動', () => {
+    create({ 工作目標: 'A' });
+    appendItem({ id: 'x', 工作日期: OTHER_DAY, 工作目標: 'X' });
+    appendItem({ id: 'b', 工作目標: 'B', 項次: 2 });
+    appendItem({ id: 'c', 工作目標: 'C', 項次: 3 });
+    const data = post({ action: 'batchCreate', replace: true, items: [input({ 工作目標: 'N' })] });
+    expect(data.replaced).toBe(3);
+    expect(deletedSheet().column('工作目標')).toEqual(['A', 'B', 'C']);
     expect(dataSheet().column('工作目標')).toEqual(['N', 'X']);
   });
 
@@ -452,5 +463,31 @@ describe('搜尋與匯出範圍', () => {
 
     const items = get({ type: 'range', from: DAY, to: OTHER_DAY }).items as WorkItem[];
     expect(items.map((item) => item.工作目標)).toEqual(['頭', '特休']);
+  });
+});
+
+describe('寫入加鎖', () => {
+  it('每個寫入都先拿鎖、做完放鎖；讀取不用鎖', () => {
+    create({ 工作目標: 'A' });
+    get({ date: DAY });
+    expect(backend.lockCalls).toEqual(['lock', 'release']);
+  });
+
+  it('動作失敗也會放鎖', () => {
+    post({ action: 'update', id: '不存在', item: {} });
+    expect(backend.lockCalls).toEqual(['lock', 'release']);
+  });
+
+  it('沒登入不用拿鎖', () => {
+    backend.doPost({ idToken: 'bad', action: 'create', item: input() });
+    expect(backend.lockCalls).toEqual([]);
+  });
+
+  it('拿不到鎖：回錯誤，不動 Sheet', () => {
+    backend = loadCodeGsBackend({}, { lockAvailable: false });
+    expect(post({ action: 'create', item: input() }).error).toBe(
+      '目前有其他資料正在寫入，請稍後再試',
+    );
+    expect(backend.spreadsheet.getSheetByName('工作紀錄')).toBeFalsy();
   });
 });

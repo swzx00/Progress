@@ -1,12 +1,12 @@
 /**
  * 「工作進度」Apps Script 後端。
  *
- * 部署前要做的事（見 CLAUDE.md「需要使用者事先準備的東西」）：
+ * 部署前要做的事：
  *   1. 「專案設定」→「指令碼屬性」新增 SHEET_ID（這份試算表的 ID）
  *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud；沒設定時所有寫入都會被拒絕）
  *   3. 部署為網頁應用程式（執行身分：我；存取權限：所有人）
  * 第 3 步第一次執行會跳出 Google 授權畫面，屬於正常流程。
- * 從月份分頁改版成單一分頁時，另外要執行一次 mergeMonthSheets()（見該函式說明）。
+ * 一次性的資料整理函式（舊版月份分頁合併、選項清單整理）放在 Migrations.gs，需要時才貼進專案執行。
  */
 
 // ===== 常數 =====
@@ -118,8 +118,20 @@ function getSheetId_() {
   return id;
 }
 
+// 同一次執行（一個請求）裡共用同一個 Spreadsheet 物件與時區，不用每次都重新開啟、重新查詢
+var cachedSpreadsheet_ = null;
+var cachedTimeZone_ = null;
+
 function getSpreadsheet_() {
-  return SpreadsheetApp.openById(getSheetId_());
+  if (!cachedSpreadsheet_) cachedSpreadsheet_ = SpreadsheetApp.openById(getSheetId_());
+  return cachedSpreadsheet_;
+}
+
+// 日期儲存格一律用試算表的時區讀寫：Sheet 把寫入的 YYYY/MM/DD 轉成日期時用的是試算表時區，
+// 用指令碼時區（Session.getScriptTimeZone）格式化的話，兩邊設定不同時讀回來的日期會差一天
+function getSheetTimeZone_() {
+  if (!cachedTimeZone_) cachedTimeZone_ = getSpreadsheet_().getSpreadsheetTimeZone();
+  return cachedTimeZone_;
 }
 
 // 「工作日期」「預計期限」欄位套用 yyyy/mm/dd 儲存格顯示格式，讓 Sheet 打開來看
@@ -168,11 +180,6 @@ function ensureRows_(sheet, lastRow) {
   if (lastRow > maxRows) sheet.insertRowsAfter(maxRows, lastRow - maxRows);
 }
 
-// 舊版的月份分頁（YYYY-MM），只有一次性遷移 mergeMonthSheets() 用得到
-function isMonthSheet_(sheet) {
-  return /^\d{4}-\d{2}$/.test(sheet.getName());
-}
-
 function getOrCreateDeletedSheet_() {
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(DELETED_SHEET_NAME);
@@ -195,17 +202,24 @@ function getOrCreateDeletedSheet_() {
 /**
  * 把工作紀錄分頁的幾列搬到「已刪除紀錄」分頁：依表頭名稱複製原始儲存格值（日期、數字維持原型別），
  * 「刪除時間」寫入 deletedAt（一次性搬移舊資料時不知道實際刪除時間，傳 null 留空），
- * 再從工作紀錄分頁刪掉這幾列（由下往上刪，前面的列號才不會跑掉）。回傳搬移筆數
+ * 再從工作紀錄分頁刪掉這幾列。回傳搬移筆數。
+ * 要搬的列通常是同一天、連在一起的，所以一次讀出涵蓋這幾列的範圍、連續的列一次刪掉，不逐列讀寫
  */
 function moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, deletedAt) {
   if (rowNumbers.length === 0) return 0;
-  var lastCol = sheet.getLastColumn();
+  var sorted = rowNumbers.slice().sort(function (a, b) {
+    return a - b;
+  });
+  var first = sorted[0];
+  var block = sheet
+    .getRange(first, 1, sorted[sorted.length - 1] - first + 1, sheet.getLastColumn())
+    .getValues();
   var deletedSheet = getOrCreateDeletedSheet_();
   var deletedColMap = getColumnMap_(deletedSheet);
   var deletedLastCol = deletedSheet.getLastColumn();
 
-  var rows = rowNumbers.map(function (rowNumber) {
-    var source = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+  var rows = sorted.map(function (rowNumber) {
+    var source = block[rowNumber - first];
     var row = new Array(deletedLastCol).fill('');
     Object.keys(deletedColMap).forEach(function (header) {
       var target = deletedColMap[header] - 1;
@@ -222,14 +236,14 @@ function moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, deletedAt) {
   applyTextFormat_(deletedSheet, deletedColMap, startRow, rows.length);
   deletedSheet.getRange(startRow, 1, rows.length, deletedLastCol).setValues(rows);
 
-  rowNumbers
-    .slice()
-    .sort(function (a, b) {
-      return b - a;
-    })
-    .forEach(function (rowNumber) {
-      sheet.deleteRow(rowNumber);
-    });
+  // 由下往上刪，前面的列號才不會跑掉；連續的列合併成一次 deleteRows
+  var end = sorted.length - 1;
+  while (end >= 0) {
+    var start = end;
+    while (start > 0 && sorted[start - 1] === sorted[start] - 1) start--;
+    sheet.deleteRows(sorted[start], end - start + 1);
+    end = start - 1;
+  }
   return rows.length;
 }
 
@@ -242,76 +256,6 @@ function sortDataSheet_(sheet, colMap) {
     { column: colMap.工作日期, ascending: true },
     { column: colMap.項次, ascending: true },
   ]);
-}
-
-/**
- * 一次性遷移：把舊版所有月份分頁（YYYY-MM）的紀錄合併到「工作紀錄」分頁，並移除每月 1 號
- * 自動建立月份分頁的觸發器（ensureMonthlySheet 已經拿掉，觸發器留著每個月都會執行失敗）。
- * - 依表頭名稱對應欄位，複製原始儲存格值（日期、數字維持原型別）
- * - 「工作紀錄」分頁已經有的 ID 會略過，所以重複執行不會重複寫入；ID 空白的補上 UUID，
- *   也寫回原本的月份分頁，重複執行時才認得出來
- * - 月份分頁不會被刪除，確認「工作紀錄」分頁的資料正確後再手動刪掉
- * 在 Apps Script 編輯器的「執行」選單手動執行一次即可。函式名稱刻意不加結尾底線：
- * 結尾底線是 Apps Script 的私有函式，不會出現在「執行」選單裡，就沒辦法手動執行。
- */
-function mergeMonthSheets() {
-  ScriptApp.getProjectTriggers().forEach(function (trigger) {
-    if (trigger.getHandlerFunction() === 'ensureMonthlySheet') ScriptApp.deleteTrigger(trigger);
-  });
-
-  var target = getOrCreateDataSheet_();
-  var targetColMap = getColumnMap_(target);
-  var targetLastCol = target.getLastColumn();
-  var idCol = targetColMap[ID_HEADER];
-  var existingIds = {};
-  if (target.getLastRow() >= 2) {
-    target
-      .getRange(2, idCol, target.getLastRow() - 1, 1)
-      .getValues()
-      .forEach(function (row) {
-        existingIds[String(row[0])] = true;
-      });
-  }
-
-  var rows = [];
-  getSpreadsheet_()
-    .getSheets()
-    .filter(isMonthSheet_)
-    .sort(function (a, b) {
-      return a.getName() < b.getName() ? -1 : 1;
-    })
-    .forEach(function (sheet) {
-      var lastRow = sheet.getLastRow();
-      if (lastRow < 2) return;
-      var colMap = getColumnMap_(sheet);
-      sheet
-        .getRange(2, 1, lastRow - 1, sheet.getLastColumn())
-        .getValues()
-        .forEach(function (source, i) {
-          var id = colMap[ID_HEADER] ? String(source[colMap[ID_HEADER] - 1]).trim() : '';
-          if (id && existingIds[id]) return;
-          if (!id) {
-            id = Utilities.getUuid();
-            if (colMap[ID_HEADER]) sheet.getRange(i + 2, colMap[ID_HEADER]).setValue(id);
-          }
-          var row = new Array(targetLastCol).fill('');
-          Object.keys(targetColMap).forEach(function (header) {
-            if (colMap[header]) row[targetColMap[header] - 1] = source[colMap[header] - 1];
-          });
-          row[idCol - 1] = id;
-          existingIds[id] = true;
-          rows.push(row);
-        });
-    });
-
-  if (rows.length > 0) {
-    var startRow = target.getLastRow() + 1;
-    ensureRows_(target, startRow + rows.length - 1);
-    target.getRange(startRow, 1, rows.length, targetLastCol).setValues(rows);
-    applyDateColumnFormat_(target, targetColMap);
-  }
-  sortDataSheet_(target, targetColMap);
-  Logger.log('合併 ' + rows.length + ' 筆紀錄到「' + DATA_SHEET_NAME + '」分頁');
 }
 
 // 讀表頭列，回傳 {欄位名稱: 1-based 欄位編號}，讀寫都靠這個對應表查位置，
@@ -328,7 +272,7 @@ function getColumnMap_(sheet) {
 
 function formatDateCell_(raw) {
   if (raw instanceof Date) {
-    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+    return Utilities.formatDate(raw, getSheetTimeZone_(), 'yyyy/MM/dd');
   }
   return raw ? String(raw) : '';
 }
@@ -644,7 +588,7 @@ var RECENT_ITEM_FIELDS = [
 ];
 
 function getRecentItems_() {
-  var tz = Session.getScriptTimeZone();
+  var tz = getSheetTimeZone_();
   var cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - RECENT_DAYS);
   var cutoff = Utilities.formatDate(cutoffDate, tz, 'yyyy/MM/dd');
@@ -667,34 +611,59 @@ function getRecentItems_() {
   return result;
 }
 
-// 新增/編輯工作紀錄時，把新的交辦單位/人員/專案名稱/Repo 寫回選項清單；
-// 請假列的固定值（人事室、--、休假）不寫回，避免出現在一般工作紀錄的下拉選單
-function syncOptionsFromItem_(item) {
-  if (isLeaveItem_(item)) return;
-  addOptionIfNew_('交辦單位', item.交辦單位);
-  addOptionIfNew_('交辦人員', item.交辦人員);
-  addOptionIfNew_('專案名稱', item.專案名稱);
-  (item.專案Repo || []).forEach(function (repo) {
-    addOptionIfNew_('專案Repo', repo);
+// 新增/編輯工作紀錄時（items 可以是多筆，例如「複製本日」），把新的交辦單位/人員/專案名稱/Repo
+// 寫回選項清單；請假列的固定值（人事室、--、休假）不寫回，避免出現在一般工作紀錄的下拉選單
+function syncOptionsFromItems_(items) {
+  var values = {};
+  OPTION_CATEGORIES.forEach(function (category) {
+    values[category] = [];
+  });
+  items.forEach(function (item) {
+    if (isLeaveItem_(item)) return;
+    values.交辦單位.push(item.交辦單位);
+    values.交辦人員.push(item.交辦人員);
+    values.專案名稱.push(item.專案名稱);
+    if (Array.isArray(item.專案Repo)) values.專案Repo = values.專案Repo.concat(item.專案Repo);
+  });
+  addOptionsIfNew_(values);
+}
+
+// valuesByCategory：{ 分類: [值…] }。選項清單分頁只開一次，每個分類欄位讀一次，有新值才寫回一次
+function addOptionsIfNew_(valuesByCategory) {
+  var pending = {};
+  OPTION_CATEGORIES.forEach(function (category) {
+    var keys = (valuesByCategory[category] || []).map(optionKey_).filter(function (key) {
+      return key.length > 0;
+    });
+    if (keys.length > 0) pending[category] = keys;
+  });
+  if (Object.keys(pending).length === 0) return;
+
+  var sheet = getOrCreateOptionsSheet_();
+  var colMap = getColumnMap_(sheet);
+  Object.keys(pending).forEach(function (category) {
+    var col = colMap[category];
+    if (!col) return;
+    var column = readOptionColumn_(sheet, col);
+    var changed = false;
+    pending[category].forEach(function (key) {
+      if (column.list.indexOf(key) !== -1) return;
+      column.list.push(key);
+      changed = true;
+    });
+    if (changed) writeOptionColumn_(sheet, col, column);
   });
 }
 
-function addOptionIfNew_(category, value) {
-  var key = optionKey_(value);
-  if (!key) return;
+// 選項清單分頁不存在時自動建立並寫入四個分類的表頭
+function getOrCreateOptionsSheet_() {
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(OPTIONS_SHEET_NAME);
     sheet.getRange(1, 1, 1, OPTION_CATEGORIES.length).setValues([OPTION_CATEGORIES]);
   }
-  var col = getColumnMap_(sheet)[category];
-  if (!col) return;
-
-  var column = readOptionColumn_(sheet, col);
-  if (column.list.indexOf(key) !== -1) return;
-  column.list.push(key);
-  writeOptionColumn_(sheet, col, column);
+  return sheet;
 }
 
 // 選項值一律當文字比對：Google Sheet 會把「11111」這類純數字自動轉成數字，
@@ -738,20 +707,6 @@ function writeOptionColumn_(sheet, col, column) {
   var range = sheet.getRange(2, col, height, 1);
   range.setNumberFormat('@');
   range.setValues(values);
-}
-
-// 一次性整理函式：在 Apps Script 編輯器手動執行一次，把「選項清單」每個分類欄位
-// 往上補齊（去掉中間的空白格）、去掉重複值（例如被轉成數字後重複新增的「11111」），
-// 原本的先後順序與表頭不變。整理過後新增／刪除都會維持連續，不需要再執行；重複執行也沒有副作用
-function compactOptionsSheet() {
-  var sheet = getSpreadsheet_().getSheetByName(OPTIONS_SHEET_NAME);
-  if (!sheet) return;
-  var colMap = getColumnMap_(sheet);
-  OPTION_CATEGORIES.forEach(function (category) {
-    var col = colMap[category];
-    if (!col) return;
-    writeOptionColumn_(sheet, col, readOptionColumn_(sheet, col));
-  });
 }
 
 // ===== 工時設定（前端「工具 → 工時設定」，表單的工作時段換算用） =====
@@ -810,11 +765,10 @@ function getWorkHours_() {
   var col = getColumnMap_(sheet)[WORK_HOURS_HEADER];
   if (!col) return null;
 
-  var timeZone = ss.getSpreadsheetTimeZone();
   var values = sheet.getRange(2, col, WORK_HOURS_FIELDS.length, 1).getValues();
   var setting = {};
   WORK_HOURS_FIELDS.forEach(function (field, i) {
-    var value = formatTimeCell_(values[i][0], timeZone);
+    var value = formatTimeCell_(values[i][0], getSheetTimeZone_());
     if (value) setting[field] = value;
   });
   if (!setting.start || !setting.end || validateWorkHours_(setting)) return null;
@@ -829,12 +783,7 @@ function handleSaveWorkHours_(workHours) {
     if (error) return jsonOutput_({ error: error });
   }
 
-  var ss = getSpreadsheet_();
-  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(OPTIONS_SHEET_NAME);
-    sheet.getRange(1, 1, 1, OPTION_CATEGORIES.length).setValues([OPTION_CATEGORIES]);
-  }
+  var sheet = getOrCreateOptionsSheet_();
   var col = getColumnMap_(sheet)[WORK_HOURS_HEADER];
   if (!col) {
     col = sheet.getLastColumn() + 1;
@@ -1014,6 +963,9 @@ function doGet(e) {
 
 // ===== doPost =====
 
+// 等待其他寫入完成的上限（毫秒），超過就回錯誤讓使用者重試
+var LOCK_WAIT_MS = 30000;
+
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
@@ -1023,24 +975,39 @@ function doPost(e) {
       return jsonOutput_({ error: '未登入或無權限', code: 'UNAUTHORIZED' });
     }
 
-    if (body.action === 'create') return handleCreate_(body.item);
-    if (body.action === 'batchCreate') return handleBatchCreate_(body.items, body.replace === true);
-    if (body.action === 'update') return handleUpdate_(body.id, body.item);
-    if (body.action === 'delete') return handleDelete_(body.id);
-    if (body.action === 'reorder') return handleReorder_(body.date, body.ids);
-    if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
-    if (body.action === 'renameOption') {
-      return handleRenameOption_(body.category, body.oldValue, body.newValue);
+    // 寫入一律排隊執行：各動作都是「先找列號 → 再寫入 → 最後整張排序」，兩個請求同時進來時
+    // 列號會被另一個請求的排序、刪除打亂，寫到別筆紀錄上（Apps Script 的請求是平行執行的）
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(LOCK_WAIT_MS)) {
+      return jsonOutput_({ error: '目前有其他資料正在寫入，請稍後再試' });
     }
-    if (body.action === 'deleteOption') return handleDeleteOption_(body.category, body.value);
-    if (body.action === 'saveWorkHours') {
-      return handleSaveWorkHours_(body.workHours === undefined ? null : body.workHours);
+    try {
+      return handleAction_(body);
+    } finally {
+      lock.releaseLock();
     }
-
-    return jsonOutput_({ error: '未知的 action' });
   } catch (err) {
     return jsonOutput_({ error: String(err) });
   }
+}
+
+// 依 action 分派到各動作（doPost 驗證完登入、拿到鎖之後呼叫）
+function handleAction_(body) {
+  if (body.action === 'create') return handleCreate_(body.item);
+  if (body.action === 'batchCreate') return handleBatchCreate_(body.items, body.replace === true);
+  if (body.action === 'update') return handleUpdate_(body.id, body.item);
+  if (body.action === 'delete') return handleDelete_(body.id);
+  if (body.action === 'reorder') return handleReorder_(body.date, body.ids);
+  if (body.action === 'addOption') return handleAddOption_(body.category, body.value);
+  if (body.action === 'renameOption') {
+    return handleRenameOption_(body.category, body.oldValue, body.newValue);
+  }
+  if (body.action === 'deleteOption') return handleDeleteOption_(body.category, body.value);
+  if (body.action === 'saveWorkHours') {
+    return handleSaveWorkHours_(body.workHours === undefined ? null : body.workHours);
+  }
+
+  return jsonOutput_({ error: '未知的 action' });
 }
 
 function handleCreate_(item) {
@@ -1074,7 +1041,7 @@ function handleCreate_(item) {
   sheet.getRange(newRow, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 
-  syncOptionsFromItem_(created);
+  syncOptionsFromItems_([created]);
 
   return jsonOutput_({ item: created });
 }
@@ -1157,7 +1124,7 @@ function handleBatchCreate_(items, replace) {
   sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
   sortDataSheet_(sheet, colMap);
 
-  created.forEach(syncOptionsFromItem_);
+  syncOptionsFromItems_(created);
 
   return jsonOutput_({ items: created, replaced: replacedCount });
 }
@@ -1208,7 +1175,7 @@ function handleUpdate_(id, itemPatch) {
   sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 
-  syncOptionsFromItem_(merged);
+  syncOptionsFromItems_([merged]);
 
   return jsonOutput_({ item: merged });
 }
@@ -1281,6 +1248,23 @@ function isValidOptionCategory_(category) {
   return OPTION_CATEGORIES.indexOf(category) !== -1;
 }
 
+// 選項的值套用工作紀錄同一欄的長度與禁用字元規則，避免出現下拉選得到、存檔卻被擋下的值。
+// value 已經去掉前後空白。訊息跟前端 src/validation/work-item.ts 的 validateOptionValue 相同，改一邊要一起改
+function validateOptionValue_(category, value) {
+  var rule = VALIDATION_RULES[category];
+  // 標籤是英數字結尾（專案 Repo）時，後面接中文前空一格
+  var label = /[A-Za-z0-9]$/.test(rule.label) ? rule.label + ' ' : rule.label;
+  if (rule.maxLength && value.length > rule.maxLength) {
+    return label + '不可超過 ' + rule.maxLength + ' 字';
+  }
+  var forbidden = (rule.forbiddenChars || '').split('');
+  var hasForbidden = forbidden.some(function (char) {
+    return value.indexOf(char) !== -1;
+  });
+  if (hasForbidden) return label + '不可包含「' + forbidden.join('') + '」';
+  return null;
+}
+
 function handleAddOption_(category, value) {
   if (!isValidOptionCategory_(category)) {
     return jsonOutput_({ error: '未知的選項分類' });
@@ -1289,7 +1273,11 @@ function handleAddOption_(category, value) {
   if (!value) {
     return jsonOutput_({ error: '新增的值不可為空' });
   }
-  addOptionIfNew_(category, value);
+  var error = validateOptionValue_(category, value);
+  if (error) return jsonOutput_({ error: error });
+  var values = {};
+  values[category] = [value];
+  addOptionsIfNew_(values);
   return jsonOutput_({ options: getOptions_() });
 }
 
@@ -1301,6 +1289,8 @@ function handleRenameOption_(category, oldValue, newValue) {
   if (!newValue) {
     return jsonOutput_({ error: '新名稱不可為空' });
   }
+  var error = validateOptionValue_(category, newValue);
+  if (error) return jsonOutput_({ error: error });
 
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);

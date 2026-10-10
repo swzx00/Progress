@@ -13,9 +13,10 @@
 - **兩層式導覽，同一個 Modal 元件內切換兩種畫面**（不是兩支獨立元件）：第一層列出交辦單位／交辦人員／專案名稱／專案Repo 四個母項讓使用者先選一個（`selectedCategory` 為 `null`），選了之後同一個 Modal 換成第二層畫面只顯示該母項的內容（新增/重新命名/刪除），上方有「‹ 返回」回到第一層。這樣設計是因為一次把四個分類全部攤開會需要滾動很多次，改成一次只處理一個母項，畫面內容量固定、不會隨選項變多而需要一直滾動
 - 支援新增／重新命名／刪除，重新命名/刪除都會先跳 `ConfirmDialog`（重新命名走行內編輯，刪除才跳確認對話框）
 - **重要限制，UI 上有明顯提示**：重新命名/刪除只改「選項清單」分頁本身，**不會**回頭更新工作紀錄分頁裡已經寫入的歷史紀錄——交辦單位/人員/專案名稱/專案Repo 存在每筆工作紀錄上是純文字，不是跟這份清單做關聯查詢（ID 對應）的欄位，這是既有的資料模型設計（見 [sheet-schema.md](../sheet-schema.md)），管理選項清單不會改變這件事
-- Apps Script 端：`handleAddOption_`／`handleRenameOption_`／`handleDeleteOption_`，新增（含新增/編輯工作紀錄時的 `addOptionIfNew_`）、重新命名、刪除都只動「選項清單」分頁該分類那一欄：`readOptionColumn_` 讀出整欄（去空白、去重複、轉文字），改完用 `writeOptionColumn_` 從第 2 列起連續寫回、下面多出來的舊儲存格清空，所以每一欄都是從上往下連續、不留空白——新值接在該欄最後一個值下面（不是整張分頁的最後一列），刪除時下面的值往上補（使用者決定）。不整列刪除，同一列其他分類欄位的值不受影響
+- Apps Script 端：`handleAddOption_`／`handleRenameOption_`／`handleDeleteOption_`，新增（含新增/編輯工作紀錄時的 `syncOptionsFromItems_`→`addOptionsIfNew_`，一次請求每個分類欄位最多讀寫一次）、重新命名、刪除都只動「選項清單」分頁該分類那一欄：`readOptionColumn_` 讀出整欄（去空白、去重複、轉文字），改完用 `writeOptionColumn_` 從第 2 列起連續寫回、下面多出來的舊儲存格清空，所以每一欄都是從上往下連續、不留空白——新值接在該欄最後一個值下面（不是整張分頁的最後一列），刪除時下面的值往上補（使用者決定）。不整列刪除，同一列其他分類欄位的值不受影響
   - **值一律當文字比對**（`optionKey_`：轉字串＋去前後空白）：Google Sheet 會把「11111」這類純數字自動轉成數字，直接用 `===`／`indexOf` 比對會對不上，曾造成同一個值重複新增、純數字的值刪不掉也改不了（「找不到這個值」）。寫回時儲存格設成純文字格式（`@`），「0123」這類值也不會被轉成數字
-  - 舊版留下的空白格與重複值，用一次性函式 `compactOptionsSheet()` 整理，重複執行沒有副作用
+  - 新增、重新命名的值跟工作紀錄同一欄的規則一樣：最多 50 字，專案 Repo 不可含逗號（前端 `validateOptionValue` 先擋並用 Toast 提示，後端 `validateOptionValue_` 再驗一次），避免出現下拉選得到、存檔卻被擋下的值
+  - 舊版留下的空白格與重複值，用一次性函式 `compactOptionsSheet()`（在 `apps-script/Migrations.gs`，要用時才貼進 Apps Script 專案）整理，重複執行沒有副作用
 - 前端 `useOptions.ts` 新增 `addOption`／`renameOption`／`deleteOption`，三個 action 的回應都帶回最新完整 `options`，直接覆寫本地快取，不用再多打一次 `fetchOptions()`
 - 新增／重新命名／刪除失敗用 `AppToast` 顯示錯誤（不在 Modal 裡顯示紅字），Modal 維持原狀讓使用者重試；登入錯誤（`UNAUTHORIZED`）Modal emit `unauthorized`，`HomeView` 關閉 Modal 並登出。開啟時讀取選項清單失敗仍在 Modal 內顯示（使用者決定）
 
