@@ -277,7 +277,8 @@ npm run lint:style # Stylelint 檢查並自動修復（含 CSS 屬性排序）
 npm run format     # Prettier 格式化 src/
 npm run test       # Vitest（watch 模式）
 npm run test:run   # Vitest 跑一次全部
-npm run test:e2e   # Playwright 瀏覽器測試（RWD、深色模式、截斷），第一次要先 npx playwright install chromium
+npm run test:coverage # Vitest 覆蓋率報告（coverage/index.html）
+npm run test:e2e   # Playwright 瀏覽器測試（RWD、深色模式、截斷、操作流程、無障礙），第一次要先 npx playwright install chromium
 ```
 
 **環境變數**：`.env` 不進版控（見 `.gitignore`），第一次拉專案要自己複製 `.env.example` 成 `.env` 並填入真實值（`VITE_APPS_SCRIPT_URL`、`VITE_GOOGLE_CLIENT_ID`）。這兩個值本身都設計成可公開（見上方「Apps Script API 摘要」），不進版控是為了避免以後有人在同一個檔案裡加了真正的密鑰卻忘記它會被 commit，是預防性的習慣，不是因為這兩個值現在需要保密。

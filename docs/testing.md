@@ -5,6 +5,7 @@
 - **Vitest**（測試執行器，沿用 `vite.config.ts` 的設定與 `@/` 別名）＋ **Vue Test Utils**、**happy-dom**（元件測試）
 - `npm run test`：watch 模式，改檔案自動重跑
 - `npm run test:run`：跑一次全部（CI、commit 前用）
+- `npm run test:coverage`：跑一次全部並產生覆蓋率報告（終端機摘要＋`coverage/index.html`），不設門檻，用來找沒測到的地方
 - `npm run test:e2e`：Playwright 瀏覽器測試（見下方「瀏覽器測試」），第一次在本機跑要先 `npx playwright install chromium`
 
 ## 測試放哪裡、測什麼
@@ -20,7 +21,7 @@
 | `tests/backend/contract.ts` | 後端共同規格：MSW 與 `Code.gs` 跑同一組案例（見下方） |
 | `tests/msw/*.spec.ts` | MSW 假後端跑後端共同規格 |
 | `tests/export/*.spec.ts` | 匯出 Excel 的檔案內容：真的產生 .xlsx 再用 ExcelJS 讀回來，檢查分頁、欄位、日期儲存格、樣式，顏色跟 `tokens.scss` 淺色模式比對 |
-| `e2e/*.e2e.ts` | Playwright 瀏覽器測試：RWD、深色模式、文字截斷（見下方） |
+| `e2e/*.e2e.ts` | Playwright 瀏覽器測試：RWD、深色模式、文字截斷、完整操作流程、無障礙（見下方） |
 | `src/testing/` | 測試用的假資料：`fixtures.ts`（`makeItem`／`makeRecent`，只覆寫測試在意的欄位）、`taiwan-calendar.ts`（產生一整年的假行事曆，可指定國定假日與補班日） |
 
 測試檔放在被測檔案旁邊（`work-hours.ts` ↔ `work-hours.spec.ts`），`describe`／`it` 用中文寫規則本身（例如「跨過整段午休，扣掉 1.5 小時」），跑測試的輸出就是一份規則清單。
@@ -67,6 +68,10 @@ happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的�
 - `rwd.e2e.ts`：沒有橫向捲軸、手機卡片／平板合併欄／桌面完整欄位、逾期紅線（顏色跟 `tokens.scss` 比對）、國定假日的徽章與空狀態
 - `theme.e2e.ts`：切深色後 `data-theme`、底色、文字色階對調，重新整理後維持；唯讀模式
 - `clamp-text.e2e.ts`：長文字收合時手機 3 行、平板桌面 2 行，「<展開>」「<收合>」，有滑鼠的裝置才有全文 tooltip
+- `flows.e2e.ts`（只在桌面跑）：新增（含必填、24 小時上限）、編輯（含未儲存確認）、刪除、請假、複製本日、上下移與拖曳排序、搜尋後跳到那天、匯出 Excel 下載、本日總結
+- `a11y.e2e.ts`（只在桌面跑）：用 axe-core 掃 WCAG 2.1 A／AA，主畫面、新增表單、搜尋結果在淺色與深色模式各一次，加上唯讀模式；包含文字對比 ≥ 4.5:1
+
+測試用的 Chromium 對中文的下載檔名一律回報成 `download`，所以匯出測試改記下連結的 `download` 屬性來比對檔名；實際瀏覽器下載的檔名要手動確認一次。
 
 `e2e/fixtures.ts` 的設定：
 

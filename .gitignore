@@ -14,6 +14,9 @@ dist-ssr
 # Playwright 的測試結果與報告
 test-results
 playwright-report
+
+# Vitest 覆蓋率報告
+coverage
 *.local
 
 # 本機真實環境變數，不進版控；變數名稱/範例值看 .env.example
