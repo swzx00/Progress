@@ -74,10 +74,12 @@ const onFocus = (): void => {
   if (trimmed.value) open.value = true;
 };
 
-const onInput = (): void => {
+// 用輸入框本身的值判斷有沒有刪光：v-model 的 keyword 要等父層重新渲染才會更新，
+// 使用者打字時瀏覽器會先跑完那次更新，但程式觸發的 input 事件（例如測試）讀到的會是舊值
+const onInput = (event: Event): void => {
   activeIndex.value = -1;
   open.value = true;
-  if (!keyword.value) emit('clear');
+  if (!(event.target as HTMLInputElement).value) emit('clear');
 };
 
 const submit = (query: SearchQuery): void => {

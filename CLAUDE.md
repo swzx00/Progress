@@ -30,6 +30,7 @@
 | [docs/sheet-schema.md](docs/sheet-schema.md) | Google Sheet 各分頁與欄位的完整說明、請假固定值、已刪除紀錄分頁、自動排序、選項清單分頁（含工時設定欄）、日期儲存格格式 |
 | [docs/api.md](docs/api.md) | Apps Script `doGet`／`doPost` 各 type／action 的參數、回應與驗證、前端登入、本機 CORS proxy |
 | [docs/dev-tooling.md](docs/dev-tooling.md) | ESLint／Prettier／Stylelint、VS Code 設定、建置拆檔、npm audit、Node／npm 版本 |
+| [docs/testing.md](docs/testing.md) | Vitest 測試：指令、測試檔位置、慣例、前後端一致性測試（`Code.gs` ↔ 前端） |
 | [docs/ui/theme.md](docs/ui/theme.md) | 色階選色理由、放假色、字體、深色模式 |
 | [docs/ui/date-nav.md](docs/ui/date-nav.md) | DateNav 版面與按鈕、今天標示、日期選擇器、台灣國定假日 |
 | [docs/ui/work-item-table.md](docs/ui/work-item-table.md) | 表格合併欄、今天／斑馬紋底色、狀態顏色、文字刪節與展開、操作欄、項次調整（拖曳） |
@@ -157,6 +158,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 - 拖曳排序用 `vue-draggable-plus`；匯出 Excel 用 ExcelJS（動態載入）
 - 新增大型套件時看 build 輸出大小，必要時加進 `vite.config.ts` 的 `codeSplitting.groups`
 - `npm audit` 剩下的 high（`braces`）沒有修正版，**不要跑 `npm audit fix --force`**
+- 測試用 Vitest（單元、驗證、前後端一致性、元件），改規則時對應的 spec 一起改，見 [docs/testing.md](docs/testing.md)
 
 
 ## 命名慣例
@@ -273,6 +275,11 @@ npm run preview    # 預覽 build 產物
 npm run lint       # ESLint 檢查並自動修復
 npm run lint:style # Stylelint 檢查並自動修復（含 CSS 屬性排序）
 npm run format     # Prettier 格式化 src/
+npm run test       # Vitest（watch 模式）
+npm run test:run   # Vitest 跑一次全部
+npm run test:coverage # Vitest 覆蓋率報告（coverage/index.html）
+npm run test:e2e   # Playwright 瀏覽器測試（RWD、深色模式、截斷、操作流程、無障礙），第一次要先 npx playwright install chromium
+npm run test:e2e:safari # 同一套用 WebKit（Safari）跑，第一次要先 npx playwright install webkit
 ```
 
 **環境變數**：`.env` 不進版控（見 `.gitignore`），第一次拉專案要自己複製 `.env.example` 成 `.env` 並填入真實值（`VITE_APPS_SCRIPT_URL`、`VITE_GOOGLE_CLIENT_ID`）。這兩個值本身都設計成可公開（見上方「Apps Script API 摘要」），不進版控是為了避免以後有人在同一個檔案裡加了真正的密鑰卻忘記它會被 commit，是預防性的習慣，不是因為這兩個值現在需要保密。

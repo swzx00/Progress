@@ -3,7 +3,7 @@
  *
  * 部署前要做的事（見 CLAUDE.md「需要使用者事先準備的東西」）：
  *   1. 「專案設定」→「指令碼屬性」新增 SHEET_ID（這份試算表的 ID）
- *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud）
+ *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud；沒設定時所有寫入都會被拒絕）
  *   3. 部署為網頁應用程式（執行身分：我；存取權限：所有人）
  * 第 3 步第一次執行會跳出 Google 授權畫面，屬於正常流程。
  * 從月份分頁改版成單一分頁時，另外要執行一次 mergeMonthSheets()（見該函式說明）。
@@ -41,6 +41,8 @@ var NUMBER_FIELDS = ['今日工時', '完成度'];
 var ARRAY_FIELDS = ['專案Repo'];
 var BOOLEAN_FIELDS = ['已刪除'];
 var DATE_FIELDS = ['工作日期', '預計期限'];
+// 使用者自由輸入的文字欄位，寫入前設成純文字格式（見 applyTextFormat_）
+var TEXT_FIELDS = ['交辦單位', '交辦人員', '專案名稱', '專案Repo', '工作目標', '處理內容'];
 // Sheet 表頭是大寫「ID」，API／前端的物件鍵名是小寫「id」，讀寫時在這裡互轉
 var ID_HEADER = 'ID';
 var ID_KEY = 'id';
@@ -131,6 +133,16 @@ function applyDateColumnFormat_(sheet, colMap) {
   });
 }
 
+// 寫入前把這幾列的文字欄位設成純文字格式：Sheet 會把「0123」「12:30」「TRUE」「2026/10/01」
+// 這類內容自動轉成數字、時間、布林、日期，讀回來就跟使用者輸入的不一樣。
+// 每次寫入時設定（不是建分頁時整欄設定），既有分頁、手動插入的列也照樣有效
+function applyTextFormat_(sheet, colMap, startRow, numRows) {
+  TEXT_FIELDS.forEach(function (field) {
+    var col = colMap[field];
+    if (col) sheet.getRange(startRow, col, numRows, 1).setNumberFormat('@');
+  });
+}
+
 // 工作紀錄分頁，還沒建立時回傳 null（讀取用，不建立分頁）
 function getDataSheet_() {
   return getSpreadsheet_().getSheetByName(DATA_SHEET_NAME);
@@ -207,6 +219,7 @@ function moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, deletedAt) {
   });
   var startRow = deletedSheet.getLastRow() + 1;
   ensureRows_(deletedSheet, startRow + rows.length - 1);
+  applyTextFormat_(deletedSheet, deletedColMap, startRow, rows.length);
   deletedSheet.getRange(startRow, 1, rows.length, deletedLastCol).setValues(rows);
 
   rowNumbers
@@ -464,7 +477,8 @@ function verifyIdToken_(idToken) {
 
   var payload = JSON.parse(res.getContentText());
   var clientId = PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID');
-  if (clientId && payload.aud !== clientId) return null;
+  // 沒設定 GOOGLE_CLIENT_ID 一律拒絕：不檢查 aud 的話，別的網站發給擁有者帳號的 token 也會通過
+  if (!clientId || payload.aud !== clientId) return null;
   if (payload.email !== OWNER_EMAIL) return null;
   if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
 
@@ -531,7 +545,9 @@ function validateNumberField_(rule, value) {
 
 function validateDateField_(rule, value) {
   if (isBlank_(value)) return rule.required ? '請選擇' + rule.label : null;
-  if (!API_DATE_PATTERN.test(String(value))) return rule.label + '格式不正確';
+  // 2/30、4/31、平年 2/29 這類不存在的日期也算格式不正確（apiDateToUtc_ 回 NaN），
+  // 跟前端 src/validation/work-item.ts 的 isExistingDate 同一套規則
+  if (isNaN(apiDateToUtc_(value))) return rule.label + '格式不正確';
   var year = Number(String(value).slice(0, 4));
   if (year < rule.minYear || year > rule.maxYear) {
     return rule.label + '的年份需介於 ' + rule.minYear + '–' + rule.maxYear;
@@ -1054,6 +1070,7 @@ function handleCreate_(item) {
   var row = itemToRow_(colMap, sheet.getLastColumn(), created);
   var newRow = sheet.getLastRow() + 1;
   ensureRows_(sheet, newRow);
+  applyTextFormat_(sheet, colMap, newRow, 1);
   sheet.getRange(newRow, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 
@@ -1099,7 +1116,12 @@ function handleBatchCreate_(items, replace) {
   for (var i = 0; i < dates.length; i++) {
     var day = days[dates[i]];
     // 覆蓋模式原本的紀錄會被搬走，工時只算這批、項次從 1 開始，不用讀既有紀錄
-    if (replace) continue;
+    if (replace) {
+      if (day.hours > DAILY_HOURS_MAX) {
+        return jsonOutput_({ error: dailyHoursError_(0, day.hours) });
+      }
+      continue;
+    }
     var dayRows = readDay_(sheet, colMap, dates[i]);
     var dayHours = getDayHoursExcluding_(dayRows, null);
     if (dayHours + day.hours > DAILY_HOURS_MAX) {
@@ -1131,6 +1153,7 @@ function handleBatchCreate_(items, replace) {
 
   var startRow = sheet.getLastRow() + 1;
   ensureRows_(sheet, startRow + rows.length - 1);
+  applyTextFormat_(sheet, colMap, startRow, rows.length);
   sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
   sortDataSheet_(sheet, colMap);
 
@@ -1181,6 +1204,7 @@ function handleUpdate_(id, itemPatch) {
   if (merged.工作日期 !== existing.工作日期) merged.項次 = getNextDailyIndex_(dayRows);
 
   var row = itemToRow_(colMap, sheet.getLastColumn(), merged);
+  applyTextFormat_(sheet, colMap, rowIndex, 1);
   sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 

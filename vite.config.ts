@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 
 import vue from '@vitejs/plugin-vue';
@@ -64,6 +65,18 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    },
+    test: {
+      include: ['src/**/*.spec.ts', 'tests/**/*.spec.ts'],
+      // 日期相關的測試要固定在台灣時區，換機器（CI 是 UTC）結果才一致
+      globalSetup: ['./vitest.global-setup.ts'],
+      // npm run test:coverage：看哪些程式沒被測到（不設門檻，只當參考）
+      coverage: {
+        provider: 'v8',
+        include: ['src/**'],
+        exclude: ['src/**/*.spec.ts', 'src/testing/**', 'src/main.ts', 'src/mocks/browser.ts'],
+        reporter: ['text-summary', 'html'],
       },
     },
     build: {
