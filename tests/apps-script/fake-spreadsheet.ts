@@ -4,6 +4,7 @@
  *   HH:mm → 時間（1899/12/30 的 Date）；儲存格是純文字格式（@）就維持字串
  * - getRange 超出分頁的列數、或列數是 0 時丟錯（新分頁預設 1000 列）
  * - getLastRow／getLastColumn 是最後一個有值的列／欄
+ * - getDataRange 是有值的範圍（空白分頁是 A1）；clear 清值與格式，clearContent 只清值
  * - deleteRow 會刪掉那一列（後面的列往上補），insertRowsAfter 補的列沿用上一列的儲存格格式
  * - 日期用 Code.gs 那個 vm 環境的 Date 建立，Code.gs 裡的 instanceof Date 才認得
  */
@@ -80,6 +81,22 @@ export class FakeSheet {
       throw new Error('Those columns are out of bounds.');
     }
     return new FakeRange(this, row, col, numRows, numCols);
+  }
+
+  /** 有值的範圍；整張空白時跟 Sheet 一樣回傳 A1 */
+  getDataRange(): FakeRange {
+    return this.getRange(1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1));
+  }
+
+  /** 清掉整張分頁的值與格式 */
+  clear(): void {
+    this.rows.forEach((row) =>
+      row.forEach((cell) => {
+        cell.value = '';
+        cell.format = '';
+      }),
+    );
+    this.frozenRows = 0;
   }
 
   setFrozenRows(n: number): void {
@@ -214,6 +231,14 @@ export class FakeRange {
     return this;
   }
 
+  /** 只清值，格式留著 */
+  clearContent(): FakeRange {
+    this.forEachCell((cell) => {
+      cell.value = '';
+    });
+    return this;
+  }
+
   setNumberFormat(format: string): FakeRange {
     this.forEachCell((cell) => {
       cell.format = format;
@@ -253,6 +278,10 @@ export class FakeSpreadsheet {
     const sheet = new FakeSheet(name, this.DateCtor, rows);
     this.sheets.push(sheet);
     return sheet;
+  }
+
+  deleteSheet(sheet: FakeSheet): void {
+    this.sheets.splice(this.sheets.indexOf(sheet), 1);
   }
 
   getSpreadsheetTimeZone(): string {

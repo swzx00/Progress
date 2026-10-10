@@ -7,6 +7,7 @@
  *   2. 「執行」選單執行 previewLegacyImport()：只寫「匯入預覽」「匯入紀錄」兩個分頁，不動現有資料
  *   3. 確認預覽沒問題後，在 Drive 先建一份試算表副本，再執行 runLegacyImport() 正式匯入
  *   4. 匯入完成後可以把這個檔案刪掉
+ * 本機測試：tests/apps-script/legacy-import.spec.ts（跟 Code.gs 一起載入，舊表換成假的試算表）
  * 函式名稱刻意不加結尾底線，才會出現在「執行」選單裡。
  *
  * 轉換規則（使用者決定）：
@@ -53,7 +54,7 @@ function previewLegacyImport() {
     row[headers.length - 1] = entry.source;
     return row;
   });
-  writeSheet_(ss, LEGACY_PREVIEW_SHEET, [headers].concat(rows), true);
+  writeSheet_(ss, LEGACY_PREVIEW_SHEET, [headers].concat(rows), colMap);
   writeLegacyLog_(ss, result);
   Logger.log(result.summary.join('\n'));
 }
@@ -72,6 +73,7 @@ function runLegacyImport() {
     return itemToRow_(colMap, lastCol, entry.item);
   });
   ensureRows_(sheet, rows.length + 1);
+  applyTextFormat_(sheet, colMap, 2, rows.length);
   sheet.getRange(2, 1, rows.length, lastCol).setValues(rows);
   applyDateColumnFormat_(sheet, colMap);
   sortDataSheet_(sheet, colMap);
@@ -386,16 +388,18 @@ function writeLegacyLog_(ss, result) {
     .concat(result.log.map(function (s) {
       return [s];
     }));
-  writeSheet_(ss, LEGACY_LOG_SHEET, lines, false);
+  writeSheet_(ss, LEGACY_LOG_SHEET, lines, null);
 }
 
-// 整張分頁改寫成 rows（分頁不存在就建立）
-function writeSheet_(ss, name, rows, freezeHeader) {
+// 整張分頁改寫成 rows（分頁不存在就建立）。有 colMap 時第一列是表頭（凍結），
+// 文字欄位先設成純文字格式，免得「0123」「2026/10/09」這類值被 Sheet 轉成數字或日期
+function writeSheet_(ss, name, rows, colMap) {
   var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   sheet.clear();
   if (rows.length === 0) return;
   var width = rows[0].length;
   ensureRows_(sheet, rows.length);
+  if (colMap && rows.length > 1) applyTextFormat_(sheet, colMap, 2, rows.length - 1);
   sheet.getRange(1, 1, rows.length, width).setValues(rows);
-  if (freezeHeader) sheet.setFrozenRows(1);
+  if (colMap) sheet.setFrozenRows(1);
 }
