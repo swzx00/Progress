@@ -7,6 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  * 已經有 Chromium 的環境（例如雲端容器）可以用 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指定執行檔
  */
 const PORT = 5174;
+const DESKTOP_ONLY = ['**/flows.e2e.ts', '**/a11y.e2e.ts'];
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
 
 export default defineConfig({
@@ -24,10 +25,16 @@ export default defineConfig({
     launchOptions: { executablePath },
   },
   projects: [
-    // 手機 < 768、平板 768–1023、桌面 ≥ 1024（CLAUDE.md「RWD 斷點」）
-    { name: 'mobile', use: { ...devices['Pixel 7'], launchOptions: { executablePath } } },
+    // 手機 < 768、平板 768–1023、桌面 ≥ 1024（CLAUDE.md「RWD 斷點」）；
+    // 操作流程、無障礙跟版面寬度無關，只在桌面跑
+    {
+      name: 'mobile',
+      testIgnore: DESKTOP_ONLY,
+      use: { ...devices['Pixel 7'], launchOptions: { executablePath } },
+    },
     {
       name: 'tablet',
+      testIgnore: DESKTOP_ONLY,
       use: { ...devices['Desktop Chrome'], viewport: { width: 820, height: 1180 } },
     },
     {
