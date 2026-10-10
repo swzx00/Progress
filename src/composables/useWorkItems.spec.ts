@@ -176,6 +176,17 @@ describe('寫入：成功／失敗只看回應的 error', () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     await expect(useWorkItems().deleteItem('token', 'id-3')).rejects.toThrow('Failed to fetch');
   });
+
+  it('POST 用 text/plain，不觸發跨網域預檢（Apps Script 不回應 OPTIONS）', async () => {
+    const { useWorkItems } = await load();
+    respond({});
+    await useWorkItems().deleteItem('token', 'id-3');
+
+    const headers = new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers);
+    // 簡單請求只允許 Content-Type 這個 header，值也只能是 text/plain 等三種
+    expect([...headers.keys()].map((key) => key.toLowerCase())).toEqual(['content-type']);
+    expect(headers.get('content-type')).toMatch(/^text\/plain(;|$)/);
+  });
 });
 
 describe('讀取單日（fetchByDate）', () => {
