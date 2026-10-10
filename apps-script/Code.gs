@@ -41,6 +41,8 @@ var NUMBER_FIELDS = ['今日工時', '完成度'];
 var ARRAY_FIELDS = ['專案Repo'];
 var BOOLEAN_FIELDS = ['已刪除'];
 var DATE_FIELDS = ['工作日期', '預計期限'];
+// 使用者自由輸入的文字欄位，寫入前設成純文字格式（見 applyTextFormat_）
+var TEXT_FIELDS = ['交辦單位', '交辦人員', '專案名稱', '專案Repo', '工作目標', '處理內容'];
 // Sheet 表頭是大寫「ID」，API／前端的物件鍵名是小寫「id」，讀寫時在這裡互轉
 var ID_HEADER = 'ID';
 var ID_KEY = 'id';
@@ -131,6 +133,16 @@ function applyDateColumnFormat_(sheet, colMap) {
   });
 }
 
+// 寫入前把這幾列的文字欄位設成純文字格式：Sheet 會把「0123」「12:30」「TRUE」「2026/10/01」
+// 這類內容自動轉成數字、時間、布林、日期，讀回來就跟使用者輸入的不一樣。
+// 每次寫入時設定（不是建分頁時整欄設定），既有分頁、手動插入的列也照樣有效
+function applyTextFormat_(sheet, colMap, startRow, numRows) {
+  TEXT_FIELDS.forEach(function (field) {
+    var col = colMap[field];
+    if (col) sheet.getRange(startRow, col, numRows, 1).setNumberFormat('@');
+  });
+}
+
 // 工作紀錄分頁，還沒建立時回傳 null（讀取用，不建立分頁）
 function getDataSheet_() {
   return getSpreadsheet_().getSheetByName(DATA_SHEET_NAME);
@@ -207,6 +219,7 @@ function moveRowsToDeletedSheet_(sheet, colMap, rowNumbers, deletedAt) {
   });
   var startRow = deletedSheet.getLastRow() + 1;
   ensureRows_(deletedSheet, startRow + rows.length - 1);
+  applyTextFormat_(deletedSheet, deletedColMap, startRow, rows.length);
   deletedSheet.getRange(startRow, 1, rows.length, deletedLastCol).setValues(rows);
 
   rowNumbers
@@ -1056,6 +1069,7 @@ function handleCreate_(item) {
   var row = itemToRow_(colMap, sheet.getLastColumn(), created);
   var newRow = sheet.getLastRow() + 1;
   ensureRows_(sheet, newRow);
+  applyTextFormat_(sheet, colMap, newRow, 1);
   sheet.getRange(newRow, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 
@@ -1138,6 +1152,7 @@ function handleBatchCreate_(items, replace) {
 
   var startRow = sheet.getLastRow() + 1;
   ensureRows_(sheet, startRow + rows.length - 1);
+  applyTextFormat_(sheet, colMap, startRow, rows.length);
   sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
   sortDataSheet_(sheet, colMap);
 
@@ -1188,6 +1203,7 @@ function handleUpdate_(id, itemPatch) {
   if (merged.工作日期 !== existing.工作日期) merged.項次 = getNextDailyIndex_(dayRows);
 
   var row = itemToRow_(colMap, sheet.getLastColumn(), merged);
+  applyTextFormat_(sheet, colMap, rowIndex, 1);
   sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
   sortDataSheet_(sheet, colMap);
 
