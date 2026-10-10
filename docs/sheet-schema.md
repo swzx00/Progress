@@ -30,7 +30,7 @@
 - 固定值（`leave.fixed`，後端一律覆蓋，前端送什麼都不算數）：交辦單位 `人事室`、交辦人員 `--`、專案名稱 `休假`、專案Repo 空白、預計期限 空白、完成度 `100`
 - 使用者填的欄位：工作日期、假別（存在「工作目標」，選項 `leave.types`：特休／事假／病假／其他）、請假時數（存在「今日工時」，必填，0.25–8、預設 8）、備註（存在「處理內容」，選填）
 - 項次照每日編號規則，跟工作紀錄一起編
-- **跟一般工作紀錄分開**：`休假` 不在 `STATUS_OPTIONS` 裡（`types/work-item.ts` 另外定義 `LEAVE_STATUS`），工作紀錄表單選不到、後端 `validateItem_` 也會擋；固定值不寫回「選項清單」（`Code.gs` 的 `syncOptionsFromItem_`、MSW 的 `syncOptions` 都會略過請假列），不會出現在工作紀錄的下拉選單
+- **跟一般工作紀錄分開**：`休假` 不在 `STATUS_OPTIONS` 裡（`types/work-item.ts` 另外定義 `LEAVE_STATUS`），工作紀錄表單選不到、後端 `validateItem_` 也會擋；固定值不寫回「選項清單」（`Code.gs` 的 `syncOptionsFromItems_`、MSW 的 `syncOptions` 都會略過請假列），不會出現在工作紀錄的下拉選單
 - 前端：`DateNav` 右側「咖啡杯圖示＋請假」按鈕（圖示是行內 SVG 的 Lucide `coffee`，ISC 授權；白底＋`teal-700` 文字與框線，次要入口，色系跟表格請假列一致，14px 文字在白底要 4.5:1 對比所以不用 teal-500／600；表單「工作項目 ｜ 請假」切換選到請假時也是 `teal-700`；「＋ 新增」基底也留同色 1px 框線，兩顆按鈕才一樣高）開 `WorkItemForm` 的請假模式（`leave` prop；編輯時看紀錄本身的狀態），只顯示工作日期／假別／請假時數／備註。**新增時**表單上方有「工作項目 ｜ 請假」兩段式切換（`WorkItemForm` 的 `creatingLeave`，初始值看從哪個按鈕開啟；編輯既有紀錄、單項複製都不能切換，也不顯示切換按鈕）：切換後保留工作日期、其他欄位重設成該模式的預設值（請假固定值送出時才補，切回工作項目時狀態回到待辦、工時預設回到 0，所以不會殘留），除了日期以外有填內容才跳 `ConfirmDialog` 確認（使用者決定）；表格的請假列（`work-item-table__row--leave`）整列文字 `teal-800`、進度條 `teal-100` 底／`teal-500` 條、狀態膠囊 `--leave` 也是 teal；請假列左側跟逾期一樣有標線（`box-shadow` inset），色系用 `teal-600`（請假沒有預計期限，不會跟逾期同時出現）；手機卡片上原本的次要灰字（交辦單位、處理內容、工時、預計期限）在請假列改成 `teal-700`；請假列的交辦欄只顯示交辦單位、不顯示交辦人員（使用者決定）
 
 **已刪除紀錄分頁**（使用者決定，命名「已刪除紀錄」）：刪除紀錄、以及「複製本日」覆蓋目標日時被取代的紀錄，都整列從工作紀錄分頁搬到這個分頁封存（`Code.gs` 的 `moveRowsToDeletedSheet_`），工作紀錄分頁只留有效資料，Sheet 才能直接給其他人閱讀。欄位是工作紀錄分頁的欄位去掉「已刪除」、最後多一欄「刪除時間」（`yyyy/mm/dd hh:mm:ss`）；第一次刪除時自動建立。要復原時把那列搬回工作紀錄分頁即可（項次可能跟當天現有的紀錄重複，要手動改）。早期用「已刪除＝TRUE」標記的舊資料搬過來時「刪除時間」留空（不知道實際刪除時間）
@@ -44,6 +44,6 @@
 
 **資料模式**：情境 A（日誌式）——同一專案每天新增一列新紀錄，不覆寫舊資料，歷史紀錄自然依時間往下疊。
 
-**日期欄位格式**：「工作日期」「預計期限」在 Google Sheet 儲存格顯示、以及 Apps Script API（`doGet`/`doPost`）傳輸的字串格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），Sheet 端這兩欄也套用對應的 `yyyy/mm/dd` 儲存格數值格式（`Code.gs` 的 `applyDateColumnFormat_`，建立工作紀錄分頁、`mergeMonthSheets()` 合併時套用整欄；`ensureRows_` 補的列沿用上一列的格式）。
+**日期欄位格式**：「工作日期」「預計期限」在 Google Sheet 儲存格顯示、以及 Apps Script API（`doGet`/`doPost`）傳輸的字串格式都是 `YYYY/MM/DD`（例如 `2026/09/23`），Sheet 端這兩欄也套用對應的 `yyyy/mm/dd` 儲存格數值格式（`Code.gs` 的 `applyDateColumnFormat_`，建立工作紀錄分頁、`Migrations.gs` 的 `mergeMonthSheets()` 合併時套用整欄；`ensureRows_` 補的列沿用上一列的格式）。讀取日期儲存格一律用**試算表的時區**格式化（`getSheetTimeZone_`），不用指令碼時區：Sheet 把寫入的 `YYYY/MM/DD` 轉成日期時用的是試算表時區，兩邊設定不同時用指令碼時區讀回來會差一天。
 
 前端**內部狀態**（`WorkItemForm.vue` 的表單欄位、`DateNav.vue`、`HomeView.vue` 的 `selectedDate`、`isOverdue` 比較、`useTaiwanHolidays.ts`）維持 ISO 的 `YYYY-MM-DD`，不是為了跟後端不一致，而是瀏覽器原生 `<input type="date">` 規格規定只能吃這個格式，沒有替代選項。這些日期字串**一律用 `src/utils/date.ts` 產生**（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`，都以本地時間解析與格式化），**不要用 `toISOString()`**：它會先換成 UTC，台灣（UTC+8）凌晨 0:00–7:59 的「今天」會算成前一天；`NDatePicker` 回傳的是本地午夜時間戳，用 `toISOString()` 轉字串則不分時段一律少一天（兩者都實際發生過，已修正）。也不要用 `new Date('YYYY-MM-DD')` 解析（會被當成 UTC 午夜），改用 `parseLocalDate`。例外：`ExportModal` 自己用本地年月日轉換、`export-excel.ts` 刻意用 UTC 建 Excel 日期，都是對的。兩種格式的轉換**只集中在 `useWorkItems.ts` 一個邊界**（`toApiDate`/`fromApiDate`/`toApiItem`）：送出 `fetchByDate` 的 `date` 查詢參數、`createItem`/`updateItem` 的 `item.工作日期`/`item.預計期限` 之前轉成 `YYYY/MM/DD`；`fetchByDate` 收到的回應則把每筆 `工作日期`/`預計期限` 轉回 ISO 才存進 `items.value`。除了這個邊界，程式碼其他地方完全不用知道 API 實際傳輸格式是什麼。MSW mock（`src/mocks/handlers.ts`）的假資料日期也同步用 `YYYY/MM/DD` 產生，貼近真後端行為。

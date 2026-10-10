@@ -21,6 +21,7 @@ import {
   DAILY_HOURS_MAX,
   dailyHoursMessage,
   validateLeave,
+  validateOptionValue,
   validateWorkItem,
   type WorkItemFormValues,
 } from '@/validation/work-item';
@@ -168,6 +169,21 @@ describe('每日工時合計訊息：dailyHoursMessage ↔ dailyHoursError_', ()
     [0, 24.25],
   ])('其他 %d 小時＋本筆 %d 小時', (other, hours) => {
     expect(gs.dailyHoursError_(other, hours)).toBe(dailyHoursMessage(other, hours));
+  });
+});
+
+describe('選項清單的值：validateOptionValue ↔ validateOptionValue_', () => {
+  it.each([
+    ['交辦單位', '資訊部'],
+    ['交辦單位', '字'.repeat(50)],
+    ['交辦單位', '字'.repeat(51)],
+    ['交辦人員', '字'.repeat(51)],
+    ['專案名稱', '字'.repeat(51)],
+    ['專案Repo', 'web-app'],
+    ['專案Repo', 'web,api'],
+    ['專案Repo', 'a'.repeat(51)],
+  ] as const)('%s「%s」', (category, value) => {
+    expect(gs.validateOptionValue_(category, value)).toBe(validateOptionValue(category, value));
   });
 });
 

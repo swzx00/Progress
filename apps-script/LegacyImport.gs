@@ -12,13 +12,16 @@
  *
  * 轉換規則（使用者決定）：
  *   - 工作日期：分頁名稱，H1 表算 2026 年 1–6 月、H2 表算 7–12 月；解析不出日期的分頁略過
- *   - 項次：原分頁的項次（空白時接在當天最大項次後面）
+ *   - 項次：原分頁的項次（空白時接在當天最大項次後面）；兩份表同一天都有分頁時，
+ *     後讀到的分頁照原項次順序接在前一個分頁後面重新編號，不會出現重複的項次
  *   - 交辦單位＝單位、交辦人員＝交辦人員、專案名稱＝專案名稱、工作目標＝工作內容
  *   - 專案Repo：今日處理情形第一行只有英數字與 - _ / . 才算 Repo（有中文就不算），
  *     處理內容＝今日處理情形去掉這一行
  *   - 今日工時＝今日工時、完成度＝完成%、預計期限＝預計完成期限（不是日期就留空）
  *   - 狀態＝完成回報，依 LEGACY_STATUS_MAP 對應，對不上的填「待辦」
- *   - 工作內容或今日處理情形提到請假／休假／特休／病假／事假：照請假規則寫入
+ *   - 工作內容提到請假／休假／特休／病假／事假：照請假規則寫入。只有今日處理情形提到的
+ *     （例如「同事請假，代為處理」）仍當工作紀錄匯入，記在匯入紀錄裡給使用者確認，
+ *     免得交辦單位、專案名稱這些欄位被請假的固定值蓋掉
  *   - 「項目欄」「待辦事項」分頁、沒有「工作內容」欄的分頁都略過
  *   - 選項清單只放實際用到的值（請假列不算），依使用次數多到少排列
  */
@@ -79,11 +82,7 @@ function runLegacyImport() {
   sortDataSheet_(sheet, colMap);
 
   // 選項清單：每個分類整欄改寫成這次用到的值
-  var optSheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
-  if (!optSheet) {
-    optSheet = ss.insertSheet(OPTIONS_SHEET_NAME);
-    optSheet.getRange(1, 1, 1, OPTION_CATEGORIES.length).setValues([OPTION_CATEGORIES]);
-  }
+  var optSheet = getOrCreateOptionsSheet_();
   var optColMap = getColumnMap_(optSheet);
   OPTION_CATEGORIES.forEach(function (category) {
     var col = optColMap[category];
@@ -131,10 +130,14 @@ function buildLegacyImport_() {
       if (month < source.months[0] || month > source.months[1]) {
         log.push(where + '：日期 ' + date + ' 不在 ' + source.label + ' 的月份範圍內（仍照常匯入）');
       }
-      if (seenDates[date]) log.push(where + '：日期 ' + date + ' 跟 ' + seenDates[date] + ' 重複（兩邊都匯入）');
+      var converted = convertLegacySheet_(values, date, where, book.getSpreadsheetTimeZone());
+      if (seenDates[date]) {
+        log.push(
+          where + '：日期 ' + date + ' 跟 ' + seenDates[date] + ' 重複（兩邊都匯入，這個分頁的項次接在後面重新編號）',
+        );
+        renumberAfterExisting_(converted.entries);
+      }
       seenDates[date] = where;
-
-      var converted = convertLegacySheet_(values, date, where, Session.getScriptTimeZone());
       entries = entries.concat(converted.entries);
       log = log.concat(converted.log);
     });
@@ -185,6 +188,24 @@ function buildLegacyImport_() {
   return { items: entries, options: options, summary: summary, skippedSheets: skippedSheets, log: log };
 }
 
+// 同一天的第二個分頁：照原項次排好（項次空白的維持在原本的位置之後），清掉項次，
+// 讓下面「項次空白的接在當天最大項次後面」依序補號，就不會跟前一個分頁的項次重複
+function renumberAfterExisting_(dayEntries) {
+  dayEntries
+    .map(function (e, i) {
+      return { entry: e, order: i };
+    })
+    .sort(function (a, b) {
+      var ia = a.entry.item.項次 || Infinity;
+      var ib = b.entry.item.項次 || Infinity;
+      return ia - ib || a.order - b.order;
+    })
+    .forEach(function (x, i) {
+      x.entry.item.項次 = 0;
+      dayEntries[i] = x.entry;
+    });
+}
+
 // 轉換單一分頁（values 第一列是表頭），不呼叫任何 Apps Script API，方便在本機測試
 function convertLegacySheet_(values, date, where, timeZone) {
   var header = values[0].map(function (h) {
@@ -215,7 +236,7 @@ function convertLegacySheet_(values, date, where, timeZone) {
     var hours = toLegacyNumber_(get(row, '今日工時'));
 
     var item;
-    if (LEGACY_LEAVE_PATTERN.test(target) || LEGACY_LEAVE_PATTERN.test(notes)) {
+    if (LEGACY_LEAVE_PATTERN.test(target)) {
       var leaveHours = hours > 0 ? Math.min(roundToStep_(hours, 0.25), 8) : 8;
       item = Object.assign(
         {
@@ -243,6 +264,9 @@ function convertLegacySheet_(values, date, where, timeZone) {
       var deadline = parseLegacyDeadline_(deadlineRaw, date, timeZone);
       if (!deadline && String(deadlineRaw).trim()) {
         log.push(source + '：預計完成期限「' + String(deadlineRaw).trim() + '」不是日期，留空');
+      }
+      if (LEGACY_LEAVE_PATTERN.test(notes)) {
+        log.push(source + '：今日處理情形提到請假，仍當工作紀錄匯入，請確認：' + notes.split('\n')[0]);
       }
       item = {
         工作日期: date,

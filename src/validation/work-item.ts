@@ -191,3 +191,24 @@ export const validateWorkItem = (values: WorkItemFormValues): WorkItemErrors => 
   });
   return errors;
 };
+
+/**
+ * 管理選項清單新增／重新命名的值（已去掉前後空白）：套用工作紀錄同一欄的長度與禁用字元規則，
+ * 避免出現下拉選得到、存檔卻被擋下的值。通過回 null。Code.gs 的 validateOptionValue_ 手動同步
+ */
+export const validateOptionValue = (
+  category: '交辦單位' | '交辦人員' | '專案名稱' | '專案Repo',
+  value: string,
+): string | null => {
+  const rule = WORK_ITEM_RULES[category];
+  // 標籤是英數字結尾（專案 Repo）時，後面接中文前空一格
+  const label = /[A-Za-z0-9]$/.test(rule.label) ? `${rule.label} ` : rule.label;
+  if (rule.maxLength && value.length > rule.maxLength) {
+    return `${label}不可超過 ${rule.maxLength} 字`;
+  }
+  const forbidden = [...(rule.forbiddenChars ?? '')];
+  if (forbidden.some((char) => value.includes(char))) {
+    return `${label}不可包含「${forbidden.join('')}」`;
+  }
+  return null;
+};
