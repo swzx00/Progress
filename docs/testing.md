@@ -12,11 +12,13 @@
 |---|---|
 | `src/utils/*.spec.ts`、`src/types/*.spec.ts` | 純函式單元測試：日期、工時換算、搜尋比對與標示、本日總結、近期推薦與預填、複製、匯出範圍與檔名、日出日落 |
 | `src/validation/*.spec.ts` | 表單驗證：`shared/validation-schema.json` 的每條規則、請假規則、每日工時合計訊息 |
-| `tests/apps-script/*.spec.ts` | 前後端一致性：在 Node 載入 `apps-script/Code.gs`，跟前端用同一組案例比對（見下方） |
+| `tests/apps-script/*.spec.ts` | 前後端一致性：在 Node 載入 `apps-script/Code.gs`，跟前端用同一組案例比對；`Code.gs` 接假的試算表跑後端共同規格與讀寫 Sheet 的細節（見下方） |
 | `src/composables/*.spec.ts` | API 邊界（`useWorkItems`、`useOptions`）：日期格式只在這裡轉換、回應一律 200 只看 `error`、`UNAUTHORIZED` 的 `ApiError`、已刪除過濾、預計項次與工時合計；台灣假日（`useTaiwanHolidays`）：補班日、連假、跨年、資料抓不到時的備援 |
-| `src/components/*.spec.ts` | 元件測試：`WorkItemForm`（項次、送出、24 小時檢查、請假、複製、未儲存確認、預填、工作時段）、`DateNav`（工作日按鈕停用、放假徽章與工時合計）、`ConfirmDialog`、`HighlightText` |
+| `src/components/*.spec.ts` | 元件測試：`WorkItemForm`（項次、送出、24 小時檢查、請假、複製、未儲存確認、預填、工作時段）、`DateNav`（工作日按鈕停用、放假徽章與工時合計）、`WorkItemTable`（排序、上移下移、逾期與請假標示、搜尋結果模式、空狀態）、`OptionsManagerModal`、`WorkHoursSettingModal`、`ConfirmDialog`、`HighlightText` |
 | `src/pages/HomeView.spec.ts` | 主畫面流程：存檔、刪除、複製本日、項次調整失敗時的處理（登入錯誤關閉畫面並登出，其他錯誤保留畫面）、複製本日的工時檢查與覆蓋確認 |
-| `tests/msw/*.spec.ts` | MSW 假後端跟 `Code.gs` 同規則（見下方） |
+| `tests/backend/contract.ts` | 後端共同規格：MSW 與 `Code.gs` 跑同一組案例（見下方） |
+| `tests/msw/*.spec.ts` | MSW 假後端跑後端共同規格 |
+| `tests/export/*.spec.ts` | 匯出 Excel 的檔案內容：真的產生 .xlsx 再用 ExcelJS 讀回來，檢查分頁、欄位、日期儲存格、樣式，顏色跟 `tokens.scss` 淺色模式比對 |
 | `src/testing/` | 測試用的假資料：`fixtures.ts`（`makeItem`／`makeRecent`，只覆寫測試在意的欄位）、`taiwan-calendar.ts`（產生一整年的假行事曆，可指定國定假日與補班日） |
 
 測試檔放在被測檔案旁邊（`work-hours.ts` ↔ `work-hours.spec.ts`），`describe`／`it` 用中文寫規則本身（例如「跨過整段午休，扣掉 1.5 小時」），跑測試的輸出就是一份規則清單。
@@ -39,9 +41,24 @@
 
 改 `Code.gs` 或前端任一邊，這裡失敗就代表另一邊忘了改。
 
-`tests/msw/handlers.spec.ts` 用 `msw/node` 直接對 MSW handlers 發請求（`npm run dev` 預設打的假後端），測每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步；錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。MSW 只模擬工時相關的欄位驗證，其他欄位驗證不測。碰到 Sheet 的函式（讀寫、排序、項次寫入）測不到，部署後用實機測試清單手動驗證。
+## 後端共同規格（MSW ↔ Code.gs）
+
+`tests/backend/contract.ts` 的 `describeBackendContract` 是一組後端規格：每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步、匯出範圍與搜尋的參數檢查。錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。同一組案例跑兩次：
+
+- `tests/msw/handlers.spec.ts`：用 `msw/node` 對 MSW handlers 發請求（`npm run dev` 預設打的假後端）
+- `tests/apps-script/backend.spec.ts`：`Code.gs` 的 `doGet`／`doPost` 接假的試算表
+
+兩邊行為不一樣，就會有一邊失敗。MSW 只模擬工時相關的欄位驗證，其他欄位驗證在一致性測試比對。
+
+### 假的試算表
+
+`tests/apps-script/fake-spreadsheet.ts` 只實作 `Code.gs` 用到的 `SpreadsheetApp` API，行為盡量貼近真的 Sheet：寫入時自動轉型（純數字字串 → 數字、`TRUE` → 布林、`YYYY/MM/DD` → 日期、`HH:mm` → 時間，儲存格是純文字格式 `@` 就維持字串）、`getRange` 超出分頁列數會丟錯（新分頁預設 1000 列）、`insertRowsAfter` 補的列沿用上一列的格式、排序時空白排最後。`load-code-gs-backend.ts` 用 `node:vm` 執行 `Code.gs`，其他服務（指令碼屬性、UUID、日期格式化、tokeninfo 登入驗證）也換成假的；idToken `'token'` 是擁有者本人，JSON 字串的 idToken 直接當成 tokeninfo 的回應。試算表裡的日期是 vm 那邊的 `Date`，測試裡判斷日期要用 `Object.prototype.toString`，不能用 `instanceof`。
+
+`tests/apps-script/sheet.spec.ts` 測共同規格看不到的 Sheet 細節：自動建分頁與表頭、儲存格型別、文字欄位不被轉型、每次寫入後排序、超過 1000 列自動補列、手動編輯過的分頁照樣讀得到、已刪除紀錄分頁、選項清單的數字值與連續、`compactOptionsSheet`、工時設定、登入驗證、近期紀錄、搜尋與匯出範圍。
+
+假的試算表終究不是真的 Sheet（例如科學記號、千分位、地區格式的自動轉型沒有模擬），部署後還是要照實機測試清單手動驗證一次。
 
 ## 沒有自動測試的部分
 
-- 真的 Apps Script 後端（會寫進真的 Sheet）：部署後手動驗證
+- 真的 Apps Script 後端接真的 Sheet、Google 登入：部署後手動驗證
 - 版面、RWD、深色模式、實際截斷（`ClampText` 需要真的排版，happy-dom 量不到高度）：之後要做再評估 Playwright
