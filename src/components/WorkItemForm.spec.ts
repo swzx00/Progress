@@ -445,6 +445,18 @@ describe('工作時段', () => {
     expect([start.element.value, end.element.value]).toEqual(['09:30', '11:30']);
   });
 
+  it('改日期後還沒查完就按儲存：送出時補查的結果照樣推算時段，不會一直空白', async () => {
+    mocks.workHours.value = SETTING;
+    const wrapper = await mountForm({ item: makeItem({ id: 'x', 項次: 2, 今日工時: 2 }) });
+    mocks.fetchDaySummary
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce(daySummary([{ id: 'c', 項次: 1, 今日工時: 1 }], 'x'));
+    await wrapper.find('input[type="date"]').setValue('2026-10-12');
+    await submit(wrapper);
+    const { start, end } = rangeInputs(wrapper);
+    expect([start.element.value, end.element.value]).toEqual(['09:30', '11:30']);
+  });
+
   it('結束早於開始：提示錯誤並擋下送出', async () => {
     mocks.workHours.value = SETTING;
     const wrapper = await mountForm({ item: makeItem({ 今日工時: 1 }) });

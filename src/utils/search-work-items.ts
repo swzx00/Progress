@@ -161,7 +161,8 @@ export const SEARCH_FIELD_LABELS: Record<SearchField, string> = {
 
 /**
  * 推薦選擇：從選項清單（交辦單位、交辦人員、專案名稱、專案 Repo）與近期紀錄的工作目標（新的優先、不重複）
- * 找出包含關鍵字的值（不分大小寫）。開頭就符合的排前面，其餘照分類順序；最多 SUGGESTION_LIMIT 筆
+ * 找出包含關鍵字的值（不分大小寫）。開頭就符合的排前面，其餘照分類順序；最多 SUGGESTION_LIMIT 筆。
+ * 點推薦會把整個值當關鍵字送出，超過 SEARCH_KEYWORD_MAX 字的值（工作目標最長 500 字）後端會拒絕，所以不推薦
  */
 export const buildSuggestions = (
   keyword: string,
@@ -181,7 +182,11 @@ export const buildSuggestions = (
       (options?.[field] ?? []).map((value) => ({ field, value })),
     ),
     ...targets.map((value) => ({ field: '工作目標' as const, value })),
-  ].filter((candidate) => normalize(candidate.value).includes(word));
+  ].filter(
+    (candidate) =>
+      normalize(candidate.value).length <= SEARCH_KEYWORD_MAX &&
+      normalize(candidate.value).includes(word),
+  );
 
   const startsWith = (candidate: SearchSuggestion): boolean =>
     normalize(candidate.value).startsWith(word);

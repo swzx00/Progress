@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
-import { computed, h, ref, watch } from 'vue';
+import { computed, h, ref, toRaw, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
@@ -19,6 +19,7 @@ import { useOptions } from '@/composables/useOptions';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { THEME_MODES, useTheme, type ThemeMode } from '@/composables/useTheme';
 import { useToast } from '@/composables/useToast';
+import { useToday } from '@/composables/useToday';
 import {
   ApiError,
   fetchDaySummary,
@@ -36,8 +37,15 @@ import {
 } from '@/utils/search-work-items';
 import { DAILY_HOURS_MAX, dailyHoursMessage } from '@/validation/work-item';
 
-const { idToken, userEmail, isLoggedIn, isAuthorized, renderSignInButton, signOut } =
-  useGoogleAuth();
+const {
+  idToken,
+  userEmail,
+  isLoggedIn,
+  isAuthorized,
+  renderSignInButton,
+  signOut,
+  ensureFreshLogin,
+} = useGoogleAuth();
 
 const signInButtonEl = ref<HTMLElement | null>(null);
 
@@ -55,7 +63,8 @@ const {
 } = useWorkItems();
 const { getDayOffLabel } = useTaiwanHolidays();
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
-const isViewingToday = computed(() => selectedDate.value === todayString());
+const today = useToday();
+const isViewingToday = computed(() => selectedDate.value === today.value);
 
 watch(selectedDate, (date) => fetchByDate(date), { immediate: true });
 
@@ -163,10 +172,13 @@ const toolOptions = computed<DropdownOption[]>(() => [
 ]);
 const onToolSelect = (key: ToolKey | string): void => {
   if (key.startsWith(THEME_KEY_PREFIX)) onThemeSelect(key);
-  else if (key === 'options') optionsManagerOpen.value = true;
-  else if (key === 'daySummary') daySummaryOpen.value = true;
+  else if (key === 'options') {
+    if (requireFreshLogin()) optionsManagerOpen.value = true;
+  } else if (key === 'daySummary') daySummaryOpen.value = true;
   else if (key === 'export') exportOpen.value = true;
-  else if (key === 'workHours') workHoursOpen.value = true;
+  else if (key === 'workHours') {
+    if (requireFreshLogin()) workHoursOpen.value = true;
+  }
 };
 
 const formOpen = ref(false);
@@ -178,10 +190,22 @@ const copySource = ref<WorkItem | null>(null);
 const saving = ref(false);
 
 const { showToast } = useToast();
+
+/**
+ * 開啟會寫入資料的表單／對話框前確認登入還有效：token 過期（分頁開著超過約一小時）就登出並提示，
+ * 不讓使用者打完內容才在儲存時被退回
+ */
+const requireFreshLogin = (): boolean => {
+  if (ensureFreshLogin()) return true;
+  showToast('登入已過期，請重新登入');
+  return false;
+};
+
 // 存檔成功後更新近期紀錄（表單的推薦與預填用），下次開表單不用重新讀選項清單
 const { rememberItems } = useOptions();
 
 const openCreateForm = (): void => {
+  if (!requireFreshLogin()) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = false;
@@ -189,6 +213,7 @@ const openCreateForm = (): void => {
 };
 
 const openLeaveForm = (): void => {
+  if (!requireFreshLogin()) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = true;
@@ -196,12 +221,14 @@ const openLeaveForm = (): void => {
 };
 
 const openEditForm = (item: WorkItem): void => {
+  if (!requireFreshLogin()) return;
   editingItem.value = item;
   copySource.value = null;
   formOpen.value = true;
 };
 
 const openCopyForm = (item: WorkItem): void => {
+  if (!requireFreshLogin()) return;
   editingItem.value = null;
   copySource.value = item;
   formOpen.value = true;
@@ -275,6 +302,7 @@ const copyDayPayloads = (targetDate: string) =>
     .map((item) => buildCopyPayload(item, targetDate));
 
 const openCopyDay = (): void => {
+  if (!requireFreshLogin()) return;
   copyDayError.value = null;
   copyDayOpen.value = true;
 };
@@ -368,7 +396,8 @@ const cancelCopyDayReplace = (): void => {
 
 /**
  * 項次調整（上移／下移、拖曳）：每次移動立即存檔。先在畫面上套用新順序（項次改成 1、2、3…），
- * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）
+ * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）。
+ * 送出期間切到別天（或切走再切回來）時，items 已經換成重新讀到的資料，就不還原
  */
 const reordering = ref(false);
 
@@ -380,16 +409,23 @@ const onReorder = async (ids: string[]): Promise<void> => {
     return;
   }
   const before = items.value;
+  if (!requireFreshLogin()) {
+    // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
+    items.value = [...before];
+    return;
+  }
   const byId = new Map(before.map((item) => [item.id, item]));
-  items.value = ids.flatMap((id, index) => {
+  const reordered = ids.flatMap((id, index) => {
     const item = byId.get(id);
     return item ? [{ ...item, 項次: index + 1 }] : [];
   });
+  items.value = reordered;
   reordering.value = true;
   try {
     await reorderItems(idToken.value, selectedDate.value, ids);
   } catch (e) {
-    items.value = before;
+    // items 還是這次套用的順序才還原；切過日期的話已經是重新讀到的資料，不能用快照蓋掉
+    if (toRaw(items.value) === reordered) items.value = before;
     showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
     if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
   } finally {
@@ -401,6 +437,7 @@ const deleteTarget = ref<WorkItem | null>(null);
 const deleting = ref(false);
 
 const openDeleteConfirm = (item: WorkItem): void => {
+  if (!requireFreshLogin()) return;
   deleteTarget.value = item;
 };
 
@@ -651,7 +688,7 @@ const onWorkHoursUnauthorized = (): void => {
         </div>
         <WorkItemTable
           :items="searchResult.items"
-          :today="todayString()"
+          :today="today"
           :editable="isAuthorized"
           search-mode
           :search-keyword="searchQuery.keyword"
@@ -672,7 +709,7 @@ const onWorkHoursUnauthorized = (): void => {
     <WorkItemTable
       v-else
       :items="items"
-      :today="todayString()"
+      :today="today"
       :editable="isAuthorized"
       :viewing-today="isViewingToday"
       :day-off-label="dayOffLabel"

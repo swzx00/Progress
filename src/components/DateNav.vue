@@ -4,7 +4,8 @@ import { computed } from 'vue';
 import { NDatePicker } from 'naive-ui';
 
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
-import { addDays, parseLocalDate, toLocalDateString, todayString } from '@/utils/date';
+import { refreshToday, useToday } from '@/composables/useToday';
+import { addDays, parseLocalDate, toLocalDateString } from '@/utils/date';
 import { DAILY_HOURS_WARN } from '@/validation/work-item';
 
 const props = defineProps<{
@@ -24,7 +25,7 @@ const shift = (days: number): void => {
   emit('update:modelValue', addDays(props.modelValue, days));
 };
 
-const todayStr = computed(() => todayString());
+const todayStr = useToday();
 const isToday = computed(() => props.modelValue === todayStr.value);
 
 // 每日工時警示門檻（shared/validation-schema.json 的 dailyHours.warn），合計超過才換成紅字（剛好等於不算超過）
@@ -38,6 +39,8 @@ const isOverHoursLimit = computed(
 );
 
 const goToday = (): void => {
+  // 先對一次日期：電腦睡眠喚醒後計時器可能還沒觸發，todayStr 會停在昨天，「今天」標示也會跟著錯
+  refreshToday();
   emit('update:modelValue', todayStr.value);
 };
 

@@ -510,9 +510,12 @@ watch(workHours, () => {
  * 同一次查詢也算出當天其他紀錄的工時合計（otherHours），編輯且日期沒改時也要查。
  * 同一次查詢也帶回當天各紀錄的項次與工時，推算工作時段用（refreshRange 為 true 時重新推算）。
  * 連續改日期時只採用最後一次查詢的結果，避免較早的回應晚到、蓋掉新的值。
+ * 要重新推算時段的查詢被後面的查詢（例如送出時補查）取代時，由採用結果的那次接著推算，
+ * 不然時段會一直空白。
  */
 const indexValue = ref<number | null>(null);
 let latestDayRequest = 0;
+let rangeRefreshPending = false;
 
 const updateDaySummary = async (refreshRange: boolean): Promise<void> => {
   const requestId = ++latestDayRequest;
@@ -522,6 +525,7 @@ const updateDaySummary = async (refreshRange: boolean): Promise<void> => {
   indexValue.value = ownIndex;
   otherHours.value = null;
   if (refreshRange) {
+    rangeRefreshPending = true;
     rangeTouched = false;
     rangeOffset.value = null;
   }
@@ -531,7 +535,8 @@ const updateDaySummary = async (refreshRange: boolean): Promise<void> => {
     if (requestId !== latestDayRequest) return;
     if (ownIndex === null) indexValue.value = summary.nextIndex;
     otherHours.value = summary.otherHours;
-    if (refreshRange) {
+    if (rangeRefreshPending) {
+      rangeRefreshPending = false;
       // 排在這筆前面的紀錄：編輯沒改日期只算項次比它小的，其他情況（新增、複製、改到別天）是當天全部
       rangeOffset.value = summary.entries
         .filter(
@@ -574,7 +579,7 @@ const onSubmit = async (): Promise<void> => {
   if (otherHours.value === null) {
     checkingDayHours.value = true;
     try {
-      // 只補查工時合計，不重新推算時段（避免蓋掉使用者填的時間）
+      // 只補查工時合計，不重新推算時段（避免蓋掉使用者填的時間；換日期後還沒推算完的照樣推算）
       await updateDaySummary(false);
     } finally {
       checkingDayHours.value = false;

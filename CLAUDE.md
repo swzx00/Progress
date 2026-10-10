@@ -66,7 +66,7 @@
 # 關鍵慣例（容易踩雷）
 
 - **回應一律 HTTP 200**（Apps Script 平台限制），成功／失敗只看回應有沒有 `error`，不能用 `res.ok`。要分辨錯誤類型看 `code`（目前只有 `UNAUTHORIZED`），用 `e instanceof ApiError && e.code === 'UNAUTHORIZED'`，**不比對 `error` 文字**。新增錯誤代碼時 `Code.gs`、`src/mocks/handlers.ts`、`useWorkItems.ts` 的 `ApiErrorCode` 一起改。MSW 也一律回 200
-- **日期格式**：Sheet 與 API 是 `YYYY/MM/DD`；前端內部是 `YYYY-MM-DD`（原生 `<input type="date">` 只吃這個）。兩者轉換**只在 `useWorkItems.ts`**（`toApiDate`／`fromApiDate`／`toApiItem`）。前端日期字串一律用 `src/utils/date.ts`（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`），**不要用 `toISOString()`**（台灣凌晨會變前一天，`NDatePicker` 的時間戳會少一天），也不要用 `new Date('YYYY-MM-DD')`（當成 UTC）。例外：`ExportModal` 自己用本地年月日、`export-excel.ts` 刻意用 UTC 建 Excel 日期
+- **日期格式**：Sheet 與 API 是 `YYYY/MM/DD`；前端內部是 `YYYY-MM-DD`（原生 `<input type="date">` 只吃這個）。兩者轉換**只在 `useWorkItems.ts`**（`toApiDate`／`fromApiDate`／`toApiItem`）。前端日期字串一律用 `src/utils/date.ts`（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`），**不要用 `toISOString()`**（台灣凌晨會變前一天，`NDatePicker` 的時間戳會少一天），也不要用 `new Date('YYYY-MM-DD')`（當成 UTC）。例外：`export-excel.ts` 刻意用 UTC 建 Excel 日期
 - **前端登入只是體驗層**：`useGoogleAuth.ts` 的允許清單決定要不要渲染管理功能，真正把關在後端 `doPost`
 - **手動同步清單**（改一處要一起改）：
 
@@ -121,11 +121,12 @@ src/
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
     DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
-    useGoogleAuth.ts      # 登入狀態、ID Token 管理
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理（ensureFreshLogin：開表單／對話框前檢查 token 是否過期）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
     useTheme.ts            # 深色模式：自動（依日出日落）／淺色／深色，套用 <html data-theme>
+    useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
   utils/

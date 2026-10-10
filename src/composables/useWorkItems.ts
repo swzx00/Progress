@@ -10,7 +10,7 @@ interface DoGetResponse {
   error?: string;
 }
 
-interface DoPostResponse {
+export interface DoPostResponse {
   error?: string;
   code?: ApiErrorCode;
 }
@@ -38,7 +38,7 @@ type UpdateInput = Partial<Omit<WorkItem, 'id'>>;
  * 是 YYYY/MM/DD。轉換集中在這裡，其他地方不用知道 API 實際傳輸格式是什麼。
  */
 const toApiDate = (date: string): string => date.replaceAll('-', '/');
-const fromApiDate = (date: string): string => date.replaceAll('/', '-');
+export const fromApiDate = (date: string): string => date.replaceAll('/', '-');
 
 const toApiItem = <T extends Partial<Pick<WorkItem, '工作日期' | '預計期限'>>>(item: T): T => ({
   ...item,
@@ -57,30 +57,50 @@ const API_BASE_URL = shouldUseDevProxy
   : import.meta.env.VITE_APPS_SCRIPT_URL;
 
 /**
+ * 打 doPost，回傳整個回應內容（useOptions.ts 也用這支，選項清單、工時設定的回應會帶回最新資料）。
  * Apps Script 網頁應用程式的回應一律是 HTTP 200（平台限制，沒辦法自訂 status code），
  * 所以不能靠 res.ok 判斷成功/失敗，錯誤訊息一律看回應內容裡的 error 欄位。
  */
-const postAction = async (idToken: string, payload: object): Promise<void> => {
+export const postApi = async <T extends DoPostResponse>(
+  idToken: string,
+  payload: object,
+): Promise<T> => {
   const res = await fetch(API_BASE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken, ...payload }),
   });
-  const data = (await res.json()) as DoPostResponse;
+  const data = (await res.json()) as T;
   if (data.error) {
     throw new ApiError(data.error, data.code);
   }
+  return data;
 };
 
-/** 打 doGet 讀取未刪除的紀錄，日期轉回 ISO；失敗直接丟錯，由呼叫端決定怎麼處理 */
-const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
+const postAction = async (idToken: string, payload: object): Promise<void> => {
+  await postApi(idToken, payload);
+};
+
+/**
+ * 打 doGet，回傳整個回應內容（useOptions.ts 讀選項清單也用這支）。
+ * 跟 postApi 一樣看回應的 error 欄位判斷失敗，失敗直接丟錯，由呼叫端決定怎麼處理
+ */
+export const getApi = async <T extends { error?: string }>(
+  params: Record<string, string>,
+): Promise<T> => {
   const url = new URL(API_BASE_URL, window.location.origin);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   const res = await fetch(url.toString());
-  const data = (await res.json()) as DoGetResponse;
+  const data = (await res.json()) as T;
   if (data.error) {
     throw new Error(data.error);
   }
+  return data;
+};
+
+/** 讀取未刪除的紀錄，日期轉回 ISO */
+const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
+  const data = await getApi<DoGetResponse>(params);
   return {
     ...data,
     items: data.items
@@ -162,17 +182,23 @@ export function useWorkItems() {
   const items = ref<WorkItem[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** 連續切換日期時只採用最後一次的結果，避免晚回來的舊日期蓋掉目前日期 */
+  let latestFetch = 0;
 
   const fetchByDate = async (date: string): Promise<void> => {
+    const seq = ++latestFetch;
     loading.value = true;
     error.value = null;
     try {
-      items.value = await requestItemsByDate(date);
+      const result = await requestItemsByDate(date);
+      if (seq !== latestFetch) return;
+      items.value = result;
     } catch (e) {
+      if (seq !== latestFetch) return;
       error.value = e instanceof Error ? e.message : '讀取資料時發生未知錯誤';
       items.value = [];
     } finally {
-      loading.value = false;
+      if (seq === latestFetch) loading.value = false;
     }
   };
 

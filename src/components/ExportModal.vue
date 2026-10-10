@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue';
 
 import { useToast } from '@/composables/useToast';
 import { fetchByRange } from '@/composables/useWorkItems';
+import { parseLocalDate, toLocalDateString } from '@/utils/date';
 import {
   buildExportWorkbook,
   downloadBlob,
@@ -48,15 +49,8 @@ const now = Date.now();
 const yearValue = ref<number | null>(now);
 const quarterValue = ref<number | null>(now);
 const monthValue = ref<number | null>(now);
-const defaultTimestamp = new Date(`${props.defaultDate}T00:00:00`).getTime();
+const defaultTimestamp = parseLocalDate(props.defaultDate).getTime();
 const rangeValue = ref<[number, number] | null>([defaultTimestamp, defaultTimestamp]);
-
-// 時間戳轉 YYYY-MM-DD 要用本地時間的年月日，不能用 toISOString（會換成 UTC，台灣時間凌晨會差一天）
-const pad2 = (n: number): string => String(n).padStart(2, '0');
-const toIsoDate = (timestamp: number): string => {
-  const d = new Date(timestamp);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
 
 const period = computed<ExportPeriod | null>(() => {
   if (mode.value === 'year') {
@@ -73,7 +67,10 @@ const period = computed<ExportPeriod | null>(() => {
     return monthPeriod(d.getFullYear(), d.getMonth() + 1);
   }
   if (rangeValue.value === null) return null;
-  return rangePeriod(toIsoDate(rangeValue.value[0]), toIsoDate(rangeValue.value[1]));
+  return rangePeriod(
+    toLocalDateString(new Date(rangeValue.value[0])),
+    toLocalDateString(new Date(rangeValue.value[1])),
+  );
 });
 
 // 指定天數超過後端上限就先擋下，不送出
