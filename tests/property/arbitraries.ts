@@ -38,11 +38,15 @@ export const isoDateLike = (): fc.Arbitrary<string> =>
     { weight: 1, arbitrary: fc.constantFrom('', '2026-1-9', '2026.10.09', '20261009', 'abc') },
   );
 
-/** 真的存在的日期（本地時間），1970–2200 */
+/**
+ * 真的存在的日期（本地時間），1980–2200。
+ * 不從 1970 開始：台灣 1979 年以前有幾年實施日光節約時間，切換那天（例如 1974-04-01）沒有 00:00，
+ * new Date(y, m, d) 會變成 01:00，「轉回來是當天本地午夜」這類性質會隨機失敗。工作紀錄不會有那麼早的日期
+ */
 export const realDate = (): fc.Arbitrary<Date> =>
   fc
     .tuple(
-      fc.integer({ min: 1970, max: 2200 }),
+      fc.integer({ min: 1980, max: 2200 }),
       fc.integer({ min: 0, max: 11 }),
       fc.integer({ min: 1, max: 31 }),
     )
