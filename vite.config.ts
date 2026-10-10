@@ -71,6 +71,8 @@ export default defineConfig(({ mode }) => {
       include: ['src/**/*.spec.ts', 'tests/**/*.spec.ts'],
       // 日期相關的測試要固定在台灣時區，換機器（CI 是 UTC）結果才一致
       globalSetup: ['./vitest.global-setup.ts'],
+      // 第一次載入元件（例如 DateNav 的 beforeEach）在 Windows 上可能超過預設的 10 秒
+      hookTimeout: 30_000,
       // npm run test:coverage：看哪些程式沒被測到（不設門檻，只當參考）
       coverage: {
         provider: 'v8',

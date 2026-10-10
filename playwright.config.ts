@@ -7,6 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  * 已經有 Chromium 的環境（例如雲端容器）可以用 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指定執行檔。
  * iphone／desktop-safari 兩個專案用 WebKit（Safari 的核心）跑同一套測試，npm run test:e2e 不跑，
  * 要另外 npm run test:e2e:safari（第一次先 npx playwright install webkit）
+ * WebKit 攔不到 MSW Service Worker 轉發的請求，fixtures.ts 的假資源不會生效，依賴假資料的檢查在 WebKit 跳過
  */
 const PORT = 5174;
 const DESKTOP_ONLY = ['**/flows.e2e.ts', '**/a11y.e2e.ts'];

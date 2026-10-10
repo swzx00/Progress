@@ -93,6 +93,8 @@ happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的�
 
 `npm run test:e2e:safari` 用 WebKit 跑同一套測試：`iphone`（iPhone 14，只跑版面相關，同 `mobile`）、`desktop-safari`（1280px，全部都跑）。`npm run test:e2e` 不包含這兩個專案，沒裝 WebKit 的環境照樣能跑。Playwright 的 WebKit 很接近 Safari，但不是真的 iPhone，日期選擇器這類原生元件還是要在手機上實際點一次。
 
+WebKit 的限制：Playwright 只有 Chromium 攔得到 Service Worker 發出的請求。MSW 的 Service Worker 會轉發 Google 登入腳本、台灣行事曆的請求，所以 `fixtures.ts` 的假資源在 WebKit 不會生效，會連到真的服務。依賴假資料的檢查（國定假日的名稱、假的登入按鈕）在 WebKit 跳過並註明原因，Chromium 照樣完整驗證。手機判斷一律用 `testInfo.project.use.isMobile`／`hasTouch`，不比對專案名稱。
+
 已經有 Chromium、不想下載的環境（例如雲端容器）可以設 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。部署（第 5 階段）時再加：GitHub Pages 的 base path、重新整理不會 404、真的 Google 登入。
 
 ## 沒有自動測試的部分

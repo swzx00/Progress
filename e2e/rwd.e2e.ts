@@ -7,6 +7,9 @@ import { expect, openHome, test } from './fixtures';
  */
 test.use({ loggedIn: true });
 
+const WEBKIT_NO_FAKE_CALENDAR =
+  'WebKit 攔不到 MSW Service Worker 轉發的請求，假的台灣行事曆不會生效（會連到真的行事曆）';
+
 const header = (page: import('@playwright/test').Page) =>
   page.locator('.work-item-table__row--header');
 
@@ -20,8 +23,9 @@ test('畫面不會出現橫向捲軸', async ({ page }) => {
 
 test('版面依斷點切換', async ({ page }, testInfo) => {
   await openHome(page);
-  const project = testInfo.project.name;
-  if (project === 'mobile') {
+  // 手機專案（mobile、iphone）用 isMobile 判斷，平板／桌面看寬度
+  const width = page.viewportSize()!.width;
+  if (testInfo.project.use.isMobile) {
     // 卡片：沒有表頭，處理內容前面有「處理內容：」，工時寫成「工時：4hr」
     await expect(header(page)).toBeHidden();
     const first = dataRows(page).first();
@@ -31,7 +35,7 @@ test('版面依斷點切換', async ({ page }, testInfo) => {
   }
   await expect(header(page)).toBeVisible();
   const headerText = await header(page).innerText();
-  if (project === 'tablet') {
+  if (width < 1024) {
     // 平板：完成度、今日工時、預計期限合併成一欄，不各自一欄
     expect(headerText).not.toContain('預計期限');
   } else {
@@ -59,7 +63,8 @@ test('逾期列的左側紅色標線與「逾期」標籤', async ({ page }) => 
   await expect(overdue.locator('.work-item-table__badge')).toHaveText('逾期');
 });
 
-test('換到國定假日：顯示假日名稱與放假的空狀態', async ({ page }) => {
+test('換到國定假日：顯示假日名稱與放假的空狀態', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', WEBKIT_NO_FAKE_CALENDAR);
   await openHome(page);
   for (let i = 0; i < 2; i++) await page.getByRole('button', { name: '下一天' }).click();
   await expect(page.getByText('國慶日補假').first()).toBeVisible();
