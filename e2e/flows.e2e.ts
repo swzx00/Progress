@@ -148,7 +148,20 @@ test('拖曳排序：把第一筆拖到最後，存檔後順序維持', async ({
   // 拖曳用 Sortable 的 fallback 模式（滑鼠事件模擬），要一步一步移動才會觸發排序
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
-  await page.mouse.move(from.x + from.width / 2, to.y + to.height - 5, { steps: 20 });
+  const x = from.x + from.width / 2;
+  const y = to.y + to.height - 5;
+  await page.mouse.move(x, y, { steps: 20 });
+  // Sortable 換位置有 150ms 動畫，機器忙的時候（WebKit 平行跑）滑鼠可能比動畫先到，
+  // 放開前確認佔位（ghost）已經排到最後；還沒到就在原地小幅移動，讓 Sortable 重新判斷
+  const ghostIsLast = () =>
+    page
+      .locator('.work-item-table__row[data-id]:not(.work-item-table__row--dragging)')
+      .last()
+      .evaluate((el) => el.classList.contains('work-item-table__row--ghost'));
+  for (let i = 0; i < 10 && !(await ghostIsLast()); i++) {
+    await page.waitForTimeout(200);
+    await page.mouse.move(x, y + (i % 2 ? -3 : 3), { steps: 3 });
+  }
   await page.mouse.up();
   await expect.poll(() => targets(page)).toEqual(['登入流程重構', '資料彙整', '首頁切版']);
   await page.getByRole('button', { name: '下一天' }).click();

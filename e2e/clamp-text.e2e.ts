@@ -34,7 +34,7 @@ test('長文字收合時截斷到指定行數，出現「<展開>」；展開後
   const cell = detailCell(page);
   const expand = cell.getByRole('button', { name: '<展開>' });
   await expect(expand).toBeVisible();
-  expect(await lineCount(cell)).toBe(testInfo.project.name === 'mobile' ? 3 : 2);
+  expect(await lineCount(cell)).toBe(testInfo.project.use.isMobile ? 3 : 2);
 
   await expand.click();
   await expect(cell.getByRole('button', { name: '<收合>' })).toBeVisible();
@@ -54,7 +54,7 @@ test('有滑鼠的裝置：滑過被截斷的文字顯示全文；觸控裝置�
   await saveLongDetail(page);
   await detailCell(page).locator('.clamp-text__body').hover();
   const tooltip = page.locator('.n-tooltip', { hasText: LONG_TEXT.trim() });
-  if (testInfo.project.name === 'mobile') {
+  if (testInfo.project.use.hasTouch) {
     await page.waitForTimeout(600);
     await expect(tooltip).toHaveCount(0);
   } else {

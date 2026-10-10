@@ -37,10 +37,13 @@ test('切回淺色', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
-test('唯讀模式（沒登入）：顯示「唯讀模式」，沒有新增與操作欄', async ({ page }) => {
+test('唯讀模式（沒登入）：顯示「唯讀模式」，沒有新增與操作欄', async ({ page, browserName }) => {
   await openHome(page);
   await expect(page.getByText('唯讀模式')).toBeVisible();
   await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '編輯' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '使用 Google 帳戶登入' })).toBeVisible();
+  // WebKit 攔不到 MSW Service Worker 轉發的請求，載入的是真的 Google 登入腳本，按鈕長得不一樣，只在 Chromium 檢查
+  if (browserName !== 'webkit') {
+    await expect(page.getByRole('button', { name: '使用 Google 帳戶登入' })).toBeVisible();
+  }
 });
