@@ -217,3 +217,49 @@ test('本日總結：整理成文字', async ({ page }) => {
   await expect(text).toHaveValue(/^1\.AAA,BBBB\n- 完成首頁 RWD 調整\n2\.member-web/);
   await expect(text).toHaveValue(/3\.年度報告\n- 等待業務部提供數據$/);
 });
+
+test('網址帶 ?date=：開到那天，切換日期同步網址（不新增瀏覽紀錄），重新整理還是那天', async ({
+  page,
+}) => {
+  await page.goto('/?date=2026-10-06');
+  await expect(dataRows(page)).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '回到今天' })).toBeVisible();
+
+  const historyLength = await page.evaluate(() => history.length);
+  await page.getByRole('button', { name: '上一天' }).click();
+  await expect(page).toHaveURL(/\?date=2026-10-05$/);
+  expect(await page.evaluate(() => history.length)).toBe(historyLength);
+
+  await page.reload();
+  await expect(page).toHaveURL(/\?date=2026-10-05$/);
+  await expect(page.getByRole('button', { name: '回到今天' })).toBeVisible();
+
+  await page.getByRole('button', { name: '回到今天' }).click();
+  await expect(page).toHaveURL(/\?date=2026-10-07$/);
+  await expect(dataRows(page)).toHaveCount(3);
+});
+
+test('網址的 date 不正確：退回今天，並把參數從網址拿掉', async ({ page }) => {
+  await page.goto('/?date=2026-02-30');
+  await expect(dataRows(page)).toHaveCount(3);
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test('網址帶 ?q=：開頁面就搜尋，搜尋同步網址，點工作日期離開搜尋、網址換成那天', async ({
+  page,
+}) => {
+  await page.goto('/?q=官網');
+  const box = page.getByRole('combobox', { name: '搜尋全部紀錄' });
+  await expect(box).toHaveValue('官網');
+  await expect(page.getByRole('status').filter({ hasText: '搜尋結果' })).toContainText('官網');
+
+  await box.fill('首頁');
+  await box.press('Enter');
+  await expect(page).toHaveURL(/\?q=%E9%A6%96%E9%A0%81$/);
+
+  await page.reload();
+  await expect(box).toHaveValue('首頁');
+  await dataRows(page).last().locator('.work-item-table__date-link').click();
+  await expect(page.getByText('搜尋結果')).toBeHidden();
+  await expect(page).toHaveURL(/\?date=2026-10-06$/);
+});

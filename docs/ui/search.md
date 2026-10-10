@@ -16,3 +16,4 @@
   - **色系：purple**（使用者決定），階數比照今天：表頭 `purple-100`、斑馬紋 `purple-050`／`purple-000`、邊框 `purple-200`、工作日期連結與「展開／收合」`purple-700`（滑過 `purple-800`）、展開列底 `purple-100`／框 `purple-300`；搜尋摘要列 `purple-700` 字、不加底色（使用者決定）；空狀態 `purple-700` 字＋`purple-000` 底。請假、逾期的列照常用自己的 teal／red。`purple` 不是設計系統原有的色階：色相取舊版 `--Purple`（薰衣草），每一階的深淺（OKLab 明度）對齊 `1111-Purple` 同一階推算出來（使用者決定），見 `tokens.scss` 的註解
   - 顯示搜尋結果時（`DateNav` 的 `searching` prop），`DateNav` 只留搜尋欄：日期切換、放假徽章／工時合計／今天、動作按鈕都不顯示（使用者決定，搜尋結果跨日期，跟選到的那天無關）
   - 清空搜尋欄（✕、Esc 或自己刪光）、按「結束搜尋」、點工作日期都會回到單日表格
+  - **網址帶搜尋條件**（使用者決定，`HomeView` 的 `syncUrl`）：搜尋時用 `router.replace` 把條件寫進網址，`?q=關鍵字`，點推薦再加 `&field=欄位`（值同 API 的 `field`，例如 `專案名稱`）；重新整理、分享連結會直接搜尋同一組條件，搜尋欄也填好。結束搜尋就拿掉 `q`／`field`，`date` 照樣留著（規則見 [date-nav.md](date-nav.md)「網址帶日期」）。`q` 空白或超過 `SEARCH_KEYWORD_MAX`、`field` 不在 `SEARCH_FIELDS`、只有 `field` 沒有 `q`，都當不正確，不搜尋並從網址拿掉

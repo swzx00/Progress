@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { NDropdown } from 'naive-ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ref } from 'vue';
+import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 
 import { makeItem } from '@/testing/fixtures';
 import type { WorkItem } from '@/types/work-item';
@@ -121,9 +122,19 @@ const stubNames = [
   'ExportModal',
 ];
 
-const mountView = async (): Promise<VueWrapper> => {
+let router: Router;
+
+/** path 是打開頁面時的網址（例如 /?date=2026-09-01），用來測 ?date= 開到指定日期 */
+const mountView = async (path = '/'): Promise<VueWrapper> => {
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { render: () => null } }],
+  });
+  await router.push(path);
+  await router.isReady();
   const wrapper = mount(HomeView, {
     global: {
+      plugins: [router],
       stubs: {
         ...Object.fromEntries(stubNames.map((name) => [name, true])),
         DateNav: DateNavStub,
@@ -173,9 +184,52 @@ beforeEach(() => {
 });
 
 describe('讀取', () => {
-  it('打開時讀今天的紀錄', async () => {
+  it('打開時讀今天的紀錄，網址不加 date', async () => {
     await mountView();
     expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+});
+
+describe('網址的 ?date=', () => {
+  it('格式正確：開到那天', async () => {
+    const wrapper = await mountView('/?date=2026-09-01');
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-01');
+    expect(mocks.fetchByDate).not.toHaveBeenCalledWith(today);
+    expect(wrapper.findComponent({ name: 'DateNav' }).props('modelValue')).toBe('2026-09-01');
+  });
+
+  it.each(['2026/09/01', '2026-9-1', '2026-02-30', 'abc', ''])(
+    '不正確（%s）：退回今天，把 date 從網址拿掉、保留其他參數',
+    async (date) => {
+      await mountView(`/?date=${encodeURIComponent(date)}&foo=1`);
+      expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+      expect(router.currentRoute.value.query).toEqual({ foo: '1' });
+    },
+  );
+
+  it('重複帶 date（陣列）也當成不正確', async () => {
+    await mountView('/?date=2026-09-01&date=2026-09-02');
+    expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it('切換日期：用 replace 更新網址，不新增瀏覽紀錄', async () => {
+    const wrapper = await mountView();
+    const push = vi.spyOn(router, 'push');
+    const replace = vi.spyOn(router, 'replace');
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2026-09-02');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-02' });
+    expect(replace).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-02');
+  });
+
+  it('網址的 date 被改掉時跟著切過去', async () => {
+    await mountView('/?date=2026-09-01');
+    await router.replace({ query: { date: '2026-09-03' } });
+    await flushPromises();
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-03');
   });
 });
 
@@ -685,5 +739,62 @@ describe('搜尋', () => {
       .find((b) => b.text() === '結束搜尋')!
       .trigger('click');
     expect(tableItems(wrapper).map((i) => i.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('網址的 ?q=／?field=', () => {
+  beforeEach(() => {
+    mocks.searchItems.mockResolvedValue({ items: [], total: 0 });
+  });
+
+  it('帶 q：開頁面就搜尋，搜尋欄填好關鍵字', async () => {
+    const wrapper = await mountView('/?q=官網');
+    expect(mocks.searchItems).toHaveBeenCalledWith({ keyword: '官網' });
+    expect(wrapper.findComponent({ name: 'WorkItemSearch' }).props('modelValue')).toBe('官網');
+  });
+
+  it('帶 q＋field：只搜那個欄位，date 也一起套用', async () => {
+    await mountView('/?date=2026-09-01&q=官網改版&field=專案名稱');
+    expect(mocks.searchItems).toHaveBeenCalledWith({ keyword: '官網改版', field: '專案名稱' });
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-01');
+    expect(router.currentRoute.value.query).toEqual({
+      date: '2026-09-01',
+      q: '官網改版',
+      field: '專案名稱',
+    });
+  });
+
+  it.each([
+    ['q 空白', '/?q=%20%20&foo=1'],
+    ['q 超過 100 字', `/?q=${'a'.repeat(101)}&foo=1`],
+    ['field 不是可搜尋的欄位', '/?q=官網&field=處理內容&foo=1'],
+    ['只有 field', '/?field=專案名稱&foo=1'],
+  ])('不正確（%s）：不搜尋，把 q／field 從網址拿掉、保留其他參數', async (_label, path) => {
+    await mountView(path);
+    expect(mocks.searchItems).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.query).toEqual({ foo: '1' });
+  });
+
+  it('搜尋時用 replace 寫進網址，換一次搜尋就換掉', async () => {
+    const wrapper = await mountView();
+    const push = vi.spyOn(router, 'push');
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網改版', field: '專案名稱' });
+    expect(router.currentRoute.value.query).toEqual({ q: '官網改版', field: '專案名稱' });
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '首頁' });
+    expect(router.currentRoute.value.query).toEqual({ q: '首頁' });
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('清空搜尋：拿掉 q／field，date 留著', async () => {
+    const wrapper = await mountView('/?date=2026-09-01&q=官網');
+    await emitFrom(wrapper, 'WorkItemSearch', 'clear');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-01' });
+  });
+
+  it('點結果的工作日期：拿掉 q／field，date 換成那天', async () => {
+    const wrapper = await mountView('/?q=官網&field=專案名稱');
+    await emitFrom(wrapper, 'WorkItemTable', 'go-to-date', '2026-09-05');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-05' });
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-05');
   });
 });
