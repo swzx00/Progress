@@ -1,0 +1,243 @@
+// 色彩 token：統一用色階命名 --color-<色系>-<階>，元件裡文字／背景／邊框都直接挑色階使用
+// 色值來自公司共用設計系統的 primitive 色階
+// D:\cheng\Documents\Project\recruitNew\recruitwebvue\assets\scss\_color.scss
+// 對應：Candidate-Blue → blue、1111-Black → black、1111-Rose → red、1111-Teal／Green／Yellow／Orange → 同名；
+// purple 是推算的色階（見下方 Purple 區塊註解）
+:root {
+  color-scheme: light;
+
+  // Blue（Candidate-Blue）
+  --color-blue-000: #f5f8ff;
+  --color-blue-050: #e3ecfc;
+  --color-blue-100: #b8d2ff;
+  --color-blue-200: #9bf;
+  --color-blue-300: #69f;
+  --color-blue-400: #4d88ff;
+  --color-blue-500: #1a66ff;
+  --color-blue-600: #1259e5;
+  --color-blue-700: #0f47b8;
+  --color-blue-800: #0b378f;
+  --color-blue-900: #09296b;
+  --color-blue-1000: #030a18;
+
+  // Black（1111-Black，中性灰階）
+  --color-black-000: #fff;
+  --color-black-050: #f8f9fa;
+  --color-black-100: #e9ecef;
+  --color-black-200: #ced4da;
+  --color-black-300: #adb5bd;
+  --color-black-400: #939da7;
+  --color-black-500: #636e78;
+  --color-black-600: #495057;
+  --color-black-700: #343a40;
+  --color-black-800: #212529;
+  --color-black-900: #141618;
+  --color-black-1000: #000;
+
+  // Red（1111-Rose，危險／錯誤）
+  --color-red-000: #fdedf0;
+  --color-red-050: #fbdbe0;
+  --color-red-100: #f9c9d1;
+  --color-red-200: #f7b7c1;
+  --color-red-300: #f293a3;
+  --color-red-400: #ee6f84;
+  --color-red-500: #ea4b65;
+  --color-red-600: #cd2742;
+  --color-red-700: #a51028;
+  --color-red-800: #820f21;
+  --color-red-900: #590b17;
+  --color-red-1000: #36040d;
+
+  // Teal（1111-Teal）
+  --color-teal-000: #f0fcff;
+  --color-teal-050: #dcf5fa;
+  --color-teal-100: #abe2ed;
+  --color-teal-200: #75cee0;
+  --color-teal-300: #3cbcd6;
+  --color-teal-400: #29b0cf;
+  --color-teal-500: #00a3c4;
+  --color-teal-600: #008ead;
+  --color-teal-700: #03738f;
+  --color-teal-800: #005c75;
+  --color-teal-900: #004959;
+  --color-teal-1000: #00323d;
+
+  // Green（1111-Green）
+  --color-green-000: #f9fff5;
+  --color-green-050: #f0f9e9;
+  --color-green-100: #d1edbb;
+  --color-green-200: #bae49a;
+  --color-green-300: #9bd76c;
+  --color-green-400: #87d050;
+  --color-green-500: #69c424;
+  --color-green-600: #60b221;
+  --color-green-700: #4b8b1a;
+  --color-green-800: #3a6c14;
+  --color-green-900: #2c520f;
+  --color-green-1000: #1b3309;
+
+  // Yellow（1111-Yellow）
+  --color-yellow-000: #fffdf5;
+  --color-yellow-050: #fffae0;
+  --color-yellow-100: #ffefa3;
+  --color-yellow-200: #ffe461;
+  --color-yellow-300: #ffda4d;
+  --color-yellow-400: #ffce00;
+  --color-yellow-500: #ffc300;
+  --color-yellow-600: #faaf0a;
+  --color-yellow-700: #d48c0a;
+  --color-yellow-800: #8f590d;
+  --color-yellow-900: #6b3d00;
+  --color-yellow-1000: #4d2b00;
+
+  // Orange（1111-Orange）
+  --color-orange-000: #fcf6f2;
+  --color-orange-050: #ffede5;
+  --color-orange-100: #ffc9b2;
+  --color-orange-200: #ffb594;
+  --color-orange-300: #ff9363;
+  --color-orange-400: #ff7940;
+  --color-orange-500: #ff5d15;
+  --color-orange-600: #e55213;
+  --color-orange-700: #b2410f;
+  --color-orange-800: #8a320b;
+  --color-orange-900: #662509;
+  --color-orange-1000: #471a06;
+
+  // Purple（搜尋結果用，使用者決定）：設計系統沒有完整的這組色階，是推算出來的——
+  // 色相取舊版 Purple（薰衣草，--Purple-100～1000），每一階的深淺（OKLab 明度）對齊 1111-Purple 的同一階，
+  // 在舊版 Purple 色階上內插取色（比最淺／最深還淺／深的階往白／黑延伸）
+  --color-purple-000: #faf5fd;
+  --color-purple-050: #f2e7f9;
+  --color-purple-100: #dbb4ea;
+  --color-purple-200: #c990dd;
+  --color-purple-300: #ad68c4;
+  --color-purple-400: #9d52b5;
+  --color-purple-500: #89429f;
+  --color-purple-600: #773688;
+  --color-purple-700: #612f6d;
+  --color-purple-800: #4c2255;
+  --color-purple-900: #3b1643;
+  --color-purple-1000: #290c30;
+}
+
+// 深色模式（使用者決定，<html data-theme="dark">，切換邏輯見 src/composables/useTheme.ts）：
+// 同一組 token 重新定義，每個色系的階數上下對調（000↔1000、050↔900、100↔800、200↔700、300↔600、400↔500），
+// 元件不用改——淺色模式當背景的淺色階變成深色、當文字的深色階變成淺色。
+// 例外（B 版，使用者決定）：blue／orange／yellow／purple 的 000、050 不對調，改用 black 的深色值，
+// 表格的今天／放假／搜尋只靠表頭（100 → 原本的 800）與邊框帶色系，斑馬紋維持中性黑灰
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  // Blue
+  --color-blue-000: #000; // 同 black-000（B 版）
+  --color-blue-050: #141618; // 同 black-050（B 版）
+  --color-blue-100: #0b378f;
+  --color-blue-200: #0f47b8;
+  --color-blue-300: #1259e5;
+  --color-blue-400: #1a66ff;
+  --color-blue-500: #4d88ff;
+  --color-blue-600: #69f;
+  --color-blue-700: #9bf;
+  --color-blue-800: #b8d2ff;
+  --color-blue-900: #e3ecfc;
+  --color-blue-1000: #f5f8ff;
+
+  // Black
+  --color-black-000: #000;
+  --color-black-050: #141618;
+  --color-black-100: #212529;
+  --color-black-200: #343a40;
+  --color-black-300: #495057;
+  --color-black-400: #636e78;
+  --color-black-500: #939da7;
+  --color-black-600: #adb5bd;
+  --color-black-700: #ced4da;
+  --color-black-800: #e9ecef;
+  --color-black-900: #f8f9fa;
+  --color-black-1000: #fff;
+
+  // Red
+  --color-red-000: #36040d;
+  --color-red-050: #590b17;
+  --color-red-100: #820f21;
+  --color-red-200: #a51028;
+  --color-red-300: #cd2742;
+  --color-red-400: #ea4b65;
+  --color-red-500: #ee6f84;
+  --color-red-600: #f293a3;
+  --color-red-700: #f7b7c1;
+  --color-red-800: #f9c9d1;
+  --color-red-900: #fbdbe0;
+  --color-red-1000: #fdedf0;
+
+  // Teal
+  --color-teal-000: #00323d;
+  --color-teal-050: #004959;
+  --color-teal-100: #005c75;
+  --color-teal-200: #03738f;
+  --color-teal-300: #008ead;
+  --color-teal-400: #00a3c4;
+  --color-teal-500: #29b0cf;
+  --color-teal-600: #3cbcd6;
+  --color-teal-700: #75cee0;
+  --color-teal-800: #abe2ed;
+  --color-teal-900: #dcf5fa;
+  --color-teal-1000: #f0fcff;
+
+  // Green
+  --color-green-000: #1b3309;
+  --color-green-050: #2c520f;
+  --color-green-100: #3a6c14;
+  --color-green-200: #4b8b1a;
+  --color-green-300: #60b221;
+  --color-green-400: #69c424;
+  --color-green-500: #87d050;
+  --color-green-600: #9bd76c;
+  --color-green-700: #bae49a;
+  --color-green-800: #d1edbb;
+  --color-green-900: #f0f9e9;
+  --color-green-1000: #f9fff5;
+
+  // Yellow
+  --color-yellow-000: #000; // 同 black-000（B 版）
+  --color-yellow-050: #141618; // 同 black-050（B 版）
+  --color-yellow-100: #8f590d;
+  --color-yellow-200: #d48c0a;
+  --color-yellow-300: #faaf0a;
+  --color-yellow-400: #ffc300;
+  --color-yellow-500: #ffce00;
+  --color-yellow-600: #ffda4d;
+  --color-yellow-700: #ffe461;
+  --color-yellow-800: #ffefa3;
+  --color-yellow-900: #fffae0;
+  --color-yellow-1000: #fffdf5;
+
+  // Orange
+  --color-orange-000: #000; // 同 black-000（B 版）
+  --color-orange-050: #141618; // 同 black-050（B 版）
+  --color-orange-100: #8a320b;
+  --color-orange-200: #b2410f;
+  --color-orange-300: #e55213;
+  --color-orange-400: #ff5d15;
+  --color-orange-500: #ff7940;
+  --color-orange-600: #ff9363;
+  --color-orange-700: #ffb594;
+  --color-orange-800: #ffc9b2;
+  --color-orange-900: #ffede5;
+  --color-orange-1000: #fcf6f2;
+
+  // Purple
+  --color-purple-000: #000; // 同 black-000（B 版）
+  --color-purple-050: #141618; // 同 black-050（B 版）
+  --color-purple-100: #4c2255;
+  --color-purple-200: #612f6d;
+  --color-purple-300: #773688;
+  --color-purple-400: #89429f;
+  --color-purple-500: #9d52b5;
+  --color-purple-600: #ad68c4;
+  --color-purple-700: #c990dd;
+  --color-purple-800: #dbb4ea;
+  --color-purple-900: #f2e7f9;
+  --color-purple-1000: #faf5fd;
+}

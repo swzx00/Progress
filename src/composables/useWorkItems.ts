@@ -1,0 +1,247 @@
+import { ref } from 'vue';
+
+import type { WorkItem } from '@/types/work-item';
+import type { SearchQuery } from '@/utils/search-work-items';
+
+interface DoGetResponse {
+  items: WorkItem[];
+  /** 搜尋（type=search）才有：全部符合的筆數（items 最多只回傳 SEARCH_MAX_RESULTS 筆） */
+  total?: number;
+  error?: string;
+}
+
+export interface DoPostResponse {
+  error?: string;
+  code?: ApiErrorCode;
+}
+
+/** 後端錯誤代碼，目前只有登入驗證失敗會帶，其他錯誤沒有 code */
+export type ApiErrorCode = 'UNAUTHORIZED';
+
+/** 帶後端錯誤代碼的錯誤，呼叫端用 code 判斷錯誤類型，不要比對 message 文字 */
+export class ApiError extends Error {
+  readonly code?: ApiErrorCode;
+
+  constructor(message: string, code?: ApiErrorCode) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+  }
+}
+
+type CreateInput = Omit<WorkItem, 'id' | '項次' | '已刪除'>;
+type UpdateInput = Partial<Omit<WorkItem, 'id'>>;
+
+/**
+ * 前端內部（表單、DateNav、逾期比對）一律用 ISO 的 YYYY-MM-DD，因為
+ * <input type="date"> 規格就是吃這個格式；Apps Script／Google Sheet 那端存的
+ * 是 YYYY/MM/DD。轉換集中在這裡，其他地方不用知道 API 實際傳輸格式是什麼。
+ */
+const toApiDate = (date: string): string => date.replaceAll('-', '/');
+export const fromApiDate = (date: string): string => date.replaceAll('/', '-');
+
+const toApiItem = <T extends Partial<Pick<WorkItem, '工作日期' | '預計期限'>>>(item: T): T => ({
+  ...item,
+  ...(item.工作日期 !== undefined && { 工作日期: toApiDate(item.工作日期) }),
+  ...(item.預計期限 !== undefined && { 預計期限: toApiDate(item.預計期限) }),
+});
+
+/**
+ * 本機開發、且關掉 MSW（VITE_ENABLE_MSW=false）時，改打 /apps-script-proxy，
+ * 由 vite.config.ts 的 dev server proxy 轉發，繞開 Apps Script 對 localhost 來源的
+ * CORS 限制（見 CLAUDE.md）。MSW 開著時維持原本網址，讓 MSW 的「結尾 exec」攔截規則正常比對。
+ */
+const shouldUseDevProxy = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MSW === 'false';
+const API_BASE_URL = shouldUseDevProxy
+  ? '/apps-script-proxy'
+  : import.meta.env.VITE_APPS_SCRIPT_URL;
+
+/**
+ * 打 doPost，回傳整個回應內容（useOptions.ts 也用這支，選項清單、工時設定的回應會帶回最新資料）。
+ * Apps Script 網頁應用程式的回應一律是 HTTP 200（平台限制，沒辦法自訂 status code），
+ * 所以不能靠 res.ok 判斷成功/失敗，錯誤訊息一律看回應內容裡的 error 欄位。
+ */
+export const postApi = async <T extends DoPostResponse>(
+  idToken: string,
+  payload: object,
+): Promise<T> => {
+  const res = await fetch(API_BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken, ...payload }),
+  });
+  const data = (await res.json()) as T;
+  if (data.error) {
+    throw new ApiError(data.error, data.code);
+  }
+  return data;
+};
+
+const postAction = async (idToken: string, payload: object): Promise<void> => {
+  await postApi(idToken, payload);
+};
+
+/**
+ * 打 doGet，回傳整個回應內容（useOptions.ts 讀選項清單也用這支）。
+ * 跟 postApi 一樣看回應的 error 欄位判斷失敗，失敗直接丟錯，由呼叫端決定怎麼處理
+ */
+export const getApi = async <T extends { error?: string }>(
+  params: Record<string, string>,
+): Promise<T> => {
+  const url = new URL(API_BASE_URL, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  const res = await fetch(url.toString());
+  const data = (await res.json()) as T;
+  if (data.error) {
+    throw new Error(data.error);
+  }
+  return data;
+};
+
+/** 讀取未刪除的紀錄，日期轉回 ISO */
+const requestGet = async (params: Record<string, string>): Promise<DoGetResponse> => {
+  const data = await getApi<DoGetResponse>(params);
+  return {
+    ...data,
+    items: data.items
+      .filter((item) => !item.已刪除)
+      .map((item) => ({
+        ...item,
+        工作日期: fromApiDate(item.工作日期),
+        預計期限: fromApiDate(item.預計期限),
+      })),
+  };
+};
+
+const requestItems = async (params: Record<string, string>): Promise<WorkItem[]> =>
+  (await requestGet(params)).items;
+
+/** 讀取某一天未刪除的紀錄 */
+const requestItemsByDate = (date: string): Promise<WorkItem[]> =>
+  requestItems({ date: toApiDate(date) });
+
+/**
+ * 讀取 from～to（YYYY-MM-DD，含頭尾）未刪除的紀錄（含請假），「匯出 Excel」用，
+ * 不會動到 useWorkItems() 的 items 狀態。後端限制跨度最多 366 天，超過會回錯誤
+ */
+export const fetchByRange = (from: string, to: string): Promise<WorkItem[]> =>
+  requestItems({ type: 'range', from: toApiDate(from), to: toApiDate(to) });
+
+export interface SearchResult {
+  /** 符合的紀錄（工作日期新的在前、同一天照項次），最多 SEARCH_MAX_RESULTS 筆 */
+  items: WorkItem[];
+  /** 全部符合的筆數，大於 items.length 代表結果被截掉了 */
+  total: number;
+}
+
+/**
+ * 搜尋欄：到後端查全部資料（doGet type=search，比對規則見 utils/search-work-items.ts），
+ * 不會動到 useWorkItems() 的 items 狀態。field 有值時只搜那個欄位（點推薦）
+ */
+export const searchItems = async (query: SearchQuery): Promise<SearchResult> => {
+  const data = await requestGet({
+    type: 'search',
+    q: query.keyword.trim(),
+    ...(query.field && { field: query.field }),
+  });
+  return { items: data.items, total: data.total ?? data.items.length };
+};
+
+export interface DaySummary {
+  /** 預計項次 */
+  nextIndex: number;
+  /** 當天其他紀錄（排除 excludeId）的今日工時合計 */
+  otherHours: number;
+  /** 當天未刪除的紀錄筆數（「複製本日」判斷目標日是否已有紀錄） */
+  itemCount: number;
+  /** 當天未刪除的紀錄（含請假）的 id、項次、今日工時，表單依項次推算工作時段用 */
+  entries: Pick<WorkItem, 'id' | '項次' | '今日工時'>[];
+}
+
+/**
+ * 表單用的當天摘要，一次查詢算出兩個值（不會動到 useWorkItems() 的 items 狀態）：
+ * - 預計項次：當天未刪除紀錄的最大項次 + 1，跟 Code.gs 的 getNextDailyIndex_ 同一套規則。
+ *   只是給表單顯示的參考值，實際項次由後端寫入當下決定
+ * - 其他紀錄工時合計：排除 excludeId（編輯時是自己），跟 Code.gs 的 getDayHoursExcluding_
+ *   同一套規則，給表單檢查每日工時上限
+ * 改其中一邊要一起改。另外附上當天各紀錄的項次與工時（entries），表單依項次推算工作時段用。
+ */
+export const fetchDaySummary = async (date: string, excludeId?: string): Promise<DaySummary> => {
+  const dayItems = await requestItemsByDate(date);
+  return {
+    nextIndex: Math.max(0, ...dayItems.map((item) => item.項次)) + 1,
+    otherHours: dayItems
+      .filter((item) => item.id !== excludeId)
+      .reduce((sum, item) => sum + (Number(item.今日工時) || 0), 0),
+    itemCount: dayItems.length,
+    entries: dayItems.map(({ id, 項次, 今日工時 }) => ({ id, 項次, 今日工時 })),
+  };
+};
+
+export function useWorkItems() {
+  const items = ref<WorkItem[]>([]);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
+  /** 連續切換日期時只採用最後一次的結果，避免晚回來的舊日期蓋掉目前日期 */
+  let latestFetch = 0;
+
+  const fetchByDate = async (date: string): Promise<void> => {
+    const seq = ++latestFetch;
+    loading.value = true;
+    error.value = null;
+    try {
+      const result = await requestItemsByDate(date);
+      if (seq !== latestFetch) return;
+      items.value = result;
+    } catch (e) {
+      if (seq !== latestFetch) return;
+      error.value = e instanceof Error ? e.message : '讀取資料時發生未知錯誤';
+      items.value = [];
+    } finally {
+      if (seq === latestFetch) loading.value = false;
+    }
+  };
+
+  const createItem = (idToken: string, item: CreateInput): Promise<void> =>
+    postAction(idToken, { action: 'create', item: toApiItem(item) });
+
+  /**
+   * 一次新增多筆（「複製本日」用）：後端全部驗證通過才寫入，任何一筆不合格或當天工時合計
+   * 超過上限就整批退回、不寫入任何一筆。項次由後端依陣列順序照每日編號規則接續。
+   * replace 為 true 時（覆蓋目標日）：後端先把目標日原本的紀錄（含請假）搬到『已刪除紀錄』分頁再寫入，工時合計只算這批
+   */
+  const batchCreateItems = (
+    idToken: string,
+    items: CreateInput[],
+    replace = false,
+  ): Promise<void> =>
+    postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem), replace });
+
+  /**
+   * 後端用 id 找到那一列；item.工作日期 可以改到別天（含別的月份），後端會在新的那天重新編項次。
+   */
+  const updateItem = (idToken: string, id: string, item: UpdateInput): Promise<void> =>
+    postAction(idToken, { action: 'update', id, item: toApiItem(item) });
+
+  const deleteItem = (idToken: string, id: string): Promise<void> =>
+    postAction(idToken, { action: 'delete', id });
+
+  /**
+   * 調整某一天的項次順序：ids 是那天所有未刪除紀錄（含請假）依新順序排列的 id，
+   * 後端依順序把項次改成 1、2、3…；跟 Sheet 上的紀錄對不上時整批退回
+   */
+  const reorderItems = (idToken: string, date: string, ids: string[]): Promise<void> =>
+    postAction(idToken, { action: 'reorder', date: toApiDate(date), ids });
+
+  return {
+    items,
+    loading,
+    error,
+    fetchByDate,
+    createItem,
+    batchCreateItems,
+    updateItem,
+    deleteItem,
+    reorderItems,
+  };
+}

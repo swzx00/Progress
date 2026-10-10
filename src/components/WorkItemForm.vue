@@ -1,0 +1,1519 @@
+<script setup lang="ts">
+import { NSelect, type SelectOption } from 'naive-ui';
+import { computed, h, nextTick, onMounted, reactive, ref, watch, type VNode } from 'vue';
+
+import AppLoading from '@/components/AppLoading.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
+import { useOptions } from '@/composables/useOptions';
+import { fetchDaySummary } from '@/composables/useWorkItems';
+import { vAutoResize } from '@/directives/auto-resize';
+import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
+import { buildCopyPayload } from '@/utils/copy-work-item';
+import { todayString } from '@/utils/date';
+import {
+  recentAssignee,
+  recentByTarget,
+  recentProject,
+  recentRepos,
+  recentUnit,
+  withRecentFirst,
+} from '@/utils/recent-history';
+import { hoursToRange, rangeToHours, roundToQuarter } from '@/utils/work-hours';
+import {
+  DAILY_HOURS_MAX,
+  LEAVE_FIXED_VALUES,
+  LEAVE_RULES,
+  LEAVE_TYPES,
+  WORK_ITEM_RULES,
+  dailyHoursMessage,
+  dateInputRange,
+  validateLeave,
+  validateWorkItem,
+  type WorkItemErrors,
+  type WorkItemFieldName,
+  type WorkItemFormValues,
+} from '@/validation/work-item';
+
+const props = withDefaults(
+  defineProps<{
+    item?: WorkItem | null;
+    saving?: boolean;
+    /** 新增時「工作日期」的預設值：使用者在 DateNav 選到的那天 */
+    defaultDate?: string;
+    /** 新增請假（從「請假」按鈕開啟）；編輯時看 item 本身是不是請假紀錄，不看這個 */
+    leave?: boolean;
+    /** 複製：用這筆紀錄預填「新增」表單，存檔時新增一筆，原紀錄不動（item 有值時忽略） */
+    copySource?: WorkItem | null;
+  }>(),
+  {
+    saving: false,
+    defaultDate: undefined,
+    leave: false,
+    copySource: null,
+  },
+);
+
+/**
+ * 請假模式：只顯示工作日期、假別、請假時數、備註四個欄位，其餘欄位送出時一律寫入
+ * 固定值（LEAVE_FIXED_VALUES）。請假跟工作紀錄共用同一個 Drawer，未儲存確認、
+ * 送出中遮罩、項次顯示等行為都一樣
+ */
+// 新增時可以在表單上方切換「工作項目／請假」，初始值看是從哪個按鈕開啟的（複製時看來源紀錄）；
+// 表單每次開啟都重新掛載（HomeView 用 v-if），所以只需要在這裡取一次初始值
+const creatingLeave = ref(props.copySource ? isLeaveItem(props.copySource) : props.leave);
+// 是否為複製模式：複製時紀錄類型跟來源一樣，不能切換工作項目／請假（使用者決定）；
+// 表單每次開啟都重新掛載，所以取一次就好
+const copying = !props.item && !!props.copySource;
+const isLeaveMode = computed(() => (props.item ? isLeaveItem(props.item) : creatingLeave.value));
+
+const emit = defineEmits<{
+  save: [payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>];
+  cancel: [];
+}>();
+
+const {
+  options,
+  recentItems,
+  workHours,
+  loading: optionsLoading,
+  error: optionsError,
+  fetchOptions,
+} = useOptions();
+
+// 選項還在讀（或讀取失敗）時，四個可搜尋下拉選單顯示載入中／失敗狀態，不再是看起來像沒資料的空清單
+const showOptionsState = computed(() => optionsLoading.value || !!optionsError.value);
+const retryOptions = (): void => {
+  void fetchOptions();
+};
+onMounted(fetchOptions);
+
+const toSelectOptions = (values: string[] | undefined): SelectOption[] =>
+  (values ?? []).map((value) => ({ label: value, value }));
+
+// 交辦單位 ↔ 交辦人員、專案名稱 ↔ 專案 Repo：已選了一邊，另一邊的下拉選單把「近一個月最近一筆」
+// 搭配的值排最上面並標「最近」（使用者決定：只推薦、另一邊空的時候不自動填入）。規則見 utils/recent-history.ts
+const unitOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.交辦單位 ?? [], recentUnit(recentItems.value, form.交辦人員)),
+  ),
+);
+const assigneeOptions = computed(() =>
+  markRecent(
+    withRecentFirst(
+      options.value?.交辦人員 ?? [],
+      recentAssignee(recentItems.value, form.交辦單位),
+    ),
+  ),
+);
+const projectOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案名稱 ?? [], recentProject(recentItems.value, form.專案Repo)),
+  ),
+);
+const repoOptions = computed(() =>
+  markRecent(
+    withRecentFirst(options.value?.專案Repo ?? [], recentRepos(recentItems.value, form.專案名稱)),
+  ),
+);
+
+/**
+ * 推薦的選項：淡藍底（option 的 class）＋右側「最近」標籤。
+ * 用 render-option 在選項外包一層放標籤，不用 render-label：render-label 也會套用到輸入框裡已選的值，
+ * 選了推薦值時輸入框會跟著出現「最近」。下拉選單是 Naive UI teleport 到 body 的，不吃 scoped 樣式，
+ * 這幾個 class 都在 style 裡用 :global 寫
+ */
+const RECENT_OPTION_CLASS = 'work-item-form-recent-option';
+const markRecent = (list: SelectOption[]): SelectOption[] =>
+  list.map((option) => (option.recent ? { ...option, class: RECENT_OPTION_CLASS } : option));
+const renderRecentOption = ({ node, option }: { node: VNode; option: SelectOption }): VNode =>
+  option.recent
+    ? h('div', { class: 'work-item-form-recent-wrap' }, [
+        node,
+        h('span', { class: 'work-item-form-recent-tag', 'aria-hidden': 'true' }, '最近'),
+      ])
+    : node;
+const statusOptions = computed(() => toSelectOptions([...STATUS_OPTIONS]));
+const leaveTypeOptions = toSelectOptions(LEAVE_TYPES);
+
+// 預設值來自 shared/validation-schema.json
+const DEFAULT_HOURS = Number(WORK_ITEM_RULES.今日工時.default);
+const DEFAULT_PROGRESS = Number(WORK_ITEM_RULES.完成度.default);
+const DEFAULT_STATUS = String(WORK_ITEM_RULES.狀態.default);
+const DEFAULT_LEAVE_HOURS = Number(LEAVE_RULES.今日工時.default);
+
+const workDateRange = dateInputRange('工作日期');
+const deadlineRange = dateInputRange('預計期限');
+
+// 必填標示（紅色＊）跟著 schema 的 required 走，改規則時標示會自動同步
+const isRequired = (field: WorkItemFieldName): boolean => WORK_ITEM_RULES[field].required;
+const isLeaveRequired = (field: keyof typeof LEAVE_RULES): boolean => LEAVE_RULES[field].required;
+
+/**
+ * 當天其他紀錄（編輯時排除自己）的今日工時合計，由下方 updateDaySummary 查詢。
+ * 查詢中或失敗時是 null：即時驗證先不檢查每日上限，送出時 onSubmit 會補查，查不到就擋下
+ */
+const otherHours = ref<number | null>(null);
+
+const hoursOf = (values: WorkItemFormValues): number => {
+  if (values.今日工時 !== '') return values.今日工時;
+  return isLeaveMode.value ? DEFAULT_LEAVE_HOURS : DEFAULT_HOURS;
+};
+
+const validate = (values: WorkItemFormValues): WorkItemErrors => {
+  const result = isLeaveMode.value ? validateLeave(values) : validateWorkItem(values);
+  // 欄位本身已經有錯（例如超過單筆上限）就先顯示那個，不疊加每日合計的訊息
+  if (!result.今日工時 && otherHours.value !== null) {
+    const hours = hoursOf(values);
+    if (otherHours.value + hours > DAILY_HOURS_MAX) {
+      result.今日工時 = dailyHoursMessage(otherHours.value, hours);
+    }
+  }
+  return result;
+};
+
+const form = reactive<WorkItemFormValues>({
+  工作日期: todayString(),
+  交辦單位: '',
+  交辦人員: '',
+  專案名稱: '',
+  專案Repo: [],
+  工作目標: '',
+  預計期限: '',
+  處理內容: '',
+  今日工時: DEFAULT_HOURS,
+  完成度: DEFAULT_PROGRESS,
+  狀態: DEFAULT_STATUS,
+});
+
+/**
+ * 單選 NSelect 的 v-model：NSelect 只有值是 null 時才顯示 placeholder，空字串會被當成
+ * 「選了一個空的值」，placeholder 就不見了。表單內部（驗證、送出、快照比對）維持用空字串
+ * 代表「沒選」，只在跟 NSelect 交接的這一層互轉。多選的專案 Repo 是空陣列，本來就正常顯示。
+ */
+const selectModel = (field: '交辦單位' | '交辦人員' | '專案名稱' | '狀態' | '工作目標') =>
+  computed<string | null>({
+    get: () => form[field] || null,
+    set: (value) => {
+      form[field] = value ?? '';
+    },
+  });
+
+const unitModel = selectModel('交辦單位');
+const assigneeModel = selectModel('交辦人員');
+const projectModel = selectModel('專案名稱');
+const statusModel = selectModel('狀態');
+// 請假模式的假別存在「工作目標」
+const leaveTypeModel = selectModel('工作目標');
+
+/**
+ * 填完工作目標後預填（使用者決定，只在「新增」工作項目時；編輯、單項複製、請假不預填）：
+ * 工作目標離開焦點時，找近一個月「工作目標相同」的最近一筆（開頭有單號就比單號，沒有才比整段文字，
+ * 見 recentByTarget），找到就：
+ * - 預計期限、完成度、狀態：還是預設值（空白、0、待辦）才帶入，不蓋掉手動改過的值
+ * - 交辦單位、交辦人員：兩個都空才一起帶入
+ * - 專案名稱、專案 Repo：兩個都空才一起帶入
+ * 有帶入任何欄位就在工作目標下方提示帶入了哪些欄位、依據哪天的紀錄
+ */
+const prefillHint = ref('');
+
+const prefillFromTarget = (): void => {
+  if (props.item || copying || isLeaveMode.value || props.saving) return;
+  const source = recentByTarget(recentItems.value, form.工作目標);
+  if (!source) return;
+
+  const filled: string[] = [];
+  if (form.預計期限 === '' && source.預計期限) {
+    form.預計期限 = source.預計期限;
+    filled.push('預計期限');
+  }
+  if (
+    (form.完成度 === '' || form.完成度 === DEFAULT_PROGRESS) &&
+    source.完成度 !== DEFAULT_PROGRESS
+  ) {
+    form.完成度 = source.完成度;
+    filled.push('完成度');
+  }
+  if (
+    form.狀態 === DEFAULT_STATUS &&
+    source.狀態 !== DEFAULT_STATUS &&
+    (STATUS_OPTIONS as readonly string[]).includes(source.狀態)
+  ) {
+    form.狀態 = source.狀態;
+    filled.push('狀態');
+  }
+  if (!form.交辦單位 && !form.交辦人員 && (source.交辦單位 || source.交辦人員)) {
+    form.交辦單位 = source.交辦單位;
+    form.交辦人員 = source.交辦人員;
+    filled.push('交辦單位', '交辦人員');
+  }
+  if (!form.專案名稱 && form.專案Repo.length === 0 && (source.專案名稱 || source.專案Repo.length)) {
+    form.專案名稱 = source.專案名稱;
+    form.專案Repo = [...source.專案Repo];
+    filled.push('專案名稱', '專案 Repo');
+  }
+  if (filled.length > 0) {
+    prefillHint.value = `已依 ${source.工作日期.replaceAll('-', '/')} 的紀錄帶入：${filled.join('、')}`;
+  }
+};
+
+const resetForm = (item: WorkItem | null | undefined): void => {
+  form.工作日期 = item?.工作日期 ?? props.defaultDate ?? todayString();
+  form.交辦單位 = item?.交辦單位 ?? '';
+  form.交辦人員 = item?.交辦人員 ?? '';
+  form.專案名稱 = item?.專案名稱 ?? '';
+  form.專案Repo = item ? [...item.專案Repo] : [];
+  form.工作目標 = item?.工作目標 ?? '';
+  form.預計期限 = item?.預計期限 ?? '';
+  form.處理內容 = item?.處理內容 ?? '';
+  form.今日工時 = item?.今日工時 ?? DEFAULT_HOURS;
+  form.完成度 = item?.完成度 ?? DEFAULT_PROGRESS;
+  // 既有紀錄的狀態可能是空的（舊資料），編輯時一樣預設帶「待辦」（使用者決定）
+  form.狀態 = item?.狀態 || DEFAULT_STATUS;
+  if (isLeaveMode.value) {
+    // 請假的固定欄位不顯示在表單上，送出時再補；這裡只設定請假自己的預設值
+    form.今日工時 = item?.今日工時 ?? DEFAULT_LEAVE_HOURS;
+    form.狀態 = LEAVE_STATUS;
+  }
+  errors.value = {};
+  submitAttempted = false;
+  prefillHint.value = '';
+  snapshot.value = JSON.stringify(form);
+  blankSnapshot.value = snapshot.value;
+};
+
+/**
+ * 複製：用來源紀錄預填，工作日期維持 DateNav 選到的那天（resetForm 已設定）。
+ * 哪些欄位帶入、哪些清空，規則在 utils/copy-work-item.ts 的 buildCopyPayload（跟「複製本日」共用）；
+ * 這裡只把該模式表單上看得到的欄位填進去，請假的固定值一樣送出時才補。
+ * 快照取預填後的狀態，打開後沒改就關閉不會跳未儲存確認
+ */
+const applyCopySource = (source: WorkItem): void => {
+  const copied = buildCopyPayload(source, form.工作日期);
+  if (isLeaveMode.value) {
+    form.工作目標 = copied.工作目標;
+    form.今日工時 = copied.今日工時;
+    form.處理內容 = copied.處理內容;
+  } else {
+    form.交辦單位 = copied.交辦單位;
+    form.交辦人員 = copied.交辦人員;
+    form.專案名稱 = copied.專案名稱;
+    form.專案Repo = copied.專案Repo;
+    form.工作目標 = copied.工作目標;
+    form.預計期限 = copied.預計期限;
+    form.狀態 = copied.狀態;
+    form.完成度 = copied.完成度;
+    form.處理內容 = copied.處理內容;
+    form.今日工時 = copied.今日工時;
+  }
+  snapshot.value = JSON.stringify(form);
+};
+
+/**
+ * 驗證規則見 src/validation/work-item.ts（規則來源是 shared/validation-schema.json）。
+ * 第一次按儲存才開始顯示錯誤；之後每次修改都即時重新驗證，修正後錯誤訊息馬上消失。
+ * 不用瀏覽器內建驗證（form 加了 novalidate）：交辦單位、狀態這些 NSelect 不是原生
+ * 欄位，內建 required 檢查不到，全部統一走自訂驗證，錯誤樣式才一致。
+ */
+const errors = ref<WorkItemErrors>({});
+let submitAttempted = false;
+
+watch(
+  [form, otherHours],
+  () => {
+    if (submitAttempted) errors.value = validate(form);
+  },
+  { deep: true },
+);
+
+const formEl = ref<HTMLFormElement | null>(null);
+
+const scrollToFirstError = async (): Promise<void> => {
+  await nextTick();
+  const field = formEl.value?.querySelector<HTMLElement>('.work-item-form__field--invalid');
+  field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field?.querySelector<HTMLElement>('input, textarea')?.focus({ preventScroll: true });
+};
+
+/**
+ * 關閉前的未儲存確認：表單打開（resetForm）時存一份快照，關閉時跟目前的值比對。
+ * 改了又改回原值視為沒有修改，直接關閉；有修改才跳確認對話框。
+ * 存檔成功、登入錯誤這兩種關閉是 HomeView 直接關掉表單，不經過這裡，不會跳確認。
+ */
+const snapshot = ref('');
+// 該模式的空白預設值（不含複製預填），切換工作項目／請假時判斷「有沒有填內容」用
+const blankSnapshot = ref('');
+const isDirty = computed(() => JSON.stringify(form) !== snapshot.value);
+const discardConfirmOpen = ref(false);
+
+const requestClose = (): void => {
+  // 送出中不能關閉；遮罩是 div 沒辦法 disabled，點遮罩關閉要靠這裡擋
+  if (props.saving) return;
+  if (isDirty.value) {
+    discardConfirmOpen.value = true;
+  } else {
+    emit('cancel');
+  }
+};
+
+/**
+ * 按「放棄變更」：先關確認對話框，等它的離場動畫播完（Transition 的 after-leave）
+ * 才通知外層關閉表單。如果同一時間關掉兩者，表單會在對話框還沒消失前就開始滑出，
+ * 對話框跟著表單一起被帶走，順序看起來是反的。
+ */
+let discardAfterDialogLeave = false;
+
+const confirmDiscard = (): void => {
+  discardAfterDialogLeave = true;
+  discardConfirmOpen.value = false;
+};
+
+const onDiscardDialogAfterLeave = (): void => {
+  if (!discardAfterDialogLeave) return;
+  discardAfterDialogLeave = false;
+  emit('cancel');
+};
+
+/**
+ * 新增時切換「工作項目／請假」（編輯、複製都不能切換，也不顯示切換按鈕，使用者決定）：
+ * 切換後保留工作日期，其他欄位整份重設成該模式的預設值。請假的固定值（人事室、休假…）
+ * 不存在表單欄位裡，送出時才補，所以切換不會有殘留；反過來切回工作項目時，狀態（休假→待辦）
+ * 跟工時預設（8→0）也靠重設處理。
+ * 除了工作日期以外有填任何內容，就先跳確認，避免不小心清掉
+ */
+const switchConfirmOpen = ref(false);
+
+const withoutDate = (json: string): string => JSON.stringify({ ...JSON.parse(json), 工作日期: '' });
+
+const hasEnteredContent = computed(
+  () => withoutDate(JSON.stringify(form)) !== withoutDate(blankSnapshot.value),
+);
+
+const applyModeSwitch = (): void => {
+  const date = form.工作日期;
+  creatingLeave.value = !creatingLeave.value;
+  // 快照維持「預設值＋原本的預設日期」，改過的日期關閉時仍會被視為未儲存的修改
+  resetForm(null);
+  form.工作日期 = date;
+};
+
+const requestModeSwitch = (toLeave: boolean): void => {
+  if (
+    props.item ||
+    copying ||
+    props.saving ||
+    checkingDayHours.value ||
+    toLeave === creatingLeave.value
+  ) {
+    return;
+  }
+  if (hasEnteredContent.value) {
+    switchConfirmOpen.value = true;
+  } else {
+    applyModeSwitch();
+  }
+};
+
+const confirmModeSwitch = (): void => {
+  switchConfirmOpen.value = false;
+  applyModeSwitch();
+};
+
+watch(
+  () => props.item,
+  (item) => {
+    resetForm(item);
+    if (!item && props.copySource) applyCopySource(props.copySource);
+  },
+  { immediate: true },
+);
+
+/**
+ * 工作時段（請假是「請假時段」，有工時設定才顯示，使用者決定）：時段只是換算今日工時的工具，不存檔、不送後端，
+ * 也不列入「放棄變更」的快照比對。換算規則在 utils/work-hours.ts。
+ * - 打開表單、改工作日期時依項次推算：開始時間＝上班時間＋當天排在這筆前面的紀錄（含請假）工時累計
+ *   （新增、複製、編輯改到別天：接在當天所有紀錄後面；編輯沒改日期：只累計項次在它前面的）
+ * - 改時段（開始、結束都填才換算）→ 只更新今日工時，保留使用者填的時間；離開時間欄位時四捨五入到 15 分鐘
+ * - 改今日工時 → 重新推算時段
+ * 雙向連動看最後是誰改的：時段換算出的小時寫進今日工時時，下方 watch 跳過那一次，不會反過來重算時段
+ */
+const rangeStart = ref('');
+const rangeEnd = ref('');
+const rangeError = ref('');
+/** 開始時間要從上班時間往後累計的小時數；當天紀錄還沒查到（或查詢失敗）是 null，不推算 */
+const rangeOffset = ref<number | null>(null);
+// 查詢當天紀錄期間使用者改過時段，查回來時就不覆蓋使用者填的時間
+let rangeTouched = false;
+// 今日工時是由時段換算寫入的，watch 跳過這一次
+let hoursFromRange = false;
+
+const recomputeRange = (): void => {
+  rangeError.value = '';
+  const setting = workHours.value;
+  const hours = form.今日工時;
+  const range =
+    setting && rangeOffset.value !== null && hours !== ''
+      ? hoursToRange(rangeOffset.value, hours, setting)
+      : null;
+  rangeStart.value = range?.start ?? '';
+  rangeEnd.value = range?.end ?? '';
+};
+
+const applyRange = (): void => {
+  rangeTouched = true;
+  rangeError.value = '';
+  if (!workHours.value || !rangeStart.value || !rangeEnd.value) return;
+  const hours = rangeToHours(
+    roundToQuarter(rangeStart.value),
+    roundToQuarter(rangeEnd.value),
+    workHours.value,
+  );
+  if (hours === null) {
+    rangeError.value = '結束時間需晚於開始時間';
+    return;
+  }
+  if (form.今日工時 !== hours) {
+    hoursFromRange = true;
+    form.今日工時 = hours;
+  }
+};
+
+const onRangeBlur = (field: 'start' | 'end'): void => {
+  if (field === 'start') rangeStart.value = roundToQuarter(rangeStart.value);
+  else rangeEnd.value = roundToQuarter(rangeEnd.value);
+  applyRange();
+};
+
+watch(
+  () => form.今日工時,
+  () => {
+    if (hoursFromRange) {
+      hoursFromRange = false;
+      return;
+    }
+    rangeTouched = false;
+    recomputeRange();
+  },
+);
+
+// 工時設定比當天紀錄晚讀到時，補推算一次
+watch(workHours, () => {
+  if (!rangeTouched) recomputeRange();
+});
+
+/**
+ * 項次欄（唯讀，只負責顯示；項次一律由後端決定，送出的資料不含項次，後端也會忽略
+ * 前端送來的值，就算用開發者工具改了欄位也不會影響 Sheet）：
+ * - 編輯且工作日期沒改：顯示這筆紀錄目前的項次
+ * - 新增，或編輯時把工作日期改到別天：顯示那一天的預計項次
+ * 查詢中或失敗時留空（顯示 placeholder「項次」）。
+ * 同一次查詢也算出當天其他紀錄的工時合計（otherHours），編輯且日期沒改時也要查。
+ * 同一次查詢也帶回當天各紀錄的項次與工時，推算工作時段用（refreshRange 為 true 時重新推算）。
+ * 連續改日期時只採用最後一次查詢的結果，避免較早的回應晚到、蓋掉新的值。
+ * 要重新推算時段的查詢被後面的查詢（例如送出時補查）取代時，由採用結果的那次接著推算，
+ * 不然時段會一直空白。
+ */
+const indexValue = ref<number | null>(null);
+let latestDayRequest = 0;
+let rangeRefreshPending = false;
+
+const updateDaySummary = async (refreshRange: boolean): Promise<void> => {
+  const requestId = ++latestDayRequest;
+  const date = form.工作日期;
+  // 編輯且工作日期沒改：沿用這筆紀錄自己的項次
+  const ownIndex = props.item && date === props.item.工作日期 ? props.item.項次 : null;
+  indexValue.value = ownIndex;
+  otherHours.value = null;
+  if (refreshRange) {
+    rangeRefreshPending = true;
+    rangeTouched = false;
+    rangeOffset.value = null;
+  }
+  if (!date) return;
+  try {
+    const summary = await fetchDaySummary(date, props.item?.id);
+    if (requestId !== latestDayRequest) return;
+    if (ownIndex === null) indexValue.value = summary.nextIndex;
+    otherHours.value = summary.otherHours;
+    if (rangeRefreshPending) {
+      rangeRefreshPending = false;
+      // 排在這筆前面的紀錄：編輯沒改日期只算項次比它小的，其他情況（新增、複製、改到別天）是當天全部
+      rangeOffset.value = summary.entries
+        .filter(
+          (entry) => entry.id !== props.item?.id && (ownIndex === null || entry.項次 < ownIndex),
+        )
+        .reduce((sum, entry) => sum + (Number(entry.今日工時) || 0), 0);
+      if (!rangeTouched) recomputeRange();
+    }
+  } catch {
+    // 查不到就維持空白，不影響存檔（實際項次與每日工時上限都由後端寫入時把關）
+  }
+};
+
+watch([() => form.工作日期, () => props.item], () => updateDaySummary(true), { immediate: true });
+
+const title = computed(() => {
+  const subject = isLeaveMode.value ? '請假' : '工作項目';
+  if (props.item) return `編輯${subject}`;
+  return copying ? `複製${subject}` : `新增${subject}`;
+});
+
+/**
+ * 送出前補查當天工時合計的期間（「儲存」按鈕顯示「檢查中…」並停用）。
+ * 跟父層的 saving（已送出、等後端回應）是不同階段，分開管理
+ */
+const checkingDayHours = ref(false);
+
+const onSubmit = async (): Promise<void> => {
+  // 按鈕停用只擋得住畫面操作，這裡再擋一次，避免重複送出兩筆
+  if (props.saving || checkingDayHours.value) return;
+  submitAttempted = true;
+  errors.value = validate(form);
+  // 時段的結束早於或等於開始時，換算不出今日工時，擋下不送出
+  if (Object.keys(errors.value).length > 0 || rangeError.value) {
+    void scrollToFirstError();
+    return;
+  }
+  // 送出前一定要先算出當天合計：還沒查到（查詢中或先前失敗）就當場再查一次，
+  // 查不到就擋下，不放行（後端也會檢查）
+  if (otherHours.value === null) {
+    checkingDayHours.value = true;
+    try {
+      // 只補查工時合計，不重新推算時段（避免蓋掉使用者填的時間；換日期後還沒推算完的照樣推算）
+      await updateDaySummary(false);
+    } finally {
+      checkingDayHours.value = false;
+    }
+    if (otherHours.value === null) {
+      errors.value = { ...errors.value, 今日工時: '無法確認當天工時合計，請稍後再試' };
+      void scrollToFirstError();
+      return;
+    }
+    errors.value = validate(form);
+    if (Object.keys(errors.value).length > 0) {
+      void scrollToFirstError();
+      return;
+    }
+  }
+  if (isLeaveMode.value) {
+    emit('save', {
+      ...LEAVE_FIXED_VALUES,
+      專案Repo: [...LEAVE_FIXED_VALUES.專案Repo],
+      工作日期: form.工作日期,
+      工作目標: form.工作目標,
+      處理內容: form.處理內容.trim(),
+      今日工時: form.今日工時 === '' ? DEFAULT_LEAVE_HOURS : form.今日工時,
+      狀態: LEAVE_STATUS,
+    });
+    return;
+  }
+  // 文字欄位去掉前後空白；選填數字欄位清空（空字串）時用預設值
+  emit('save', {
+    工作日期: form.工作日期,
+    交辦單位: form.交辦單位.trim(),
+    交辦人員: form.交辦人員.trim(),
+    專案名稱: form.專案名稱.trim(),
+    專案Repo: form.專案Repo.map((repo) => repo.trim()).filter((repo) => repo),
+    工作目標: form.工作目標.trim(),
+    預計期限: form.預計期限,
+    處理內容: form.處理內容.trim(),
+    今日工時: form.今日工時 === '' ? DEFAULT_HOURS : form.今日工時,
+    完成度: form.完成度 === '' ? DEFAULT_PROGRESS : form.完成度,
+    狀態: form.狀態,
+  });
+};
+</script>
+
+<template>
+  <div class="work-item-form">
+    <div class="work-item-form__backdrop" @click="requestClose" />
+    <div class="work-item-form__panel" role="dialog" aria-modal="true">
+      <div class="work-item-form__header">
+        <h2 class="work-item-form__title">{{ title }}</h2>
+        <button
+          type="button"
+          aria-label="關閉"
+          class="work-item-form__close-btn"
+          :disabled="saving"
+          @click="requestClose"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div v-if="!item && !copying" class="work-item-form__mode" role="group" aria-label="紀錄類型">
+        <button
+          type="button"
+          class="work-item-form__mode-btn"
+          :class="{ 'work-item-form__mode-btn--active': !isLeaveMode }"
+          :aria-pressed="!isLeaveMode"
+          :disabled="saving || checkingDayHours"
+          @click="requestModeSwitch(false)"
+        >
+          工作項目
+        </button>
+        <button
+          type="button"
+          class="work-item-form__mode-btn work-item-form__mode-btn--leave"
+          :class="{ 'work-item-form__mode-btn--active': isLeaveMode }"
+          :aria-pressed="isLeaveMode"
+          :disabled="saving || checkingDayHours"
+          @click="requestModeSwitch(true)"
+        >
+          請假
+        </button>
+      </div>
+
+      <form
+        id="work-item-form-body"
+        ref="formEl"
+        class="work-item-form__body"
+        novalidate
+        @submit.prevent="onSubmit"
+      >
+        <div class="work-item-form__row work-item-form__row--highlight">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.工作日期 }"
+          >
+            <span class="work-item-form__label">
+              {{ isLeaveMode ? LEAVE_RULES.工作日期.label : '工作日期' }}
+              <span
+                v-if="isRequired('工作日期')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <input
+              v-model="form.工作日期"
+              type="date"
+              placeholder="請選擇工作日期"
+              required
+              :min="workDateRange.min"
+              :max="workDateRange.max"
+              :disabled="saving"
+            />
+            <span v-if="errors.工作日期" class="work-item-form__error">{{ errors.工作日期 }}</span>
+          </label>
+          <!-- 項次只負責顯示，刻意不用 input（不是表單控制項，使用者無從輸入），外層也就不用 label -->
+          <div class="work-item-form__field work-item-form__field--index">
+            項次
+            <div
+              class="work-item-form__readonly"
+              :class="{ 'work-item-form__readonly--placeholder': indexValue === null }"
+            >
+              {{ indexValue ?? '...' }}
+            </div>
+          </div>
+        </div>
+
+        <template v-if="isLeaveMode">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.工作目標 }"
+          >
+            <span class="work-item-form__label">
+              {{ LEAVE_RULES.工作目標.label }}
+              <span
+                v-if="isLeaveRequired('工作目標')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <NSelect
+              v-model:value="leaveTypeModel"
+              :options="leaveTypeOptions"
+              :status="errors.工作目標 ? 'error' : undefined"
+              placeholder="請選擇假別"
+              :disabled="saving"
+            />
+            <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
+          </label>
+
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.今日工時 }"
+          >
+            <span class="work-item-form__label">
+              {{ LEAVE_RULES.今日工時.label }}
+              <span
+                v-if="isLeaveRequired('今日工時')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <input
+              v-model.number="form.今日工時"
+              type="number"
+              placeholder="請填寫請假時數"
+              :min="LEAVE_RULES.今日工時.min"
+              :max="LEAVE_RULES.今日工時.max"
+              :step="LEAVE_RULES.今日工時.step"
+              :disabled="saving"
+            />
+            <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
+          </label>
+
+          <!-- 請假時段：有工時設定才顯示，只用來換算請假時數，不存檔（請假、工作項目各放一份，位置不同） -->
+          <div
+            v-if="workHours"
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': rangeError }"
+            role="group"
+            aria-label="請假時段"
+          >
+            請假時段
+            <div class="work-item-form__range">
+              <input
+                v-model="rangeStart"
+                type="time"
+                step="900"
+                aria-label="開始時間"
+                title="開始時間"
+                :disabled="saving"
+                @change="applyRange"
+                @blur="onRangeBlur('start')"
+              />
+              <span class="work-item-form__range-sep" aria-hidden="true">～</span>
+              <input
+                v-model="rangeEnd"
+                type="time"
+                step="900"
+                aria-label="結束時間"
+                title="結束時間"
+                :disabled="saving"
+                @change="applyRange"
+                @blur="onRangeBlur('end')"
+              />
+            </div>
+            <span v-if="rangeError" class="work-item-form__error">{{ rangeError }}</span>
+          </div>
+
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.處理內容 }"
+          >
+            {{ LEAVE_RULES.處理內容.label }}
+            <textarea
+              v-model="form.處理內容"
+              v-auto-resize
+              rows="2"
+              placeholder="請填寫請假備註"
+              :maxlength="LEAVE_RULES.處理內容.maxLength"
+              :disabled="saving"
+            />
+            <span v-if="errors.處理內容" class="work-item-form__error">{{ errors.處理內容 }}</span>
+          </label>
+        </template>
+
+        <div v-if="!isLeaveMode" class="work-item-form__row">
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.交辦單位 }"
+          >
+            <span class="work-item-form__label">
+              交辦單位
+              <span
+                v-if="isRequired('交辦單位')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <NSelect
+              v-model:value="unitModel"
+              filterable
+              tag
+              :options="unitOptions"
+              :render-option="renderRecentOption"
+              :loading="optionsLoading"
+              :status="errors.交辦單位 ? 'error' : undefined"
+              placeholder="請選擇交辦單位"
+              :disabled="saving"
+            >
+              <template v-if="showOptionsState" #empty>
+                <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+              </template>
+            </NSelect>
+            <span v-if="errors.交辦單位" class="work-item-form__error">{{ errors.交辦單位 }}</span>
+          </label>
+          <label
+            class="work-item-form__field"
+            :class="{ 'work-item-form__field--invalid': errors.交辦人員 }"
+          >
+            <span class="work-item-form__label">
+              交辦人員
+              <span
+                v-if="isRequired('交辦人員')"
+                class="work-item-form__required"
+                aria-hidden="true"
+                >＊</span
+              >
+            </span>
+            <NSelect
+              v-model:value="assigneeModel"
+              filterable
+              tag
+              :options="assigneeOptions"
+              :render-option="renderRecentOption"
+              :loading="optionsLoading"
+              :status="errors.交辦人員 ? 'error' : undefined"
+              placeholder="請選擇交辦人員"
+              :disabled="saving"
+            >
+              <template v-if="showOptionsState" #empty>
+                <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+              </template>
+            </NSelect>
+            <span v-if="errors.交辦人員" class="work-item-form__error">{{ errors.交辦人員 }}</span>
+          </label>
+        </div>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.專案名稱 }"
+        >
+          <span class="work-item-form__label">
+            專案名稱
+            <span v-if="isRequired('專案名稱')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
+          </span>
+          <NSelect
+            v-model:value="projectModel"
+            filterable
+            tag
+            :options="projectOptions"
+            :render-option="renderRecentOption"
+            :loading="optionsLoading"
+            :status="errors.專案名稱 ? 'error' : undefined"
+            placeholder="請選擇專案名稱"
+            :disabled="saving"
+          >
+            <template v-if="showOptionsState" #empty>
+              <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+            </template>
+          </NSelect>
+          <span v-if="errors.專案名稱" class="work-item-form__error">{{ errors.專案名稱 }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.專案Repo }"
+        >
+          專案 Repo（可多個）
+          <NSelect
+            v-model:value="form.專案Repo"
+            filterable
+            multiple
+            tag
+            :options="repoOptions"
+            :render-option="renderRecentOption"
+            :loading="optionsLoading"
+            :status="errors.專案Repo ? 'error' : undefined"
+            placeholder="請選擇專案 Repo (選填)"
+            :disabled="saving"
+          >
+            <template v-if="showOptionsState" #empty>
+              <OptionsDropdownState :loading="optionsLoading" @retry="retryOptions" />
+            </template>
+          </NSelect>
+          <span v-if="errors.專案Repo" class="work-item-form__error">{{ errors.專案Repo }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.工作目標 }"
+        >
+          <span class="work-item-form__label">
+            工作目標
+            <span v-if="isRequired('工作目標')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
+          </span>
+          <textarea
+            v-model="form.工作目標"
+            v-auto-resize
+            rows="2"
+            placeholder="請填寫工作目標"
+            required
+            :maxlength="WORK_ITEM_RULES.工作目標.maxLength"
+            :disabled="saving"
+            @blur="prefillFromTarget"
+          />
+          <span v-if="errors.工作目標" class="work-item-form__error">{{ errors.工作目標 }}</span>
+          <span v-if="prefillHint" class="work-item-form__hint" role="status">{{
+            prefillHint
+          }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.處理內容 }"
+        >
+          處理內容
+          <textarea
+            v-model="form.處理內容"
+            v-auto-resize
+            rows="2"
+            placeholder="請填寫處理內容"
+            :maxlength="WORK_ITEM_RULES.處理內容.maxLength"
+            :disabled="saving"
+          />
+          <span v-if="errors.處理內容" class="work-item-form__error">{{ errors.處理內容 }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.今日工時 }"
+        >
+          今日工時
+          <input
+            v-model.number="form.今日工時"
+            type="number"
+            placeholder="請填寫今日工時"
+            :min="WORK_ITEM_RULES.今日工時.min"
+            :max="WORK_ITEM_RULES.今日工時.max"
+            :step="WORK_ITEM_RULES.今日工時.step"
+            :disabled="saving"
+          />
+          <span v-if="errors.今日工時" class="work-item-form__error">{{ errors.今日工時 }}</span>
+        </label>
+
+        <!-- 工作時段：有工時設定才顯示，只用來換算今日工時，不存檔（請假、工作項目各放一份，位置不同） -->
+        <div
+          v-if="workHours && !isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': rangeError }"
+          role="group"
+          aria-label="工作時段"
+        >
+          工作時段
+          <div class="work-item-form__range">
+            <input
+              v-model="rangeStart"
+              type="time"
+              step="900"
+              aria-label="開始時間"
+              title="開始時間"
+              :disabled="saving"
+              @change="applyRange"
+              @blur="onRangeBlur('start')"
+            />
+            <span class="work-item-form__range-sep" aria-hidden="true">～</span>
+            <input
+              v-model="rangeEnd"
+              type="time"
+              step="900"
+              aria-label="結束時間"
+              title="結束時間"
+              :disabled="saving"
+              @change="applyRange"
+              @blur="onRangeBlur('end')"
+            />
+          </div>
+          <span v-if="rangeError" class="work-item-form__error">{{ rangeError }}</span>
+        </div>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.完成度 }"
+        >
+          完成度 (0–100)
+          <input
+            v-model.number="form.完成度"
+            type="number"
+            placeholder="請填寫完成度(%)"
+            :min="WORK_ITEM_RULES.完成度.min"
+            :max="WORK_ITEM_RULES.完成度.max"
+            :step="WORK_ITEM_RULES.完成度.step"
+            :disabled="saving"
+          />
+          <span v-if="errors.完成度" class="work-item-form__error">{{ errors.完成度 }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.預計期限 }"
+        >
+          預計期限
+          <input
+            v-model="form.預計期限"
+            type="date"
+            placeholder="請選擇預計期限"
+            :min="deadlineRange.min"
+            :max="deadlineRange.max"
+            :disabled="saving"
+          />
+          <span v-if="errors.預計期限" class="work-item-form__error">{{ errors.預計期限 }}</span>
+        </label>
+
+        <label
+          v-if="!isLeaveMode"
+          class="work-item-form__field"
+          :class="{ 'work-item-form__field--invalid': errors.狀態 }"
+        >
+          <span class="work-item-form__label">
+            狀態
+            <span v-if="isRequired('狀態')" class="work-item-form__required" aria-hidden="true"
+              >＊</span
+            >
+          </span>
+          <NSelect
+            v-model:value="statusModel"
+            :options="statusOptions"
+            :status="errors.狀態 ? 'error' : undefined"
+            placeholder="請選擇狀態"
+            :disabled="saving"
+          />
+          <span v-if="errors.狀態" class="work-item-form__error">{{ errors.狀態 }}</span>
+        </label>
+      </form>
+
+      <div class="work-item-form__footer">
+        <button type="button" class="work-item-form__btn" :disabled="saving" @click="requestClose">
+          取消
+        </button>
+        <button
+          type="submit"
+          form="work-item-form-body"
+          class="work-item-form__btn work-item-form__btn--primary"
+          :disabled="saving || checkingDayHours"
+        >
+          {{ saving ? '儲存中…' : checkingDayHours ? '檢查中…' : '儲存' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 送出中蓋一層滿版遮罩，擋住所有點擊，避免重複送出或誤操作；欄位與按鈕本身也都停用 -->
+    <div v-if="saving" class="work-item-form__loading-mask">
+      <AppLoading label="儲存中" />
+    </div>
+
+    <Transition name="confirm-dialog" @after-leave="onDiscardDialogAfterLeave">
+      <ConfirmDialog
+        v-if="discardConfirmOpen"
+        title="要放棄變更嗎？"
+        message="關閉後，這次填寫或修改的內容都不會被儲存。"
+        confirm-label="放棄變更"
+        cancel-label="繼續編輯"
+        danger
+        @confirm="confirmDiscard"
+        @cancel="discardConfirmOpen = false"
+      />
+    </Transition>
+
+    <Transition name="confirm-dialog">
+      <ConfirmDialog
+        v-if="switchConfirmOpen"
+        :title="isLeaveMode ? '要改填工作項目嗎？' : '要改填請假嗎？'"
+        message="切換後，除了日期以外已填寫的內容都會清空。"
+        confirm-label="切換"
+        cancel-label="繼續編輯"
+        danger
+        @confirm="confirmModeSwitch"
+        @cancel="switchConfirmOpen = false"
+      />
+    </Transition>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.work-item-form {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background: rgb(27 31 39 / 35%);
+
+    @media (min-width: 768px) {
+      display: block;
+    }
+  }
+
+  &__panel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-black-000);
+
+    @media (min-width: 768px) {
+      inset: 0 0 0 auto;
+      width: min(440px, 100%);
+      box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
+    }
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--color-black-100);
+
+    @media (min-width: 768px) {
+      padding: 20px 24px;
+    }
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-black-800);
+  }
+
+  &__close-btn {
+    font-size: 18px;
+    line-height: 1;
+    color: var(--color-black-500);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+
+  // 新增時的「工作項目／請假」兩段式切換
+  &__mode {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin: 12px 16px;
+    background: var(--color-black-050);
+    border: 1px solid var(--color-black-100);
+    border-radius: 8px;
+
+    @media (min-width: 768px) {
+      margin: 16px 24px;
+    }
+
+    &-btn {
+      flex: 1;
+      padding: 6px 12px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--color-black-500);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+
+      &--active {
+        font-weight: 600;
+        color: var(--color-blue-700);
+        background: var(--color-black-000);
+        box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+      }
+
+      // 「請假」那一段選到時用 teal，跟請假按鈕、表格請假列同一個色系
+      &--leave.work-item-form__mode-btn--active {
+        color: var(--color-teal-700);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+    }
+  }
+
+  &__body {
+    display: flex;
+    flex-grow: 1;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    overflow: auto;
+
+    @media (min-width: 768px) {
+      padding: 20px 24px;
+    }
+  }
+
+  &__row {
+    display: flex;
+    gap: 10px;
+
+    .work-item-form__field {
+      flex: 1;
+      min-width: 0;
+
+      // 項次只放幾位數字，固定窄欄，剩下的寬度都給同一行的工作日期
+      &--index {
+        flex: 0 0 36px;
+      }
+    }
+
+    // 工作日期＋項次這一行整個框起來，作為表單最醒目的區塊
+    &--highlight {
+      padding: 8px 16px;
+      margin-top: -16px;
+      margin-right: -16px;
+      margin-left: -16px;
+      background: var(--color-black-050);
+      border-top: 1px solid var(--color-blue-200);
+      border-bottom: 1px solid var(--color-blue-200);
+
+      @media (min-width: 768px) {
+        padding: 10px 24px;
+        margin-top: -20px;
+        margin-right: -24px;
+        margin-left: -24px;
+      }
+
+      .work-item-form__field {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-blue-500);
+      }
+
+      input {
+        font-size: 15px;
+        font-weight: 700;
+        border-color: var(--color-blue-500);
+      }
+    }
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--color-black-500);
+
+    input,
+    textarea {
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--color-black-800);
+      border: 1px solid var(--color-black-100);
+      border-radius: 6px;
+
+      // 送出中停用（NSelect 用自己的 disabled 樣式）
+      &:disabled {
+        color: var(--color-black-500);
+        cursor: not-allowed;
+        background: var(--color-black-050);
+      }
+    }
+
+    // 高度隨內容自動調整（v-auto-resize），不需要手動拉
+    textarea {
+      resize: none;
+    }
+
+    // 驗證錯誤：原生 input／textarea 邊框變紅（NSelect 用自己的 status="error"）。
+    // 同樣寫在 .work-item-form__row--highlight 之後，才蓋得過工作日期的藍色邊框
+    &--invalid {
+      input,
+      textarea {
+        border-color: var(--color-red-600);
+      }
+    }
+  }
+
+  // 假的唯讀輸入框（項次）：外觀模仿停用的 input（灰底灰框），但只是一般的 div，
+  // 不是表單控制項。line-height: normal 讓高度跟同一行的原生日期 input 對齊；
+  // 欄寬只有 36px，左右不留內距，兩位數才放得下
+  &__readonly {
+    padding: 7px 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: normal;
+    color: var(--color-black-500);
+    text-align: center;
+    cursor: not-allowed;
+    background: var(--color-black-100);
+    border: 1px solid var(--color-black-200);
+    border-radius: 6px;
+
+    // 字級維持一樣，取得項次前後高度才不會跳動
+    &--placeholder {
+      font-weight: 400;
+      color: var(--color-black-300);
+    }
+  }
+
+  // 工作時段：開始時間～結束時間兩個時間欄並排
+  &__range {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+
+    input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__range-sep {
+    color: var(--color-black-500);
+  }
+
+  &__error {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-red-600);
+  }
+
+  // 欄位名稱＋必填標示包成一段，label 本身是 flex column，不包的話＊會被擠到下一行
+  &__label {
+    display: flex;
+    gap: 2px;
+    align-items: baseline;
+  }
+
+  &__required {
+    color: var(--color-red-600);
+  }
+
+  // 填完工作目標後預填的提示
+  &__hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-blue-700);
+  }
+
+  // 交辦單位／交辦人員下拉選單的「最近」推薦：選單 teleport 到 body，要用 :global。
+  // 底色畫在 Naive UI 選項自己用來畫底色的 ::before 上，滑過、已選取時維持 Naive UI 原本的顏色
+  :global(
+    .n-base-select-option.work-item-form-recent-option:not(
+        .n-base-select-option--pending,
+        .n-base-select-option--selected
+      )::before
+  ) {
+    background-color: var(--color-blue-050);
+  }
+
+  // 右側留位置給「最近」標籤（已選取時 Naive UI 的勾勾也在右側，標籤放在勾勾左邊）
+  :global(.n-base-select-option.work-item-form-recent-option) {
+    padding-right: 76px;
+  }
+
+  :global(.work-item-form-recent-wrap) {
+    position: relative;
+  }
+
+  :global(.work-item-form-recent-tag) {
+    position: absolute;
+    top: 50%;
+    right: 36px;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--color-blue-700);
+    pointer-events: none;
+    background: var(--color-blue-100);
+    border-radius: 999px;
+    transform: translateY(-50%);
+  }
+
+  &__footer {
+    display: flex;
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid var(--color-black-100);
+
+    @media (min-width: 768px) {
+      padding: 16px 24px;
+    }
+  }
+
+  &__btn {
+    flex: 1;
+    padding: 9px;
+    font-size: 14px;
+    color: var(--color-black-800);
+    cursor: pointer;
+    background: var(--color-black-000);
+    border: 1px solid var(--color-black-100);
+    border-radius: 6px;
+
+    &--primary {
+      font-weight: 600;
+      color: var(--color-black-000);
+      background: var(--color-blue-500);
+      border: none;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+
+  // 送出中的滿版遮罩：疊在 panel 與背景之上（同一個 .work-item-form 內，DOM 順序在後），
+  // Toast（z-index 200）仍在它上方，存檔失敗的訊息看得到。
+  // 半透明的頁面底色：用 color-mix 把 black-000 調成 70% 不透明，淺色是半透明白、深色是半透明黑
+  &__loading-mask {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: wait;
+    background: color-mix(in srgb, var(--color-black-000) 70%, transparent);
+  }
+
+  /*
+ * 進場/退場動畫：手機由下往上滑入，≥768px（平板/桌面）由右側滑入。
+ * 動畫套在外層 .work-item-form（Transition 元件套用 class 的地方），
+ * 用子選擇器分別控制 panel 的位移跟 backdrop 的淡入淡出。
+ *
+ * 根元素（.work-item-form）自己也要宣告 transition：Vue 判斷動畫時長是看
+ * Transition 套用 class 的那個元素（也就是這個元件的根節點）身上的
+ * transition-duration，不會往子元素找。根元素本身沒有位移，這條純粹是
+ * 讓 Vue 抓到正確的 0.25s，離場時才會等動畫播完再把元素移除 DOM，
+ * 不然關閉會直接被瞬間拔掉，子元素的滑出動畫來不及播放。
+ */
+  &-enter-active,
+  &-leave-active {
+    transition: transform 0.25s ease;
+  }
+
+  &-enter-active &__panel,
+  &-leave-active &__panel {
+    transition: transform 0.25s ease;
+  }
+
+  &-enter-active &__backdrop,
+  &-leave-active &__backdrop {
+    transition: opacity 0.25s ease;
+  }
+
+  &-enter-from &__panel,
+  &-leave-to &__panel {
+    transform: translateY(100%);
+
+    @media (min-width: 768px) {
+      transform: translateX(100%);
+    }
+  }
+
+  &-enter-from &__backdrop,
+  &-leave-to &__backdrop {
+    opacity: 0;
+  }
+}
+</style>

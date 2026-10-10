@@ -1,0 +1,62 @@
+{
+  "name": "progress",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "engines": {
+    "node": ">=24.1.0"
+  },
+  "packageManager": "npm@11.3.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --fix",
+    "lint:style": "stylelint \"src/**/*.{css,scss,vue}\" --fix",
+    "format": "prettier --write src/",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test --project=mobile --project=tablet --project=desktop",
+    "test:e2e:safari": "playwright test --project=iphone --project=desktop-safari"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "naive-ui": "^2.45.3",
+    "vue": "^3.5.42",
+    "vue-draggable-plus": "^0.6.1",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^24.13.3",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vitest/coverage-v8": "^5.0.3",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "@vue/test-utils": "~2.4.11",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "fast-check": "^4.10.2",
+    "happy-dom": "^20.14.6",
+    "msw": "^2.15.0",
+    "postcss-html": "^2.0.0",
+    "prettier": "^3.9.7",
+    "sass": "^1.104.1",
+    "stylelint": "^17.15.0",
+    "stylelint-config-recess-order": "^7.8.0",
+    "stylelint-config-recommended-vue": "^2.0.0",
+    "stylelint-config-standard-scss": "^17.0.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.3",
+    "vue-tsc": "^3.3.11"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+name: 部署正式站
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: 檢查部署用的變數
+        env:
+          VITE_APPS_SCRIPT_URL: ${{ vars.VITE_APPS_SCRIPT_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          if [ -z "$VITE_APPS_SCRIPT_URL" ] || [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
+            echo "::error::請到 Settings → Secrets and variables → Actions → Variables 設定 VITE_APPS_SCRIPT_URL 與 VITE_GOOGLE_CLIENT_ID"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # 只檢查不修正（npm run lint / lint:style 帶 --fix，CI 上不適用）
+      - run: npx eslint .
+      - run: npx stylelint "src/**/*.{css,scss,vue}"
+
+      - run: npm run test:run
+
+      - name: 建置
+        env:
+          VITE_APPS_SCRIPT_URL: ${{ vars.VITE_APPS_SCRIPT_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: npx vue-tsc -b && npx vite build --base=/Progress/
+
+      # 部署到 gh-pages 分支根目錄
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
