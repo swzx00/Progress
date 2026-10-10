@@ -67,7 +67,10 @@ export const postApi = async <T extends DoPostResponse>(
 ): Promise<T> => {
   const res = await fetch(API_BASE_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // 刻意用 text/plain：application/json 會讓瀏覽器跨網域時先送 OPTIONS 預檢，
+    // Apps Script 不回應預檢，正式站（github.io）的寫入會全部被 CORS 擋下。
+    // 後端 doPost 用 JSON.parse(e.postData.contents)，不看 Content-Type。
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ idToken, ...payload }),
   });
   const data = (await res.json()) as T;
