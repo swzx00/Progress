@@ -20,6 +20,7 @@
 | `src/pages/HomeView.spec.ts` | 主畫面流程：存檔、刪除、複製本日、項次調整失敗時的處理（登入錯誤關閉畫面並登出，其他錯誤保留畫面）、複製本日的工時檢查與覆蓋確認 |
 | `tests/backend/contract.ts` | 後端共同規格：MSW 與 `Code.gs` 跑同一組案例（見下方） |
 | `tests/msw/*.spec.ts` | MSW 假後端跑後端共同規格 |
+| `tests/property/*.spec.ts` | 隨機輸入測試（fast-check）：日期字串、工時換算在任意輸入下都要成立的性質，以及前後端手動同步的規則（欄位驗證、請假驗證、工時設定驗證、工時合計訊息、搜尋比對）用隨機輸入比對前端與 `Code.gs`（見下方） |
 | `tests/export/*.spec.ts` | 匯出 Excel 的檔案內容：真的產生 .xlsx 再用 ExcelJS 讀回來，檢查分頁、欄位、日期儲存格、樣式，顏色跟 `tokens.scss` 淺色模式比對 |
 | `e2e/*.e2e.ts` | Playwright 瀏覽器測試：RWD、深色模式、文字截斷、完整操作流程、無障礙（見下方） |
 | `src/testing/` | 測試用的假資料：`fixtures.ts`（`makeItem`／`makeRecent`，只覆寫測試在意的欄位）、`taiwan-calendar.ts`（產生一整年的假行事曆，可指定國定假日與補班日） |
@@ -60,6 +61,12 @@
 `tests/apps-script/sheet.spec.ts` 測共同規格看不到的 Sheet 細節：自動建分頁與表頭、儲存格型別、文字欄位不被轉型、每次寫入後排序、超過 1000 列自動補列、手動編輯過的分頁照樣讀得到、已刪除紀錄分頁、選項清單的數字值與連續、`compactOptionsSheet`、工時設定、登入驗證、近期紀錄、搜尋與匯出範圍。
 
 `tests/apps-script/legacy-import.spec.ts` 測一次性匯入 `LegacyImport.gs`：`loadCodeGsBackend({}, { extraFiles: ['LegacyImport.gs'] })` 跟 `Code.gs` 一起載入（同一個 Apps Script 專案共用全域），兩份舊表用 `backend.newSpreadsheet()` 建、放進 `backend.books`（`openById` 用 ID 找）。測分頁名稱與期限的日期解析、Repo 拆行、狀態對應、請假判斷、略過的分頁、項次補號、選項清單排序、預覽不動資料，以及正式匯入後用 `doGet` 讀回來。
+
+### 隨機輸入測試
+
+`tests/property/` 用 [fast-check](https://fast-check.dev/) 產生大量隨機輸入，檢查「不管輸入什麼都要成立」的性質，補挑選案例想不到的組合。產生器在 `arbitraries.ts`，刻意混進邊界值與不合法的值（不存在的日期、非 0.25 倍數、字數上限 ±2、格式不對的時間）。失敗時會印出縮到最小的反例和 `seed`，把 seed 填進 `fc.assert(..., { seed })` 就能重現；反例確定是規則該處理的情況時，也加進對應的挑選案例（例如 `consistency.spec.ts`）。
+
+產生器只產生前端真的會送出的值：前端日期不會有斜線、空白的搜尋關鍵字後端在比對前就回錯誤，這類情況用產生器或 `fc.pre` 排除，不算前後端不一致。
 
 假的試算表終究不是真的 Sheet（例如科學記號、千分位、地區格式的自動轉型沒有模擬），部署後還是要照實機測試清單手動驗證一次。
 
