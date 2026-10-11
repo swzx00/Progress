@@ -967,8 +967,11 @@ const onWorkHoursUnauthorized = (): void => {
     color: var(--color-red-600);
   }
 
+  // Google 個人化登入按鈕是 iframe，內頁沒宣告 color-scheme（淺色）；深色模式時外層繼承 dark，
+  // 兩邊不一致瀏覽器會把 iframe 背景畫成不透明白底，圓角按鈕外露出白邊，所以這裡固定 light
   &__signin {
     margin-left: auto;
+    color-scheme: light;
   }
 
   &__signout-btn {

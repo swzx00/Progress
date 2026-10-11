@@ -93,9 +93,36 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
         :disabled="prevWorkdayDisabled"
         @click="jumpToWorkday(-1)"
       >
-        ⏮
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m11 17-5-5 5-5" />
+          <path d="m18 17-5-5 5-5" />
+        </svg>
       </button>
-      <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">◀</button>
+      <button type="button" class="date-nav__btn" aria-label="上一天" @click="shift(-1)">
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </button>
       <NDatePicker
         class="date-nav__picker"
         :class="{ 'date-nav__picker--today': isToday }"
@@ -107,7 +134,21 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
         :first-day-of-week="6"
         @update:value="onPickerUpdate"
       />
-      <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">▶</button>
+      <button type="button" class="date-nav__btn" aria-label="下一天" @click="shift(1)">
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
       <button
         type="button"
         class="date-nav__btn"
@@ -116,7 +157,20 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
         :disabled="nextWorkdayDisabled"
         @click="jumpToWorkday(1)"
       >
-        ⏭
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 17 5-5-5-5" />
+          <path d="m13 17 5-5-5-5" />
+        </svg>
       </button>
     </div>
     <!-- 放假徽章＋工時合計（同一區塊）與今天：桌面、平板靠右；手機自成一列，左右對齊 -->
@@ -171,6 +225,12 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   height: 32px;
   aspect-ratio: 1/1;
   padding: 4px;
+}
+
+// 圖示用 Lucide SVG，不用 ⏮ ◀ ▶ ⏭ 字元：iOS 會把這類字元畫成彩色 emoji
+.date-nav__icon {
+  width: 16px;
+  height: 16px;
 }
 
 .date-nav__today {
