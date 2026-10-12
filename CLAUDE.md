@@ -49,7 +49,7 @@
 - **項次**每天從 1 開始，新增時由後端決定（最大項次＋1）
 - **請假**：同一分頁，狀態＝`休假`，固定欄位由後端覆蓋（`leave.fixed`），不寫回選項清單，`休假` 不在 `STATUS_OPTIONS` 裡
 - **刪除**：整列搬到「已刪除紀錄」分頁封存（多一欄刪除時間）
-- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」欄
+- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」欄
 - 每日工時合計（含請假）不可超過 24 小時，前後端都擋；超過 8 小時只在畫面標紅
 - 資料模式是日誌式：同一專案每天新增一列，不覆寫舊資料
 
@@ -57,8 +57,8 @@
 
 完整說明見 [docs/api.md](docs/api.md)。
 
-- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
-- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`
+- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定＋樣式設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
+- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
@@ -81,6 +81,7 @@
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
   | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
   | 工時設定驗證 | `src/utils/work-hours.ts` 的 `validateWorkHoursSetting` ↔ `Code.gs` 的 `validateWorkHours_` |
+  | 樣式設定的值 | `src/composables/useTheme.ts` 的 `THEME_MODES` ↔ `Code.gs` 的 `THEME_MODE_VALUES` ↔ MSW |
   | 近期紀錄 | 前端 `RECENT_DAYS`／`filterRecentItems` ↔ `Code.gs` 的 `getRecentItems_` |
   | MSW 假後端 | `src/mocks/handlers.ts` 整體跟 `Code.gs` 同規則 |
   | 字體、行高 | `src/style.scss` 的 `body` ↔ `App.vue` 的 `themeOverrides.common`（`fontFamily`、`lineHeight`） |
@@ -129,7 +130,7 @@ src/
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
-    useTheme.ts            # 深色模式：自動（依日出日落）／淺色／深色，套用 <html data-theme>
+    useTheme.ts            # 深色模式：自動（依日出日落，只有登入才能用；登出時維持當下的顏色）／淺色／深色，套用 <html data-theme>；擁有者的設定存在 Sheet 跨裝置同步（HomeView 登入後讀、切換時寫回）
     useScrollLock.ts      # 有遮罩的畫面（表單 Drawer、Modal／對話框）開著時鎖住頁面捲動、隱藏捲軸（模組層級計數，可疊多層），在元件 setup 呼叫
     useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
