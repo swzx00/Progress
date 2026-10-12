@@ -68,7 +68,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
-      include: ['src/**/*.spec.ts', 'tests/**/*.spec.ts'],
+      // 測試檔一律放在 tests/（單元、元件測試在 tests/unit/，結構照 src/），不跟正式程式碼混在一起
+      include: ['tests/**/*.spec.ts'],
       // 日期相關的測試要固定在台灣時區，換機器（CI 是 UTC）結果才一致
       globalSetup: ['./vitest.global-setup.ts'],
       // 第一次載入元件（例如 DateNav 的 beforeEach）在 Windows 上可能超過預設的 10 秒
@@ -77,7 +78,7 @@ export default defineConfig(({ mode }) => {
       coverage: {
         provider: 'v8',
         include: ['src/**'],
-        exclude: ['src/**/*.spec.ts', 'src/testing/**', 'src/main.ts', 'src/mocks/browser.ts'],
+        exclude: ['src/testing/**', 'src/main.ts', 'src/mocks/browser.ts'],
         reporter: ['text-summary', 'html'],
       },
     },
