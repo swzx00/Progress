@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getSunTimes } from '@/utils/sun-times';
 
 /**
- * 深色模式：自動依台北日出日落切換、淺色／深色固定、選擇記在 localStorage、讀寫失敗當作自動。
+ * 深色模式：自動依台北日出日落切換（只有登入才能用，未登入用淺色）、淺色／深色固定、選擇記在 localStorage、讀寫失敗當作自動。
  * 時間用假的計時器控制（時區固定台灣）；狀態在模組層級，每個測試重新載入
  */
 // 2026/06/21（夏至）台北日落約 18:47、隔天日出約 05:05
@@ -27,7 +27,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('自動（預設）', () => {
+/** 登入過的瀏覽器（自動登入的標記）：一開始就照自動套用 */
+const loggedInBefore = (): void => localStorage.setItem('progress:auto-login', '1');
+
+describe('自動（預設，登入才能用）', () => {
+  beforeEach(loggedInBefore);
+
   it('白天淺色、晚上深色', async () => {
     vi.setSystemTime(DAY);
     const { initTheme, useTheme } = await load();
@@ -94,12 +99,91 @@ describe('淺色／深色', () => {
   });
 
   it('從固定改回自動，依現在時間決定', async () => {
+    loggedInBefore();
     vi.setSystemTime(NIGHT);
     const { initTheme, useTheme } = await load();
     initTheme();
     useTheme().setMode('light');
     expect(theme()).toBe('light');
     useTheme().setMode('auto');
+    expect(theme()).toBe('dark');
+  });
+});
+
+describe('未登入不能用自動', () => {
+  it('新訪客（記住的是自動）：用淺色，晚上也不會變深色', async () => {
+    vi.setSystemTime(NIGHT);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    expect(useTheme().mode.value).toBe('auto');
+    expect(useTheme().effectiveMode.value).toBe('light');
+    expect(theme()).toBe('light');
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    expect(theme()).toBe('light');
+  });
+
+  it('手動選的淺色、深色照常有效', async () => {
+    vi.setSystemTime(DAY);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    useTheme().setMode('dark');
+    expect(theme()).toBe('dark');
+  });
+
+  it('晚上登出：維持登出當下的深色，之後重新整理、到白天也不變；再登入恢復自動', async () => {
+    vi.setSystemTime(NIGHT);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    const { setAutoAllowed, effectiveMode } = useTheme();
+    setAutoAllowed(true);
+    expect(effectiveMode.value).toBe('auto');
+    expect(theme()).toBe('dark');
+
+    setAutoAllowed(false);
+    expect(effectiveMode.value).toBe('dark');
+    expect(theme()).toBe('dark');
+    expect(localStorage.getItem('theme-mode')).toBeNull();
+
+    vi.resetModules();
+    vi.setSystemTime(new Date('2026-06-22T12:00:00'));
+    const reloaded = await load();
+    reloaded.initTheme();
+    expect(theme()).toBe('dark');
+
+    reloaded.useTheme().setAutoAllowed(true);
+    expect(reloaded.useTheme().effectiveMode.value).toBe('auto');
+    expect(theme()).toBe('light');
+  });
+
+  it('白天登出：維持淺色，晚上也不變', async () => {
+    vi.setSystemTime(DAY);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    useTheme().setAutoAllowed(true);
+    useTheme().setAutoAllowed(false);
+    expect(theme()).toBe('light');
+    vi.advanceTimersByTime(12 * 60 * 60 * 1000);
+    expect(theme()).toBe('light');
+  });
+
+  it('未登入時手動選淺色／深色：以手動選的為準，再登入也維持（不再是自動）', async () => {
+    vi.setSystemTime(NIGHT);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    useTheme().setMode('light');
+    useTheme().setAutoAllowed(true);
+    expect(useTheme().effectiveMode.value).toBe('light');
+    expect(theme()).toBe('light');
+  });
+
+  it('登入過的瀏覽器一開始先照自動套用（自動登入完成前不閃淺色）；自動登入失敗就維持當下的顏色', async () => {
+    loggedInBefore();
+    vi.setSystemTime(NIGHT);
+    const { initTheme, useTheme } = await load();
+    initTheme();
+    expect(theme()).toBe('dark');
+    useTheme().setAutoAllowed(false);
+    expect(useTheme().effectiveMode.value).toBe('dark');
     expect(theme()).toBe('dark');
   });
 });

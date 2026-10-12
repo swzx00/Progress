@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   ensureFreshLogin: vi.fn(),
   showToast: vi.fn(),
   rememberItems: vi.fn(),
+  savedThemeMode: null as unknown as Ref<string | null>,
+  fetchOptions: vi.fn(),
+  saveThemeMode: vi.fn(),
+  setThemeMode: vi.fn(),
   fetchByDate: vi.fn(),
   fetchRange: vi.fn(),
   createItem: vi.fn(),
@@ -83,9 +87,18 @@ vi.mock('@/composables/useWorkItems', async (importOriginal) => {
   };
 });
 
-vi.mock('@/composables/useOptions', () => ({
-  useOptions: () => ({ rememberItems: mocks.rememberItems }),
-}));
+vi.mock('@/composables/useOptions', async () => {
+  const { ref: vueRef } = await import('vue');
+  mocks.savedThemeMode = vueRef<string | null>(null);
+  return {
+    useOptions: () => ({
+      rememberItems: mocks.rememberItems,
+      themeMode: mocks.savedThemeMode,
+      fetchOptions: mocks.fetchOptions,
+      saveThemeMode: mocks.saveThemeMode,
+    }),
+  };
+});
 
 vi.mock('@/composables/useToast', () => ({
   useToast: () => ({ showToast: mocks.showToast }),
@@ -99,7 +112,13 @@ vi.mock('@/composables/useTheme', async () => {
   const { ref: vueRef } = await import('vue');
   return {
     THEME_MODES: [],
-    useTheme: () => ({ mode: vueRef('auto'), isDark: vueRef(false), setMode: vi.fn() }),
+    useTheme: () => ({
+      mode: vueRef('auto'),
+      effectiveMode: vueRef('auto'),
+      isDark: vueRef(false),
+      setMode: mocks.setThemeMode,
+      setAutoAllowed: vi.fn(),
+    }),
   };
 });
 
@@ -191,6 +210,54 @@ beforeEach(() => {
   mocks.fetchRange.mockResolvedValue(undefined);
   mocks.ensureFreshLogin.mockResolvedValue(true);
   mocks.tryAutoLogin.mockResolvedValue(false);
+  mocks.savedThemeMode.value = null;
+  mocks.fetchOptions.mockResolvedValue(undefined);
+  mocks.saveThemeMode.mockResolvedValue(undefined);
+});
+
+describe('樣式設定跨裝置同步', () => {
+  /** 標題旁的樣式按鈕（第一個 NDropdown）選了某個樣式 */
+  const chooseTheme = async (wrapper: VueWrapper, mode: string): Promise<void> => {
+    wrapper.findComponent(NDropdown).vm.$emit('select', `theme:${mode}`);
+    await flushPromises();
+  };
+
+  it('登入後讀 Sheet 上的樣式設定並套用', async () => {
+    mocks.fetchOptions.mockImplementation(async () => {
+      mocks.savedThemeMode.value = 'dark';
+    });
+    await mountView();
+    expect(mocks.fetchOptions).toHaveBeenCalled();
+    expect(mocks.setThemeMode).toHaveBeenCalledWith('dark');
+  });
+
+  it('Sheet 上沒有設定：不改這台裝置的樣式', async () => {
+    await mountView();
+    expect(mocks.setThemeMode).not.toHaveBeenCalled();
+  });
+
+  it('登入時切換樣式：套用並寫回 Sheet', async () => {
+    const wrapper = await mountView();
+    await chooseTheme(wrapper, 'light');
+    expect(mocks.setThemeMode).toHaveBeenCalledWith('light');
+    expect(mocks.saveThemeMode).toHaveBeenCalledWith('token', 'light');
+  });
+
+  it('跟 Sheet 上的一樣：不重複寫入', async () => {
+    mocks.savedThemeMode.value = 'dark';
+    const wrapper = await mountView();
+    await chooseTheme(wrapper, 'dark');
+    expect(mocks.saveThemeMode).not.toHaveBeenCalled();
+  });
+
+  it('寫回 Sheet 失敗：這台照常套用，Toast 提示沒同步', async () => {
+    mocks.saveThemeMode.mockRejectedValue(new Error('網路錯誤'));
+    const wrapper = await mountView();
+    await chooseTheme(wrapper, 'dark');
+    expect(mocks.setThemeMode).toHaveBeenCalledWith('dark');
+    expect(mocks.showToast).toHaveBeenCalledWith('樣式沒有同步到其他裝置：網路錯誤');
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
+  });
 });
 
 describe('讀取', () => {
