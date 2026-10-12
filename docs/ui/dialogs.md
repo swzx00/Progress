@@ -2,6 +2,7 @@
 
 > 從 CLAUDE.md 拆出的細節。跨元件的規則（色彩 token、RWD、日期格式、手動同步清單）仍以 CLAUDE.md 為準。
 
+- **有遮罩時頁面不能捲動、不顯示捲軸**（使用者決定，2026-10-12）：表單 Drawer（`WorkItemForm`）與所有 Modal／對話框（`ConfirmDialog`、`CopyDayDialog`、`DaySummaryModal`、`ExportModal`、`OptionsManagerModal`、`WorkHoursSettingModal`）在 setup 呼叫 `composables/useScrollLock.ts` 的 `useScrollLock()`：掛載時把 `<html>` 設 `overflow: hidden`、卸載時還原（這些元件都是 `v-if` 開關，有離場動畫的話播完才還原）。模組層級計數，疊好幾層（例如表單上再開放棄變更的確認對話框）時全部關掉才還原。捲軸消失時 `<html>` 右側補上同寬的 `padding-right`，版面不會往右跳；macOS 浮動捲軸、手機量出來是 0，不補。Drawer／Modal 自己內容區的捲軸不受影響。**新增有遮罩的元件時也要呼叫 `useScrollLock()`**
 - **確認對話框（`ConfirmDialog`）的按鈕配置照 Apple Human Interface Guidelines（Alerts）**（使用者決定，全站確認對話框統一）：
   - 取消在左、動作在右；按鈕文字用具體動詞（例如「刪除」「放棄變更」），不用「確定／是」
   - `danger`（破壞性動作）：動作按鈕用**紅色文字**（`--color-red-600`），不是紅色實心底；預設按鈕（粗體、開啟時取得焦點、按 Enter 觸發）是比較安全的「取消」，避免誤按就執行破壞性動作

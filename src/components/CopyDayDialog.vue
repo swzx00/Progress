@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
+import { useScrollLock } from '@/composables/useScrollLock';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { dateInputRange } from '@/validation/work-item';
 
@@ -51,6 +52,9 @@ const onConfirm = (): void => {
   if (props.busy || !targetDate.value) return;
   emit('confirm', targetDate.value);
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

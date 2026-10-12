@@ -3,6 +3,7 @@ import { ref } from 'vue';
 
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useOptions } from '@/composables/useOptions';
+import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
 import { ApiError } from '@/composables/useWorkItems';
 import type { WorkItemOptions } from '@/types/work-item';
@@ -134,6 +135,9 @@ const confirmDelete = async (): Promise<void> => {
     busy.value = false;
   }
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

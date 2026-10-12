@@ -44,3 +44,7 @@
   - 寫死的半透明顏色：表單送出中的遮罩用 `color-mix(in srgb, var(--color-black-000) 70%, transparent)`，跟著主題變色；Modal 背景遮罩、陰影維持原本的 `rgb()`
   - 不受影響：匯出的 Excel 維持淺色
   - Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換：淺色 `outline`、深色 `filled_black`。`HomeView` 監看 `isDark`，切換時呼叫 `useGoogleAuth` 的 `renderSignInButton(el, dark)`，先清空容器再重新 `renderButton`，不會重新初始化 GIS，也不影響登入狀態
+- **捲軸**（使用者決定，2026-10-12，`src/style.scss`）：細版、滑塊 `black-300`（滑過 `black-400`）、軌道透明、沒有上下箭頭，深色模式跟著 token 對調
+  - Chrome、Edge、Safari 用 `::-webkit-scrollbar`（寬 8px、圓角 4px、`::-webkit-scrollbar-button` 隱藏）。這幾個瀏覽器**不要設**標準的 `scrollbar-width`／`scrollbar-color`：Chrome 121 之後只要設了標準屬性就會忽略 `::-webkit-scrollbar`，原生捲軸的箭頭又會出現
+  - Firefox 不支援 `::-webkit-scrollbar`，用 `@supports not selector(::-webkit-scrollbar)` 只對它設 `scrollbar-width: thin`＋`scrollbar-color`（設在 `*`，`scrollbar-width` 不會繼承）；Firefox 的細版本身沒有箭頭，但不能設圓角與滑過的顏色
+  - 沒選 JS 自繪捲軸（例如 OverlayScrollbars）：要多一個套件。代價是做不到完全一致：Firefox 的寬度只有 `thin`／`auto`；macOS 上 Chrome、Safari 自訂後捲軸會一直顯示，Firefox 維持浮動（捲動時才出現）；手機是系統捲軸，CSS 改不了

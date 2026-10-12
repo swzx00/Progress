@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
 import { useOptions } from '@/composables/useOptions';
+import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
 import { ApiError } from '@/composables/useWorkItems';
 import {
@@ -113,6 +114,9 @@ const requestClose = (): void => {
   if (busy.value) return;
   emit('close');
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

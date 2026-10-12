@@ -263,3 +263,32 @@ test('網址帶 ?q=：開頁面就搜尋，搜尋同步網址，點工作日期�
   await expect(page.getByText('搜尋結果')).toBeHidden();
   await expect(page).toHaveURL(/\?date=2026-10-06$/);
 });
+
+test('有遮罩時頁面不能捲動、不顯示捲軸：表單上再疊確認對話框，全部關掉才還原', async ({ page }) => {
+  await openHome(page);
+  const overflow = () => page.evaluate(() => getComputedStyle(document.documentElement).overflowY);
+  expect(await overflow()).not.toBe('hidden');
+
+  await dataRows(page).first().getByRole('button', { name: '編輯' }).first().click();
+  await expect(drawer(page)).toBeVisible();
+  expect(await overflow()).toBe('hidden');
+
+  // 改了沒存按取消：表單上面再開放棄變更的確認對話框，關掉確認對話框後表單還開著，仍然鎖著
+  await field(page, '工作目標').locator('textarea').fill('改過的目標');
+  await drawer(page).getByRole('button', { name: '取消' }).click();
+  const confirm = page
+    .getByRole('alertdialog')
+    .or(page.getByRole('dialog').filter({ hasText: '放棄' }));
+  await expect(confirm.first()).toBeVisible();
+  await confirm
+    .first()
+    .getByRole('button', { name: /繼續編輯|取消/ })
+    .first()
+    .click();
+  await expect(drawer(page)).toBeVisible();
+  expect(await overflow()).toBe('hidden');
+
+  await save(page);
+  await expect(drawer(page)).toBeHidden();
+  await expect.poll(overflow).not.toBe('hidden');
+});
