@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import schema from '../../shared/validation-schema.json';
 
+import { THEME_MODES } from '@/composables/useTheme';
 import { STATUS_OPTIONS } from '@/types/work-item';
 import { RECENT_DAYS } from '@/utils/recent-history';
 import { EXPORT_MAX_DAYS } from '@/utils/export-excel';
@@ -184,6 +185,12 @@ describe('選項清單的值：validateOptionValue ↔ validateOptionValue_', ()
     ['專案Repo', 'a'.repeat(51)],
   ] as const)('%s「%s」', (category, value) => {
     expect(gs.validateOptionValue_(category, value)).toBe(validateOptionValue(category, value));
+  });
+});
+
+describe('樣式設定的值：THEME_MODES ↔ THEME_MODE_VALUES', () => {
+  it('前端選單的模式跟 Code.gs 接受的值一樣', () => {
+    expect(THEME_MODES.map(({ mode }) => mode)).toEqual(gs.THEME_MODE_VALUES);
   });
 });
 

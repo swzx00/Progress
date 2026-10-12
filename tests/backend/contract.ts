@@ -440,6 +440,34 @@ export const describeBackendContract = (getClient: () => BackendClient): void =>
     });
   });
 
+  describe('樣式設定（同 Code.gs 的 handleSaveThemeMode_）', () => {
+    it('沒設定時 options 的 themeMode 是 null；存了之後讀得到', async () => {
+      expect((await get({ type: 'options' })).themeMode).toBeNull();
+      expect(await post({ action: 'saveThemeMode', themeMode: 'dark' })).toEqual({
+        themeMode: 'dark',
+      });
+      expect((await get({ type: 'options' })).themeMode).toBe('dark');
+      await post({ action: 'saveThemeMode', themeMode: 'auto' });
+      expect((await get({ type: 'options' })).themeMode).toBe('auto');
+    });
+
+    it.each([['purple'], [''], [null], [undefined]])(
+      '不合法的值（%s）：錯誤訊息同 Code.gs，不寫入',
+      async (themeMode) => {
+        await post({ action: 'saveThemeMode', themeMode: 'light' });
+        const res = await post({ action: 'saveThemeMode', themeMode });
+        expectCodeGsMessage(res.error);
+        expect((await get({ type: 'options' })).themeMode).toBe('light');
+      },
+    );
+
+    it('沒登入不能存', async () => {
+      const res = await getClient().post({ action: 'saveThemeMode', themeMode: 'dark' });
+      expect(res.code).toBe('UNAUTHORIZED');
+      expect((await get({ type: 'options' })).themeMode).toBeNull();
+    });
+  });
+
   describe('讀取', () => {
     it('range 的錯誤訊息同 Code.gs', async () => {
       const bad = await get({ type: 'range', from: '2099/02/30', to: '2099/03/01' });

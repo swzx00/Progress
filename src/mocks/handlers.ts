@@ -13,6 +13,7 @@ import {
   SEARCH_MAX_RESULTS,
   type SearchField,
 } from '@/utils/search-work-items';
+import { THEME_MODES, type ThemeMode } from '@/composables/useTheme';
 import { validateWorkHoursSetting, type WorkHoursSetting } from '@/utils/work-hours';
 import { dailyHoursMessage, validateOptionValue } from '@/validation/work-item';
 
@@ -144,6 +145,9 @@ let options: WorkItemOptions = {
 // 工時設定（Code.gs 存在「選項清單」分頁的「工時設定」欄），預設未設定
 let workHours: WorkHoursSetting | null = null;
 
+// 樣式設定（Code.gs 存在「選項清單」分頁的「樣式設定」欄），預設未設定；可用的值同 Code.gs 的 THEME_MODE_VALUES
+let themeMode: ThemeMode | null = null;
+
 // 請假列的固定欄位一律由後端覆蓋（跟 Code.gs 的 applyLeaveFixedValues_ 同一套規則）
 const applyLeaveFixedValues = <T extends Partial<WorkItem>>(item: T): T =>
   isLeaveItem(item as WorkItem)
@@ -224,6 +228,12 @@ interface DeleteOptionPayload {
   value: string;
 }
 
+interface SaveThemeModePayload {
+  action: 'saveThemeMode';
+  idToken: string;
+  themeMode: unknown;
+}
+
 interface SaveWorkHoursPayload {
   action: 'saveWorkHours';
   idToken: string;
@@ -240,7 +250,8 @@ type DoPostPayload =
   | AddOptionPayload
   | RenameOptionPayload
   | DeleteOptionPayload
-  | SaveWorkHoursPayload;
+  | SaveWorkHoursPayload
+  | SaveThemeModePayload;
 
 // 匯出 Excel（type=range）一次最多可讀的天數，跟 Code.gs 的 RANGE_MAX_DAYS 一致
 const RANGE_MAX_DAYS = 366;
@@ -278,7 +289,7 @@ export const handlers = [
         items.filter((item) => !item.已刪除),
         cutoff,
       );
-      return HttpResponse.json({ options, recentItems, workHours });
+      return HttpResponse.json({ options, recentItems, workHours, themeMode });
     }
 
     if (url.searchParams.get('type') === 'range') {
@@ -482,6 +493,15 @@ export const handlers = [
         [body.category]: options[body.category].filter((v) => v !== body.value),
       };
       return HttpResponse.json({ options });
+    }
+
+    // 跟 Code.gs 的 handleSaveThemeMode_ 同一套規則：只接受 auto／light／dark，回應帶回存好的值
+    if (body.action === 'saveThemeMode') {
+      if (!THEME_MODES.some(({ mode }) => mode === body.themeMode)) {
+        return HttpResponse.json({ error: '樣式設定只能是 auto、light 或 dark' });
+      }
+      themeMode = body.themeMode as ThemeMode;
+      return HttpResponse.json({ themeMode });
     }
 
     // 跟 Code.gs 的 handleSaveWorkHours_ 同一套規則：驗證通過才存，回應帶回最新的工時設定

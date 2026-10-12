@@ -368,6 +368,44 @@ describe('工時設定', () => {
   }
 });
 
+describe('樣式設定', () => {
+  it('寫在選項清單最後面的「樣式設定」欄第 2 列（純文字），讀回同樣的值；再存一次覆寫同一格', () => {
+    post({ action: 'addOption', category: '交辦單位', value: '資訊部' });
+    post({
+      action: 'saveWorkHours',
+      workHours: { start: '08:30', end: '17:30', breakStart: '12:00', breakEnd: '13:00' },
+    });
+    post({ action: 'saveThemeMode', themeMode: 'dark' });
+    const options = optionsSheet();
+    expect(options.dump()[0]).toEqual([
+      '交辦單位',
+      '交辦人員',
+      '專案名稱',
+      '專案Repo',
+      '工時設定',
+      '樣式設定',
+    ]);
+    expect(options.getRange(2, 6).getValues()[0]![0]).toBe('dark');
+    expect(options.getRange(2, 6).getNumberFormat()).toBe('@');
+    post({ action: 'saveThemeMode', themeMode: 'light' });
+    expect(options.column('樣式設定').filter(Boolean)).toEqual(['light']);
+    expect(get({ type: 'options' }).themeMode).toBe('light');
+  });
+
+  it('Sheet 上手動改成不合法的值：當成沒有設定', () => {
+    post({ action: 'saveThemeMode', themeMode: 'dark' });
+    const options = optionsSheet();
+    const col = options.dump()[0]!.indexOf('樣式設定') + 1;
+    options.getRange(2, col).setValue('紫色');
+    expect(get({ type: 'options' }).themeMode).toBeNull();
+  });
+
+  it('還沒有選項清單分頁時一起建立', () => {
+    expect(post({ action: 'saveThemeMode', themeMode: 'auto' })).toEqual({ themeMode: 'auto' });
+    expect(optionsSheet().dump()[0]).toContain('樣式設定');
+  });
+});
+
 describe('登入驗證（verifyIdToken_）', () => {
   const token = (payload: Record<string, unknown>): string =>
     JSON.stringify({ email: OWNER_EMAIL, email_verified: 'true', aud: CLIENT_ID, ...payload });
