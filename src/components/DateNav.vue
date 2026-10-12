@@ -6,6 +6,7 @@ import { NDatePicker } from 'naive-ui';
 import { useTaiwanHolidays } from '@/composables/useTaiwanHolidays';
 import { refreshToday, useToday } from '@/composables/useToday';
 import { addDays, parseLocalDate, toLocalDateString } from '@/utils/date';
+import { isSameMonth, shiftMonth } from '@/utils/month-view';
 import { DAILY_HOURS_WARN } from '@/validation/work-item';
 
 const props = defineProps<{
@@ -15,11 +16,21 @@ const props = defineProps<{
   hasItems?: boolean;
   /** 顯示搜尋結果中：只留搜尋欄，日期切換、工時合計／今天、動作按鈕都隱藏（使用者決定） */
   searching?: boolean;
+  /** 以日／月為單位檢視（使用者決定）：月份檢視時日期切換改成切月份，放假徽章、工時合計不顯示 */
+  viewMode?: 'day' | 'month';
 }>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: string];
+  'update:viewMode': [value: 'day' | 'month'];
 }>();
+
+const isMonth = computed(() => props.viewMode === 'month');
+
+// 切月份時日保留（目標月份沒有那一天就用月底），切回單日檢視才會回到差不多的位置
+const shiftMonthBy = (months: number): void => {
+  emit('update:modelValue', shiftMonth(props.modelValue, months));
+};
 
 const shift = (days: number): void => {
   emit('update:modelValue', addDays(props.modelValue, days));
@@ -27,6 +38,9 @@ const shift = (days: number): void => {
 
 const todayStr = useToday();
 const isToday = computed(() => props.modelValue === todayStr.value);
+const isThisMonth = computed(() => isSameMonth(props.modelValue, todayStr.value));
+// 日期選擇器、「今天／本月」標示：月份檢視看的是不是本月，單日檢視看的是不是今天
+const isCurrent = computed(() => (isMonth.value ? isThisMonth.value : isToday.value));
 
 // 每日工時警示門檻（shared/validation-schema.json 的 dailyHours.warn），合計超過才換成紅字（剛好等於不算超過）
 // 放假徽章跟工時合計同一區塊：放假而且當天沒有紀錄時，只顯示放假徽章（使用者決定）
@@ -50,6 +64,16 @@ const pickerValue = computed(() => parseLocalDate(props.modelValue).getTime());
 const onPickerUpdate = (value: number | null): void => {
   if (value === null) return;
   emit('update:modelValue', toLocalDateString(new Date(value)));
+};
+
+// 月份選擇器回傳的是那個月 1 號，換算成「切幾個月」，日保留
+const onMonthPickerUpdate = (value: number | null): void => {
+  if (value === null) return;
+  const picked = new Date(value);
+  const current = parseLocalDate(props.modelValue);
+  shiftMonthBy(
+    (picked.getFullYear() - current.getFullYear()) * 12 + picked.getMonth() - current.getMonth(),
+  );
 };
 
 const { getDayOffLabel, isWorkday, findNextWorkday } = useTaiwanHolidays();
@@ -84,7 +108,49 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
       </div>
     </div>
     <!-- 日期切換：桌面、平板靠左；手機撐滿整列（⏮ 最左、⏭ 最右，日期選擇器填滿中間） -->
-    <div v-if="!searching" class="date-nav__switcher">
+    <div v-if="!searching && isMonth" class="date-nav__switcher">
+      <button type="button" class="date-nav__btn" aria-label="上個月" @click="shiftMonthBy(-1)">
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </button>
+      <NDatePicker
+        class="date-nav__picker date-nav__picker--month"
+        :class="{ 'date-nav__picker--today': isThisMonth }"
+        :value="pickerValue"
+        type="month"
+        format="yyyy/MM"
+        :clearable="false"
+        :actions="['now']"
+        @update:value="onMonthPickerUpdate"
+      />
+      <button type="button" class="date-nav__btn" aria-label="下個月" @click="shiftMonthBy(1)">
+        <svg
+          class="date-nav__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
+    </div>
+    <div v-else-if="!searching" class="date-nav__switcher">
       <button
         type="button"
         class="date-nav__btn"
@@ -173,9 +239,31 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
         </svg>
       </button>
     </div>
-    <!-- 放假徽章＋工時合計（同一區塊）與今天：桌面、平板靠右；手機自成一列，左右對齊 -->
+    <!-- 日／月切換（使用者決定：放在日期切換的右邊）：手機跟下面的狀態列同一列、排在最左邊 -->
+    <div v-if="!searching" class="date-nav__mode" role="group" aria-label="檢視單位">
+      <button
+        type="button"
+        class="date-nav__mode-btn"
+        :class="{ 'date-nav__mode-btn--active': !isMonth }"
+        :aria-pressed="!isMonth"
+        @click="emit('update:viewMode', 'day')"
+      >
+        日
+      </button>
+      <button
+        type="button"
+        class="date-nav__mode-btn"
+        :class="{ 'date-nav__mode-btn--active': isMonth }"
+        :aria-pressed="isMonth"
+        @click="emit('update:viewMode', 'month')"
+      >
+        月
+      </button>
+    </div>
+    <!-- 放假徽章＋工時合計（同一區塊）與今天：桌面、平板靠右；手機跟日／月切換同一列，左右對齊。
+         月份檢視不顯示放假徽章、工時合計（使用者決定），只留「本月／回到本月」 -->
     <div v-if="!searching" class="date-nav__status">
-      <div class="date-nav__info">
+      <div v-if="!isMonth" class="date-nav__info">
         <span
           v-if="dayOffLabel"
           class="date-nav__holiday-badge"
@@ -192,8 +280,12 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
         </span>
       </div>
       <!-- 今天時只是狀態標示（不可操作），用 span 而不是 disabled 按鈕 -->
-      <span v-if="isToday" class="date-nav__today date-nav__today--current">今天</span>
-      <button v-else type="button" class="date-nav__today" @click="goToday">回到今天</button>
+      <span v-if="isCurrent" class="date-nav__today date-nav__today--current">{{
+        isMonth ? '本月' : '今天'
+      }}</span>
+      <button v-else type="button" class="date-nav__today" @click="goToday">
+        {{ isMonth ? '回到本月' : '回到今天' }}
+      </button>
     </div>
   </div>
 </template>
@@ -287,6 +379,13 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
     flex: none;
     width: 170px;
   }
+
+  // 月份檢視只有 ◀ ▶ 兩顆按鈕，選擇器加寬補回 ⏮ ⏭，日期切換總寬度維持 --switcher-width，搜尋欄寬度不用跟著改
+  &--month {
+    @media (min-width: 768px) {
+      width: calc(var(--switcher-width) - 2 * 32px - 2 * 8px);
+    }
+  }
 }
 
 /*
@@ -339,9 +438,44 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
   border-color: var(--color-yellow-800);
 }
 
+.date-nav__mode {
+  display: flex;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--color-black-100);
+  border-radius: 8px;
+}
+
+.date-nav__mode-btn {
+  min-width: 36px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--color-black-800);
+  cursor: pointer;
+  background: var(--color-black-000);
+  border: none;
+
+  & + & {
+    border-left: 1px solid var(--color-black-100);
+  }
+
+  &:hover:not(.date-nav__mode-btn--active) {
+    color: var(--color-blue-500);
+  }
+
+  // 選中的那一個：淡藍底＋深藍字（深色模式 token 會對調，不用另外寫）
+  &--active {
+    font-weight: 600;
+    color: var(--color-blue-700);
+    cursor: default;
+    background: var(--color-blue-050);
+  }
+}
+
 .date-nav__status {
   display: flex;
-  flex: 1 0 100%;
+  flex: 1 1 0;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
