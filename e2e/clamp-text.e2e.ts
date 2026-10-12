@@ -10,10 +10,10 @@ test.use({ loggedIn: true });
 const LONG_TEXT = '完成首頁 RWD 調整，'.repeat(30);
 
 /** 把第一筆的處理內容改成很長的文字 */
-const saveLongDetail = async (page: import('@playwright/test').Page) => {
+const saveLongDetail = async (page: import('@playwright/test').Page, text = LONG_TEXT) => {
   await openHome(page);
   await dataRows(page).first().getByRole('button', { name: '編輯' }).first().click();
-  await page.getByLabel('處理內容').fill(LONG_TEXT);
+  await page.getByLabel('處理內容').fill(text);
   await page.getByRole('button', { name: '儲存' }).click();
   await expect(page.locator('.work-item-form')).toBeHidden();
 };
@@ -59,5 +59,30 @@ test('有滑鼠的裝置：滑過被截斷的文字顯示全文；觸控裝置�
     await expect(tooltip).toHaveCount(0);
   } else {
     await expect(tooltip).toBeVisible();
+    // 超過 200 字放寬（不超過視窗寬度），內容完整顯示、沒有捲軸
+    const box = (await tooltip.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.width).toBeGreaterThan(Math.min(400, viewport.width - 40));
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    const scrolls = await tooltip
+      .locator('.clamp-text__tooltip')
+      .evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    expect(scrolls).toBe(false);
   }
+});
+
+test('有滑鼠的裝置：2000 字的內容 tooltip 也完整留在畫面內，放不下的部分才在框內捲動', async ({
+  page,
+}, testInfo) => {
+  test.skip(!!testInfo.project.use.hasTouch, '觸控裝置不顯示 tooltip');
+  const text = '處理內容測試文字'.repeat(250);
+  await saveLongDetail(page, text);
+  await detailCell(page).locator('.clamp-text__body').hover();
+  const tooltip = page.locator('.n-tooltip', { hasText: text.slice(0, 40) });
+  await expect(tooltip).toBeVisible();
+  const box = (await tooltip.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
 });

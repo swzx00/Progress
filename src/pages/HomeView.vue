@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
-import { computed, h, ref, toRaw, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
+import BackToTop from '@/components/BackToTop.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CopyDayDialog from '@/components/CopyDayDialog.vue';
 import DaySummaryModal from '@/components/DaySummaryModal.vue';
@@ -48,11 +49,46 @@ const {
   isLoggedIn,
   isAuthorized,
   renderSignInButton,
+  tryAutoLogin,
+  clearLogin,
   signOut,
   ensureFreshLogin,
+  withLoginRetry,
 } = useGoogleAuth();
 
 const signInButtonEl = ref<HTMLElement | null>(null);
+
+/**
+ * 平板、桌面工具列（DateNav）往下捲時固定在最上方，表格表頭接在它下面（使用者決定）：
+ * 工具列高度會隨寬度換行改變，量實際高度給表頭的 sticky top（--sticky-offset）。
+ * 頁首標題列的高度是「返回最上」按鈕出現的門檻
+ */
+const headerEl = ref<HTMLElement | null>(null);
+const dateNavRef = ref<{ $el: HTMLElement } | null>(null);
+const headerHeight = ref(0);
+const dateNavHeight = ref(0);
+let resizeObserver: ResizeObserver | undefined;
+
+const measureLayout = (): void => {
+  headerHeight.value = headerEl.value?.getBoundingClientRect().height ?? 0;
+  dateNavHeight.value = dateNavRef.value?.$el.getBoundingClientRect?.().height ?? 0;
+};
+
+onMounted(() => {
+  // 這個瀏覽器登入過、沒按登出：重新整理、重開分頁時在背景用 Google 自動登入（token 不存在瀏覽器裡）
+  // 自動登入完成（成功或失敗）後才依登入狀態決定能不能用「自動」樣式；之後登入、登出跟著切換
+  void tryAutoLogin().finally(() => {
+    setThemeAutoAllowed(isAuthorized.value);
+    watch(isAuthorized, setThemeAutoAllowed);
+  });
+  measureLayout();
+  if (typeof ResizeObserver === 'undefined') return;
+  resizeObserver = new ResizeObserver(measureLayout);
+  if (headerEl.value) resizeObserver.observe(headerEl.value);
+  if (dateNavRef.value?.$el instanceof Element) resizeObserver.observe(dateNavRef.value.$el);
+});
+
+onBeforeUnmount(() => resizeObserver?.disconnect());
 
 // 網址參數的規則見下方 syncUrl
 const route = useRoute();
@@ -231,9 +267,15 @@ const daySummaryOpen = ref(false);
 const exportOpen = ref(false);
 const workHoursOpen = ref(false);
 
-// 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前的選項前面打勾。
-// 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項
-const { mode: themeMode, isDark, setMode: setThemeMode } = useTheme();
+// 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前實際套用的選項前面打勾。
+// 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項。
+// 「自動」只有登入才能用（使用者決定）：未登入只列淺色、深色，記住的是「自動」就打勾在淺色
+const {
+  effectiveMode: themeMode,
+  isDark,
+  setMode: setThemeMode,
+  setAutoAllowed: setThemeAutoAllowed,
+} = useTheme();
 
 // Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換樣式：深色 filled_black、淺色 outline
 watch([signInButtonEl, isDark], ([el, dark]) => {
@@ -241,20 +283,51 @@ watch([signInButtonEl, isDark], ([el, dark]) => {
 });
 const THEME_KEY_PREFIX = 'theme:';
 const themeOptions = computed<DropdownOption[]>(() =>
-  THEME_MODES.map(({ mode, label }) => ({
-    label,
-    key: `${THEME_KEY_PREFIX}${mode}`,
-    icon: () =>
-      h(
-        'span',
-        { class: 'home-view__theme-check', 'aria-hidden': 'true' },
-        mode === themeMode.value ? '✓' : '',
-      ),
-  })),
+  THEME_MODES.filter(({ mode }) => mode !== 'auto' || isAuthorized.value).map(
+    ({ mode, label }) => ({
+      label,
+      key: `${THEME_KEY_PREFIX}${mode}`,
+      icon: () =>
+        h(
+          'span',
+          { class: 'home-view__theme-check', 'aria-hidden': 'true' },
+          mode === themeMode.value ? '✓' : '',
+        ),
+    }),
+  ),
 );
+/**
+ * 樣式設定跨裝置同步（使用者決定）：登入後讀「選項清單」分頁的「樣式設定」套用，登入時切換樣式就寫回 Sheet。
+ * 未登入（訪客）寫不了 Sheet，只記在自己瀏覽器的 localStorage（useTheme）；localStorage 也是登入時的快取，
+ * 讓重新整理的第一個畫面先照上次的設定，讀到 Sheet 後不同才切換
+ */
+const { themeMode: savedThemeMode, fetchOptions, saveThemeMode } = useOptions();
+
 const onThemeSelect = (key: string): void => {
-  setThemeMode(key.slice(THEME_KEY_PREFIX.length) as ThemeMode);
+  const next = key.slice(THEME_KEY_PREFIX.length) as ThemeMode;
+  setThemeMode(next);
+  if (!isAuthorized.value || !idToken.value || next === savedThemeMode.value) return;
+  void withLoginRetry(idToken.value, (token) => saveThemeMode(token, next)).catch(
+    (e: unknown) => {
+      // 只是沒同步到 Sheet，這台裝置的樣式照常生效
+      showToast(
+        e instanceof Error ? `樣式沒有同步到其他裝置：${e.message}` : '樣式沒有同步到其他裝置',
+      );
+      if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clearLogin();
+    },
+  );
 };
+
+// 登入後讀 Sheet 上的樣式設定（選項清單已經讀過就直接用），有設定就套用到這台裝置
+watch(
+  isAuthorized,
+  async (authorized) => {
+    if (!authorized) return;
+    await fetchOptions();
+    if (isAuthorized.value && savedThemeMode.value) setThemeMode(savedThemeMode.value);
+  },
+  { immediate: true },
+);
 
 // 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）、
 // 匯出 Excel（選範圍下載 .xlsx 的 Modal）、工時設定（上下班、午休時間的 Modal）、樣式（子選單，切換深色模式）
@@ -270,11 +343,15 @@ const toolOptions = computed<DropdownOption[]>(() => [
 const onToolSelect = (key: ToolKey | string): void => {
   if (key.startsWith(THEME_KEY_PREFIX)) onThemeSelect(key);
   else if (key === 'options') {
-    if (requireFreshLogin()) optionsManagerOpen.value = true;
+    void requireFreshLogin().then((ok) => {
+      if (ok) optionsManagerOpen.value = true;
+    });
   } else if (key === 'daySummary') daySummaryOpen.value = true;
   else if (key === 'export') exportOpen.value = true;
   else if (key === 'workHours') {
-    if (requireFreshLogin()) workHoursOpen.value = true;
+    void requireFreshLogin().then((ok) => {
+      if (ok) workHoursOpen.value = true;
+    });
   }
 };
 
@@ -289,11 +366,11 @@ const saving = ref(false);
 const { showToast } = useToast();
 
 /**
- * 開啟會寫入資料的表單／對話框前確認登入還有效：token 過期（分頁開著超過約一小時）就登出並提示，
- * 不讓使用者打完內容才在儲存時被退回
+ * 開啟會寫入資料的表單／對話框前確認登入還有效：token 過期（分頁開著超過約一小時）先在背景自動續期，
+ * 續期失敗才登出並提示，不讓使用者打完內容才在儲存時被退回
  */
-const requireFreshLogin = (): boolean => {
-  if (ensureFreshLogin()) return true;
+const requireFreshLogin = async (): Promise<boolean> => {
+  if (await ensureFreshLogin()) return true;
   showToast('登入已過期，請重新登入');
   return false;
 };
@@ -301,31 +378,31 @@ const requireFreshLogin = (): boolean => {
 // 存檔成功後更新近期紀錄（表單的推薦與預填用），下次開表單不用重新讀選項清單
 const { rememberItems } = useOptions();
 
-const openCreateForm = (): void => {
-  if (!requireFreshLogin()) return;
+const openCreateForm = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = false;
   formOpen.value = true;
 };
 
-const openLeaveForm = (): void => {
-  if (!requireFreshLogin()) return;
+const openLeaveForm = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = true;
   formOpen.value = true;
 };
 
-const openEditForm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openEditForm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = item;
   copySource.value = null;
   formOpen.value = true;
 };
 
-const openCopyForm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openCopyForm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = item;
   formOpen.value = true;
@@ -337,14 +414,15 @@ const closeForm = (): void => {
 
 /**
  * 儲存失敗一律用 Toast 提示：
- * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED，例如 token 過期）：關閉表單並強制登出，回到唯讀模式
+ * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED，例如 token 過期）：關閉表單並強制登出，回到唯讀模式。
+ *   後端回 UNAUTHORIZED 時 withLoginRetry 已經先續期重送過一次，還是失敗才會走到這裡
  * - 其他錯誤（欄位驗證、找不到紀錄、網路錯誤等）：表單維持開啟、保留已填內容，讓使用者修正後重送
  */
 const handleSaveError = (message: string, unauthorized: boolean): void => {
   showToast(message);
   if (unauthorized) {
     formOpen.value = false;
-    signOut();
+    clearLogin();
   }
 };
 
@@ -356,9 +434,10 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
   saving.value = true;
   try {
     if (editingItem.value) {
-      await updateItem(idToken.value, editingItem.value.id, payload);
+      const id = editingItem.value.id;
+      await withLoginRetry(idToken.value, (token) => updateItem(token, id, payload));
     } else {
-      await createItem(idToken.value, payload);
+      await withLoginRetry(idToken.value, (token) => createItem(token, payload));
     }
     rememberItems([{ ...payload, id: editingItem.value?.id }]);
     await refreshAfterChange();
@@ -401,8 +480,8 @@ const copyDayPayloads = (targetDate: string) =>
     .sort((a, b) => a.項次 - b.項次)
     .map((item) => buildCopyPayload(item, targetDate));
 
-const openCopyDay = (): void => {
-  if (!requireFreshLogin()) return;
+const openCopyDay = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   copyDayError.value = null;
   copyDayOpen.value = true;
 };
@@ -416,7 +495,7 @@ const handleCopyDayUnauthorized = (message: string): void => {
   copyDayOpen.value = false;
   copyDayReplaceTarget.value = null;
   showToast(message);
-  signOut();
+  clearLogin();
 };
 
 const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> => {
@@ -427,7 +506,7 @@ const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> =
   const payloads = copyDayPayloads(targetDate);
   copyingDay.value = true;
   try {
-    await batchCreateItems(idToken.value, payloads, replace);
+    await withLoginRetry(idToken.value, (token) => batchCreateItems(token, payloads, replace));
     rememberItems(payloads);
     copyDayOpen.value = false;
     copyDayReplaceTarget.value = null;
@@ -506,15 +585,10 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
   if (reordering.value) return;
   if (!idToken.value) {
     showToast('尚未登入，無法調整順序');
-    signOut();
+    clearLogin();
     return;
   }
   const before = items.value;
-  if (!requireFreshLogin()) {
-    // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
-    items.value = [...before];
-    return;
-  }
   const byId = new Map(before.map((item) => [item.id, item]));
   // 月份檢視 items 是整個月：只換掉那一天的紀錄，其他天不動
   const sameDay = new Set(ids);
@@ -525,15 +599,21 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
       return item ? [{ ...item, 項次: index + 1 }] : [];
     }),
   ];
+  // 先在畫面套用新順序，拖曳的手感才不會延遲；登入過期而且續期失敗時再還原
   items.value = reordered;
   reordering.value = true;
   try {
-    await reorderItems(idToken.value, date, ids);
+    if (!(await requireFreshLogin()) || !idToken.value) {
+      // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
+      if (toRaw(items.value) === reordered) items.value = [...before];
+      return;
+    }
+    await withLoginRetry(idToken.value, (token) => reorderItems(token, date, ids));
   } catch (e) {
     // items 還是這次套用的順序才還原；切過日期的話已經是重新讀到的資料，不能用快照蓋掉
     if (toRaw(items.value) === reordered) items.value = before;
     showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
-    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
+    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clearLogin();
   } finally {
     reordering.value = false;
   }
@@ -542,8 +622,8 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
 const deleteTarget = ref<WorkItem | null>(null);
 const deleting = ref(false);
 
-const openDeleteConfirm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openDeleteConfirm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   deleteTarget.value = item;
 };
 
@@ -559,7 +639,7 @@ const closeDeleteConfirm = (): void => {
 const handleDeleteUnauthorized = (message: string): void => {
   deleteTarget.value = null;
   showToast(message);
-  signOut();
+  clearLogin();
 };
 
 const confirmDelete = async (): Promise<void> => {
@@ -570,7 +650,8 @@ const confirmDelete = async (): Promise<void> => {
   }
   deleting.value = true;
   try {
-    await deleteItem(idToken.value, deleteTarget.value.id);
+    const id = deleteTarget.value.id;
+    await withLoginRetry(idToken.value, (token) => deleteItem(token, id));
     deleteTarget.value = null;
     await refreshAfterChange();
   } catch (e) {
@@ -587,19 +668,19 @@ const confirmDelete = async (): Promise<void> => {
 /** 選項清單管理遇到登入錯誤：關閉 Modal 並強制登出（錯誤訊息已由 Modal 用 Toast 顯示） */
 const onOptionsUnauthorized = (): void => {
   optionsManagerOpen.value = false;
-  signOut();
+  clearLogin();
 };
 
 /** 工時設定遇到登入錯誤：比照選項清單管理，關閉 Modal 並強制登出 */
 const onWorkHoursUnauthorized = (): void => {
   workHoursOpen.value = false;
-  signOut();
+  clearLogin();
 };
 </script>
 
 <template>
-  <div class="home-view">
-    <header class="home-view__header">
+  <div class="home-view" :style="{ '--sticky-offset': `${dateNavHeight}px` }">
+    <header ref="headerEl" class="home-view__header">
       <h1 class="home-view__title">工作進度</h1>
       <span v-if="!isAuthorized" class="home-view__badge">唯讀模式</span>
       <NDropdown trigger="click" :options="themeOptions" @select="onThemeSelect">
@@ -672,6 +753,7 @@ const onWorkHoursUnauthorized = (): void => {
     </header>
 
     <DateNav
+      ref="dateNavRef"
       v-model="selectedDate"
       v-model:view-mode="viewMode"
       :total-hours="totalHours"
@@ -929,6 +1011,7 @@ const onWorkHoursUnauthorized = (): void => {
     </Transition>
 
     <AppToast />
+    <BackToTop :threshold="headerHeight" />
   </div>
 </template>
 
@@ -942,6 +1025,14 @@ const onWorkHoursUnauthorized = (): void => {
   width: 100%;
   height: 100%;
   min-height: 100dvh;
+
+  // 底部留白：「返回最上」固定在右下角（BackToTop：距底 16px＋按鈕 44px＋間距 16px，平板桌面距底 32px），
+  // 捲到最底時最後一列的操作按鈕才不會被它蓋住
+  padding-bottom: 76px;
+
+  @media (min-width: 768px) {
+    padding-bottom: 108px;
+  }
 
   &__header {
     display: flex;

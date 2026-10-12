@@ -23,6 +23,7 @@ export interface CodeGs {
   WORK_HOURS_DAILY_STANDARD: number;
   RECENT_DAYS: number;
   RANGE_MAX_DAYS: number;
+  THEME_MODE_VALUES: string[];
   SEARCH_FIELDS: string[];
   SEARCH_KEYWORD_MAX: number;
   SEARCH_MAX_RESULTS: number;

@@ -2,6 +2,41 @@
   box-sizing: border-box;
 }
 
+// 捲軸（使用者決定）：細版、滑塊 black-300（滑過 black-400）、軌道透明、沒有上下箭頭，深色模式 token 對調不用另外寫。
+// Chrome、Edge、Safari 用 ::-webkit-scrollbar：自訂後不會畫箭頭按鈕。這幾個瀏覽器不能設標準的
+// scrollbar-width／scrollbar-color，Chrome 121 之後只要設了標準屬性就會忽略 ::-webkit-scrollbar，又會出現箭頭
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-black-300);
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--color-black-400);
+  }
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+// Firefox 不支援 ::-webkit-scrollbar，改用標準屬性（thin 本身沒有箭頭）。
+// scrollbar-width 不會繼承，所以每個元素都設；Firefox 不能設圓角與滑過的顏色
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-color: var(--color-black-300) transparent;
+    scrollbar-width: thin;
+  }
+}
+
 body {
   margin: 0;
 

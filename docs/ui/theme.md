@@ -36,11 +36,18 @@
   - Noto Sans TC 字檔很大，但 Google Fonts 會依 `unicode-range` 切成許多小檔，瀏覽器只下載頁面實際用到的字，實際載入量不大。代價是執行期間要連到 Google 的伺服器；如果之後不想依賴外部服務，可以改用 `@fontsource` 把字體打包進專案
 
 - **深色模式**（使用者決定）：
-  - **切換**：「工具 → 樣式」子選單，或標題旁的月亮／太陽按鈕（未登入也能用，圖示是目前套用的主題，Lucide `moon`／`sun`，ISC 授權），三選一：自動（依日出日落，預設）／淺色／深色，目前的選項前面打勾。選擇用 `localStorage`（`theme-mode`）記住，讀寫失敗就當作自動。`main.ts` 掛載前呼叫 `initTheme()`，第一個畫面就是正確的主題
+  - **切換**：「工具 → 樣式」子選單，或標題旁的月亮／太陽按鈕（未登入也能用，圖示是目前套用的主題，Lucide `moon`／`sun`，ISC 授權），三選一：自動（依日出日落，預設，只有登入才能用）／淺色／深色，目前的選項前面打勾。選擇用 `localStorage`（`theme-mode`）記住，讀寫失敗就當作自動。`main.ts` 掛載前呼叫 `initTheme()`，第一個畫面就是正確的主題
   - **自動**：依台北的日出日落時間切換，日落後到日出前是深色。`src/utils/sun-times.ts` 用天文公式在瀏覽器裡算（演算法參考 SunCalc，BSD-2 授權），不打 API、不要定位權限；台灣各地差幾分鐘，所以地點固定台北。`useTheme` 用 `setTimeout` 排到下一次日出／日落再切換，分頁切回前景（`visibilitychange`）時也重算一次（背景分頁的計時器會被瀏覽器延後）
+  - **「自動」只有登入才能用**（使用者決定，2026-10-12）：用 `isAuthorized` 判斷。未登入時選單只列淺色、深色，打勾的是實際套用的那個（`useTheme` 的 `effectiveMode`）。記住的是「自動」（新訪客預設也是）時，未登入用 `localStorage` 的 `theme-auto-fallback`：**登出當下看到的顏色**（晚上登出就維持深色、白天就維持淺色，之後重新整理、隔天打開都不再跟著日出日落變），從沒登入過的新訪客是淺色。記住的 `theme-mode` 不改，再登入恢復「自動」；未登入時手動選了淺色／深色就以手動選的為準，再登入也維持
+  - 登入狀態由 `HomeView` 呼叫 `setAutoAllowed(isAuthorized)` 告訴 `useTheme`：自動登入（`tryAutoLogin`）完成後才設定，之後跟著登入、登出切換。`initTheme()` 一開始先看「這個瀏覽器登入過」的標記（`progress:auto-login`，見 [api.md](../api.md)「不自動登出」），有的話先照「自動」套用，晚上重新整理才不會在自動登入完成前先閃一下淺色；自動登入失敗就跟登出一樣，維持當下的顏色
+  - **跨裝置同步**（使用者決定，2026-10-12）：擁有者的樣式設定（自動／淺色／深色）存在 Sheet「選項清單」分頁的「樣式設定」欄（後端見 [api.md](../api.md) 的 `saveThemeMode`）。`HomeView` 登入後呼叫 `useOptions` 的 `fetchOptions()`，Sheet 上有設定就 `setMode` 套用；登入時在選單切換樣式就用 `saveThemeMode` 寫回 Sheet（跟 Sheet 上一樣就不寫；寫入失敗只 Toast「樣式沒有同步到其他裝置」，這台照常套用）。未登入的訪客寫不了 Sheet，只記在自己瀏覽器的 `localStorage`（`theme-mode`）；登入時 `localStorage` 也是快取，重新整理的第一個畫面先照上次的設定，讀到 Sheet 後不同才切換
   - **套用方式**：`<html data-theme="light|dark">`。`tokens.scss` 在 `:root[data-theme='dark']` 底下重新定義同一組 token，每個色系的階數上下對調（`000`↔`1000`、`050`↔`900`、`100`↔`800`、`200`↔`700`、`300`↔`600`、`400`↔`500`），元件不用改：淺色模式當背景的淺色階變成深色、當文字的深色階變成淺色。也設 `color-scheme`，原生日期欄、捲軸跟著變深色。Naive UI 換成 `darkTheme`（見上方 `themeOverrides`）
   - **例外（B 版，使用者決定）**：`blue`／`orange`／`yellow`／`purple` 的 `000`、`050` 不對調，改用 `black` 的深色值（`#000`／`#141618`）。表格的今天／放假／搜尋在深色模式只靠表頭（`100`，等於原本的 `800`）與邊框帶色系，斑馬紋維持中性黑灰；手機卡片沒有表頭，只靠卡片外框區分
   - 實心按鈕（「＋ 新增」、搜尋按鈕等）的文字是 `black-000`，深色模式下是淺藍底＋黑字，不另外開不對調的例外 token
   - 寫死的半透明顏色：表單送出中的遮罩用 `color-mix(in srgb, var(--color-black-000) 70%, transparent)`，跟著主題變色；Modal 背景遮罩、陰影維持原本的 `rgb()`
   - 不受影響：匯出的 Excel 維持淺色
   - Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換：淺色 `outline`、深色 `filled_black`。`HomeView` 監看 `isDark`，切換時呼叫 `useGoogleAuth` 的 `renderSignInButton(el, dark)`，先清空容器再重新 `renderButton`，不會重新初始化 GIS，也不影響登入狀態
+- **捲軸**（使用者決定，2026-10-12，`src/style.scss`）：細版、滑塊 `black-300`（滑過 `black-400`）、軌道透明、沒有上下箭頭，深色模式跟著 token 對調
+  - Chrome、Edge、Safari 用 `::-webkit-scrollbar`（寬 8px、圓角 4px、`::-webkit-scrollbar-button` 隱藏）。這幾個瀏覽器**不要設**標準的 `scrollbar-width`／`scrollbar-color`：Chrome 121 之後只要設了標準屬性就會忽略 `::-webkit-scrollbar`，原生捲軸的箭頭又會出現
+  - Firefox 不支援 `::-webkit-scrollbar`，用 `@supports not selector(::-webkit-scrollbar)` 只對它設 `scrollbar-width: thin`＋`scrollbar-color`（設在 `*`，`scrollbar-width` 不會繼承）；Firefox 的細版本身沒有箭頭，但不能設圓角與滑過的顏色
+  - 沒選 JS 自繪捲軸（例如 OverlayScrollbars）：要多一個套件。代價是做不到完全一致：Firefox 的寬度只有 `thin`／`auto`；macOS 上 Chrome、Safari 自訂後捲軸會一直顯示，Firefox 維持浮動（捲動時才出現）；手機是系統捲軸，CSS 改不了

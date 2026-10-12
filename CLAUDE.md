@@ -49,7 +49,7 @@
 - **項次**每天從 1 開始，新增時由後端決定（最大項次＋1）
 - **請假**：同一分頁，狀態＝`休假`，固定欄位由後端覆蓋（`leave.fixed`），不寫回選項清單，`休假` 不在 `STATUS_OPTIONS` 裡
 - **刪除**：整列搬到「已刪除紀錄」分頁封存（多一欄刪除時間）
-- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」欄
+- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」欄
 - 每日工時合計（含請假）不可超過 24 小時，前後端都擋；超過 8 小時只在畫面標紅
 - 資料模式是日誌式：同一專案每天新增一列，不覆寫舊資料
 
@@ -57,8 +57,8 @@
 
 完整說明見 [docs/api.md](docs/api.md)。
 
-- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
-- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`
+- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定＋樣式設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
+- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
@@ -69,6 +69,7 @@
 - **`doPost` 一律送 `Content-Type: text/plain;charset=utf-8`**（body 仍是 JSON），不要改成 `application/json` 或加自訂 header：跨網域會觸發 `OPTIONS` 預檢，Apps Script 不回應，正式站寫入全部被 CORS 擋。本機 MSW／dev proxy 不跨網域，測不出來，細節見 [docs/api.md](docs/api.md)
 - **日期格式**：Sheet 與 API 是 `YYYY/MM/DD`；前端內部是 `YYYY-MM-DD`（原生 `<input type="date">` 只吃這個）。兩者轉換**只在 `useWorkItems.ts`**（`toApiDate`／`fromApiDate`／`toApiItem`）。前端日期字串一律用 `src/utils/date.ts`（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`），**不要用 `toISOString()`**（台灣凌晨會變前一天，`NDatePicker` 的時間戳會少一天），也不要用 `new Date('YYYY-MM-DD')`（當成 UTC）。例外：`export-excel.ts` 刻意用 UTC 建 Excel 日期
 - **前端登入只是體驗層**：`useGoogleAuth.ts` 的允許清單決定要不要渲染管理功能，真正把關在後端 `doPost`
+- **登入憑證不存瀏覽器儲存空間**（使用者決定）：ID Token 只放記憶體，不要改存 `localStorage`／`sessionStorage`；長期記住登入靠 Google 自動登入，細節見 [docs/api.md](docs/api.md)「不自動登出」
 - **手動同步清單**（改一處要一起改）：
 
   | 規則 | 位置 |
@@ -80,6 +81,7 @@
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
   | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
   | 工時設定驗證 | `src/utils/work-hours.ts` 的 `validateWorkHoursSetting` ↔ `Code.gs` 的 `validateWorkHours_` |
+  | 樣式設定的值 | `src/composables/useTheme.ts` 的 `THEME_MODES` ↔ `Code.gs` 的 `THEME_MODE_VALUES` ↔ MSW |
   | 近期紀錄 | 前端 `RECENT_DAYS`／`filterRecentItems` ↔ `Code.gs` 的 `getRecentItems_` |
   | MSW 假後端 | `src/mocks/handlers.ts` 整體跟 `Code.gs` 同規則 |
   | 字體、行高 | `src/style.scss` 的 `body` ↔ `App.vue` 的 `themeOverrides.common`（`fontFamily`、`lineHeight`） |
@@ -120,14 +122,16 @@ src/
     DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋複製按鈕
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載
     WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間
+    BackToTop.vue         # 返回最上：右下角固定的圖示按鈕，捲過頁首標題列才出現，點了捲回最頂端
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
     DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
-    useGoogleAuth.ts      # 登入狀態、ID Token 管理（ensureFreshLogin：開表單／對話框前檢查 token 是否過期）
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、到期前背景續期（refreshLogin）、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
-    useTheme.ts            # 深色模式：自動（依日出日落）／淺色／深色，套用 <html data-theme>
+    useTheme.ts            # 深色模式：自動（依日出日落，只有登入才能用；登出時維持當下的顏色）／淺色／深色，套用 <html data-theme>；擁有者的設定存在 Sheet 跨裝置同步（HomeView 登入後讀、切換時寫回）
+    useScrollLock.ts      # 有遮罩的畫面（表單 Drawer、Modal／對話框）開著時鎖住頁面捲動、隱藏捲軸（模組層級計數，可疊多層），在元件 setup 呼叫
     useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
@@ -145,6 +149,10 @@ src/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
     tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），[data-theme='dark'] 底下是深色模式的值，元件一律吃變數不寫死 hex
+tests/                     # 所有 Vitest 測試（不放在 src/ 裡），細節見 docs/testing.md
+  unit/                    # 單元、元件測試，資料夾結構照 src/（例如 tests/unit/components/DateNav.spec.ts）
+  apps-script/、backend/、msw/、property/、export/  # 前後端一致性、後端共同規格、隨機輸入、匯出檔案內容
+e2e/                       # Playwright 瀏覽器測試
 shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
@@ -166,6 +174,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 - 新增大型套件時看 build 輸出大小，必要時加進 `vite.config.ts` 的 `codeSplitting.groups`
 - `npm audit` 剩下的 high（`braces`）沒有修正版，**不要跑 `npm audit fix --force`**
 - 測試用 Vitest（單元、驗證、前後端一致性、元件），改規則時對應的 spec 一起改，見 [docs/testing.md](docs/testing.md)
+- **測試檔一律放在 `tests/`**，不跟 `src/` 的正式程式碼混在一起：單元、元件測試在 `tests/unit/`，資料夾結構照 `src/`，被測檔案用 `@/` 別名 import
 
 
 ## 命名慣例

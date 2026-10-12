@@ -304,8 +304,14 @@ const jumpToWorkday = async (direction: 1 | -1): Promise<void> => {
 
   // 桌面、平板兩列：第一列動作按鈕靠右；第二列日期切換靠左、放假徽章／工時合計＋今天靠右。
   // 手機三列：動作按鈕、日期切換、放假徽章／工時合計＋今天，各自撐滿整列（使用者決定）
+  // 桌面、平板往下捲時固定在畫面最上方（使用者決定，手機不固定：三列太高會佔掉大半個畫面）；
+  // 要有不透明底色才蓋得住下面捲過去的內容。z-index 10：在表格表頭（2）之上、返回最上按鈕（50）與 Drawer／Modal（100）之下
   @media (min-width: 768px) {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     padding: 16px 32px;
+    background: var(--color-black-000);
   }
 }
 

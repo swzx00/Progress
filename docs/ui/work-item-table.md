@@ -2,6 +2,8 @@
 
 > 從 CLAUDE.md 拆出的細節。跨元件的規則（色彩 token、RWD、日期格式、手動同步清單）仍以 CLAUDE.md 為準。
 
+**表頭固定**（使用者決定，2026-10-12）：平板、桌面往下捲時，表頭（`work-item-table__row--header`）`position: sticky`，接在同樣固定的 `DateNav` 下面（`top: var(--sticky-offset, 0)`，工具列高度由 `HomeView` 量好；`z-index: 2`，蓋過資料列裡有定位的元素）。底色是不透明的色階，捲動時才蓋得住下面的列。固定住的時候下緣加陰影（`--stuck` 修飾符，`box-shadow: 0 4px 8px -2px rgb(0 0 0 / 15%)`）：CSS 沒有跨瀏覽器的「已經固定」選擇器，元件監聽 `scroll`／`resize`，表頭目前位置貼齊它的 sticky top 而且頁面有往下捲才算固定住。深色模式底色是黑的，陰影不明顯。手機卡片版面沒有表頭
+
 **表格顯示的合併欄位**（僅畫面呈現合併，資料仍是各自獨立欄位，表頭文字也標明合併了哪些欄位）：
 - **交辦單位 + 交辦人員**：共用一欄，表頭寫「交辦單位/人員」。手機卡片版面較寬，呈現單行「某某某（OO部門）」；桌面表格的這欄是固定窄欄（110px），單行塞不下，改呈現兩行堆疊「OO部門」換行「某某某」
 - **專案名稱 + 專案Repo**：共用一欄，表頭寫「專案名稱/Repo」。專案名稱在上，有填 Repo 才在下方多一行 `#AAA` `#BBBB` 標籤，沒填就不多顯示
@@ -36,7 +38,8 @@
 - **文字刪節**（使用者決定）：表格的工作目標、處理內容、專案名稱/Repo 收合時截斷，桌面、平板 2 行，手機 3 行（共用元件 `ClampText.vue`，儲存格本身不再設 `line-clamp`）
   - 保留使用者在表單按 Enter 打的換行（`ClampText` 的 `__body` 設 `white-space: pre-wrap`，「…<展開>」「<收合>」按鈕另外設回 `normal`），換行後的行數一樣計入 2／3 行的截斷
   - 只有「真的被截斷」才算：`ClampText` 用 `ResizeObserver` 比較內容實際高度與顯示高度，子元素加 `data-ellipsis` 的（Repo 膠囊單行「…」截斷）寬度被截斷也算；視窗縮放、內容變動都會重新判斷
-  - 有滑鼠的裝置（`(hover: hover) and (pointer: fine)`）滑過被截斷的文字，用 `NTooltip` 顯示全文（延遲 0.3 秒、寬度上限 360px、內容保留換行，太長在框內捲動）；觸控裝置不做 tooltip。tooltip 只在收合狀態出現
+  - 有滑鼠的裝置（`(hover: hover) and (pointer: fine)`）滑過被截斷的文字，用 `NTooltip` 顯示全文（延遲 0.3 秒、內容保留換行）；觸控裝置不做 tooltip（手機不受影響）。tooltip 只在收合狀態出現
+  - **tooltip 不截斷、平常不捲動**（使用者決定，2026-10-12，`ClampText`）：寬度上限 360px，內容超過 200 字（`LONG_TOOLTIP_CHARS`）放寬到 560px，同樣字數高度少一半；寬度一律不超過 `100vw - 32px`（電腦視窗拉窄時也不會超出畫面）。出現時（`@update:show`）看文字上方、下方哪邊空間大就放哪邊，高度上限是那一側剩下的空間（扣 32px），只有那一側也放不下（例如接近 2000 字的處理內容）才在框內捲動。原因：Naive UI 只會上下翻轉、不會把 tooltip 推回畫面內，不限制高度的話超出畫面的部分會看不到
   - **展開／收合是行內按鈕**（使用者決定）：收合且被截斷時，「…<展開>」（按鈕文字含角括號）接在最後一行（桌面平板第 2 行、手機第 3 行）的尾端，文字在它前面斷開；做法是 float 繞排（`__body` 用 `max-height: N × 1lh` 控制行數，`::before` 佔位 `float: right; height: calc(100% - 1lh)` 把 `__more` 推到最後一行，`__more` 再 `float: right; clear: both`），不用拿底色蓋文字，斑馬紋、今天、放假、請假等各種底色都不會穿幫。專案名稱/Repo 這一欄例外：Repo 膠囊本身已經有「…」，所以不加「…」也不接在行尾，「<展開>」直接放在截斷內容的下一行（`ClampText` 的 `inline-toggle="false"`，使用者決定）。點任一個「展開」**整列**都不截斷，每格全文的下一行出現「<收合>」，點任一個整列收回。按鈕由 `ClampText` 渲染（emit `toggle`），有 `aria-expanded`，`::after` 往外撐開點擊範圍。判斷是否被截斷時會先暫時拿掉「…展開」再量，避免剛好放得下的文字被按鈕擠出一行而誤判（以上「展開／收合」都指含角括號的按鈕文字）
   - **「展開／收合」的顏色依列的色系**，滑過變深一階並出現底線：一般 `black-700`→`black-800`；今天 `blue-700`→`blue-800`；放假（非今天）`orange-800`→`orange-900`；今天剛好放假 `yellow-800`→`yellow-900`；請假列 `teal-700`→`teal-800`；逾期列 `red-700`→`red-800`
   - 點列本身不會展開（避免跟拖曳、上下移、操作按鈕誤觸）。**展開中的列，底色與 2px 四邊框線依各自色系**（使用者決定）：一般 `black-100`／框 `black-300`；今天 `blue-100`／`blue-300`；放假（非今天）`orange-100`／`orange-300`；今天剛好放假 `yellow-100`／`yellow-300`；請假列 `teal-050`／`teal-300`；逾期列 `red-050`／`red-300`。請假、逾期是列自己的屬性，顏色優先於今天／放假。實作：顏色是 CSS 變數 `--expand-bg`／`--expand-border`／`--expand-toggle`／`--expand-toggle-hover`／`--expand-marker`，預設值定義在 `.work-item-table`，今天／放假修飾符與列的 `--leave`／`--overdue` 覆寫（列自己的值優先，不用比選擇器權重）；色塊與框線畫在 `work-item-table__row--expanded` 的 `::before`（`isolation: isolate` + `z-index: -1`，在原本底色上、文字下，框線不影響排版），請假、逾期的左側標線也一起畫在 `::before` 上，不會被色塊蓋掉
@@ -45,6 +48,7 @@
 - **月份檢視**（使用者決定，2026-10-12，`month-mode` prop，切換方式見 [date-nav.md](date-nav.md)「月份檢視」）：一整個月的紀錄共用一個表頭（第一欄維持「項次」），依日期分組
   - 月初在上面（`utils/month-view.ts` 的 `sortByDateAndIndex`）；沒有紀錄的日子直接跳過（國定假日沒有紀錄也不顯示）
   - **每天上面一列日期列**（`work-item-table__day-heading`）：日期含星期 `10/12（一）`（`formatMonthDayLabel`，點了切到那天的單日檢視，emit `goToDate`）＋放假時的放假徽章（樣式同 `DateNav`），不顯示工時合計（使用者決定）。平板、桌面橫跨整張表、上緣 2px 分隔線；手機是卡片上方的標題
+  - **日期列往下捲時固定**（使用者決定，2026-10-12）：`position: sticky`，範圍是那一天的容器（`work-item-table__day`），捲過那一天就跟著離開、換下一天的日期列固定。平板、桌面固定在表頭下面（`top: calc(var(--sticky-offset) + var(--table-header-height))`，表頭高度由元件用 `ResizeObserver` 量好設在根元素）；手機固定在畫面最上方（`top: 0`，手機的工具列與表頭都不固定），底色 `black-000` 蓋住捲過去的卡片。`z-index: 1`，在資料列之上、表頭之下
   - **底色每天各自判斷**（使用者決定，同單日表格）：每天的容器（`work-item-table__day`）套用跟單日表格同一組修飾符 `work-item-table--viewing-today`／`work-item-table--holiday`，那一天的列、展開色、日期列（底色同單日表頭：一般 `black-100`、今天 `blue-100`、放假 `orange-100`、今天剛好放假 `yellow-100`；分隔線是那一組的 `--expand-border`；日期文字是 `--expand-toggle`）都跟著換。放假名稱由使用端傳 `day-off-label-of`（`useTaiwanHolidays` 的 `getDayOffLabel`）。共用的表頭不分天，用一般的 `black-100`
   - **調整順序只能在同一天內**（使用者決定）：每天各自一個 `VueDraggable`（不共用 group，拖不到別天），上移／下移只跟同一天相鄰的交換，第一筆／最後一筆停用；emit `reorder` 時多帶那一天的日期，`HomeView` 的 `onReorder` 只換掉那一天的紀錄、用那個日期存檔
   - 空狀態「這個月沒有紀錄」

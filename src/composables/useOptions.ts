@@ -7,6 +7,7 @@ import {
   getApi,
   postApi,
 } from '@/composables/useWorkItems';
+import type { ThemeMode } from '@/composables/useTheme';
 import type { RecentItem, WorkItemOptions } from '@/types/work-item';
 import { upsertRecentItems } from '@/utils/recent-history';
 import type { WorkHoursSetting } from '@/utils/work-hours';
@@ -17,11 +18,17 @@ interface DoGetOptionsResponse {
   recentItems?: RecentItem[];
   /** 工時設定，沒設定時是 null；舊版後端沒有這個欄位，當作沒設定（表單不顯示工作時段） */
   workHours?: WorkHoursSetting | null;
+  /** 擁有者的樣式設定（跨裝置同步），沒設定時是 null；舊版後端沒有這個欄位，當作沒設定 */
+  themeMode?: ThemeMode | null;
   error?: string;
 }
 
 interface DoPostOptionsResponse extends DoPostResponse {
   options?: WorkItemOptions;
+}
+
+interface DoPostThemeModeResponse extends DoPostResponse {
+  themeMode?: ThemeMode | null;
 }
 
 interface DoPostWorkHoursResponse extends DoPostResponse {
@@ -33,6 +40,8 @@ const options = ref<WorkItemOptions | null>(null);
 const recentItems = ref<RecentItem[]>([]);
 /** 工時設定（表單的工作時段換算用），沒設定時是 null */
 const workHours = ref<WorkHoursSetting | null>(null);
+/** 擁有者存在 Sheet 的樣式設定（跨裝置同步，使用者決定），沒設定時是 null */
+const themeMode = ref<ThemeMode | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 let fetchPromise: Promise<void> | null = null;
@@ -65,6 +74,7 @@ const fetchOptions = async (): Promise<void> => {
       options.value = data.options;
       recentItems.value = toIsoRecentItems(data.recentItems);
       workHours.value = data.workHours ?? null;
+      themeMode.value = data.themeMode ?? null;
     } catch (e) {
       error.value = e instanceof Error ? e.message : '讀取選項清單時發生未知錯誤';
     } finally {
@@ -129,11 +139,23 @@ const saveWorkHours = async (idToken: string, setting: WorkHoursSetting | null):
   workHours.value = data.workHours ?? null;
 };
 
+/**
+ * 儲存樣式設定（只有擁有者能寫），回應帶回存好的值。失敗丟帶 code 的 ApiError，呼叫端才分得出登入錯誤
+ */
+const saveThemeMode = async (idToken: string, mode: ThemeMode): Promise<void> => {
+  const data = await postApi<DoPostThemeModeResponse>(idToken, {
+    action: 'saveThemeMode',
+    themeMode: mode,
+  });
+  themeMode.value = data.themeMode ?? null;
+};
+
 export function useOptions() {
   return {
     options,
     recentItems,
     workHours,
+    themeMode,
     loading,
     error,
     fetchOptions,
@@ -142,5 +164,6 @@ export function useOptions() {
     renameOption,
     deleteOption,
     saveWorkHours,
+    saveThemeMode,
   };
 }

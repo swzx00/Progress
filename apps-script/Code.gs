@@ -110,6 +110,12 @@ var WORK_HOURS_FIELDS = ['start', 'end', 'breakStart', 'breakEnd'];
 var WORK_HOURS_DAILY_STANDARD = 8;
 var TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+// 樣式設定（深色模式，使用者決定：存在 Sheet 讓不同裝置同步）：存在「選項清單」分頁的「樣式設定」欄第 2 列，
+// 值是 auto（依日出日落）／light／dark，儲存格純文字格式。這欄不屬於 OPTION_CATEGORIES，
+// 不會出現在管理選項清單或下拉選單。可用的值手動同步自前端 src/composables/useTheme.ts 的 THEME_MODES
+var THEME_MODE_HEADER = '樣式設定';
+var THEME_MODE_VALUES = ['auto', 'light', 'dark'];
+
 // ===== Sheet 共用工具 =====
 
 function getSheetId_() {
@@ -802,6 +808,38 @@ function handleSaveWorkHours_(workHours) {
   return jsonOutput_({ workHours: getWorkHours_() });
 }
 
+// 讀取樣式設定，沒有設定（分頁或欄位不存在、空白）或值不合法時回 null
+function getThemeMode_() {
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(OPTIONS_SHEET_NAME);
+  if (!sheet) return null;
+  var col = getColumnMap_(sheet)[THEME_MODE_HEADER];
+  if (!col) return null;
+  var value = String(sheet.getRange(2, col).getValues()[0][0]).trim();
+  return THEME_MODE_VALUES.indexOf(value) === -1 ? null : value;
+}
+
+// 儲存樣式設定：「樣式設定」欄不存在就在最後面加一欄表頭，第 2 列寫入值（純文字）
+function handleSaveThemeMode_(themeMode) {
+  if (THEME_MODE_VALUES.indexOf(themeMode) === -1) {
+    return jsonOutput_({ error: '樣式設定只能是 auto、light 或 dark' });
+  }
+
+  var sheet = getOrCreateOptionsSheet_();
+  var col = getColumnMap_(sheet)[THEME_MODE_HEADER];
+  if (!col) {
+    col = sheet.getLastColumn() + 1;
+    if (col > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
+    sheet.getRange(1, col).setValue(THEME_MODE_HEADER);
+  }
+
+  ensureRows_(sheet, 2);
+  var cell = sheet.getRange(2, col);
+  cell.setNumberFormat('@');
+  cell.setValue(themeMode);
+  return jsonOutput_({ themeMode: getThemeMode_() });
+}
+
 // ===== doGet =====
 
 // 匯出 Excel（type=range）一次最多可讀的天數（含頭尾），閏年整年 366 天剛好放得下
@@ -932,6 +970,7 @@ function doGet(e) {
         options: getOptions_(),
         recentItems: getRecentItems_(),
         workHours: getWorkHours_(),
+        themeMode: getThemeMode_(),
       });
     }
 
@@ -1006,6 +1045,7 @@ function handleAction_(body) {
   if (body.action === 'saveWorkHours') {
     return handleSaveWorkHours_(body.workHours === undefined ? null : body.workHours);
   }
+  if (body.action === 'saveThemeMode') return handleSaveThemeMode_(body.themeMode);
 
   return jsonOutput_({ error: '未知的 action' });
 }

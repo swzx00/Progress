@@ -4,7 +4,8 @@ import { test as base, expect, type Page } from '@playwright/test';
  * 瀏覽器測試共用的設定：
  * - 時間固定在 FIXED_NOW（台灣時間的平日上班時間），MSW 的預設資料、「今天」、假日標示才固定
  * - 外部資源換成假的：Google 登入腳本（不連 Google）、台灣行事曆（10/9、10/10 放假）、字型（不下載）
- * - loggedIn: true 時在 sessionStorage 放一個擁有者的假 ID Token，直接進管理畫面（MSW 不驗證 token）
+ * - loggedIn: true 時模擬「這個瀏覽器登入過」：localStorage 放自動登入的標記，假的 GIS 在 prompt() 時給擁有者的假 ID Token
+ *   （token 只放記憶體，重新整理也是靠自動登入拿回來；MSW 不驗證 token）
  */
 export const FIXED_NOW = new Date('2026-10-07T10:00:00+08:00');
 export const TODAY = '2026-10-07';
@@ -28,16 +29,24 @@ const makeCalendar = (year: number, holidays: Record<string, string>) => {
   return entries;
 };
 
-/** 假的 Google 登入腳本：renderButton 放一顆按鈕，其他什麼都不做 */
+/** 假的 Google 登入腳本：renderButton 放一顆按鈕；prompt() 模擬自動登入（有 window.__e2eIdToken 才給 token） */
 const FAKE_GIS = `
+let config = null;
 window.google = { accounts: { id: {
-  initialize() {},
+  initialize(c) { config = c; },
   disableAutoSelect() {},
   renderButton(el) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = '使用 Google 帳戶登入';
     el.appendChild(button);
+  },
+  // 自動登入：有測試給的 token 就交給 callback，沒有就通知被略過
+  prompt(listener) {
+    setTimeout(() => {
+      if (window.__e2eIdToken && config) config.callback({ credential: window.__e2eIdToken });
+      else if (listener) listener({ isSkippedMoment: () => true });
+    }, 0);
   },
 } } };
 `;
@@ -66,7 +75,12 @@ const prepare = async (page: Page, loggedIn: boolean): Promise<void> => {
   );
   if (loggedIn) {
     await page.addInitScript((token) => {
-      sessionStorage.setItem('google_id_token', token);
+      // 初始化腳本每次重新整理都會再跑：「登入過」的標記只在第一次放，按登出清掉後重新整理才不會又被放回去
+      if (!sessionStorage.getItem('__e2e-seeded')) {
+        localStorage.setItem('progress:auto-login', '1');
+        sessionStorage.setItem('__e2e-seeded', '1');
+      }
+      (window as unknown as { __e2eIdToken: string }).__e2eIdToken = token;
     }, fakeIdToken(OWNER_EMAIL));
   }
 };
