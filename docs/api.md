@@ -26,7 +26,7 @@
 
 **重要限制：Apps Script 網頁應用程式的回應沒辦法自訂 HTTP status code，一律是 200**（平台限制）。所以 `doGet`／`doPost` 的成功/失敗**一律靠回應內容裡有沒有 `error` 欄位判斷**，前端（`useWorkItems.ts`）已經配合改成檢查 `data.error`，不能用 `res.ok`／HTTP 狀態碼判斷；MSW mock 也同步改成一律回 200、錯誤放在 `error` 欄位裡，貼近真實行為。之後如果重寫前端呼叫邏輯，要記得延續這個慣例。
 
-**`doPost` 一律用 `Content-Type: text/plain;charset=utf-8`**（body 仍是 JSON 字串）：`application/json` 不屬於瀏覽器的「簡單請求」，跨網域時會先送 `OPTIONS` 預檢，Apps Script 不回應預檢（沒有 `Access-Control-Allow-Origin`），正式站（`github.io`）的寫入會全部被 CORS 擋下，`fetch` 只會丟 `Failed to fetch`。後端 `doPost` 是 `JSON.parse(e.postData.contents)`，不看 `Content-Type`。本機 `npm run dev` 走 MSW 或同源的 `/apps-script-proxy`，不會跨網域，測不出這個問題，`useWorkItems.spec.ts` 有測試鎖住。之後改前端呼叫邏輯要延續，也不要加自訂 header（一樣會觸發預檢）
+**`doPost` 一律用 `Content-Type: text/plain;charset=utf-8`**（body 仍是 JSON 字串）：`application/json` 不屬於瀏覽器的「簡單請求」，跨網域時會先送 `OPTIONS` 預檢，Apps Script 不回應預檢（沒有 `Access-Control-Allow-Origin`），正式站（`github.io`）的寫入會全部被 CORS 擋下，`fetch` 只會丟 `Failed to fetch`。後端 `doPost` 是 `JSON.parse(e.postData.contents)`，不看 `Content-Type`。本機 `npm run dev` 走 MSW 或同源的 `/apps-script-proxy`，不會跨網域，測不出這個問題，`tests/unit/composables/useWorkItems.spec.ts` 有測試鎖住。之後改前端呼叫邏輯要延續，也不要加自訂 header（一樣會觸發預檢）
 
 **錯誤代碼 `code`**：需要讓前端分辨錯誤類型的情況，`doPost` 回應除了 `error`（給人看的訊息）再多帶一個 `code` 欄位。目前只有登入驗證失敗會帶 `code: 'UNAUTHORIZED'`（含 token 過期），其他錯誤沒有 `code`。前端 `useWorkItems.ts` 的 `postAction`、`useOptions.ts` 的 `postOptionAction` 都會丟出帶 `code` 的 `ApiError`，呼叫端用 `e instanceof ApiError && e.code === 'UNAUTHORIZED'` 判斷，**不要比對 `error` 文字**（文字可能改、MSW 跟真後端也曾經不一致）。新增錯誤代碼時，`Code.gs`、`src/mocks/handlers.ts`、`useWorkItems.ts` 的 `ApiErrorCode` 型別要一起改。
 

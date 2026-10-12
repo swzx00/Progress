@@ -147,6 +147,10 @@ src/
     work-item.ts           # 表單欄位驗證（validateWorkItem），規則來自 shared/validation-schema.json
   styles/
     tokens.scss            # 色彩變數（統一色階 --color-<色系>-<階>，例如 --color-blue-500 / --color-black-100，色值取自公司設計系統），[data-theme='dark'] 底下是深色模式的值，元件一律吃變數不寫死 hex
+tests/                     # 所有 Vitest 測試（不放在 src/ 裡），細節見 docs/testing.md
+  unit/                    # 單元、元件測試，資料夾結構照 src/（例如 tests/unit/components/DateNav.spec.ts）
+  apps-script/、backend/、msw/、property/、export/  # 前後端一致性、後端共同規格、隨機輸入、匯出檔案內容
+e2e/                       # Playwright 瀏覽器測試
 shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
@@ -168,6 +172,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 - 新增大型套件時看 build 輸出大小，必要時加進 `vite.config.ts` 的 `codeSplitting.groups`
 - `npm audit` 剩下的 high（`braces`）沒有修正版，**不要跑 `npm audit fix --force`**
 - 測試用 Vitest（單元、驗證、前後端一致性、元件），改規則時對應的 spec 一起改，見 [docs/testing.md](docs/testing.md)
+- **測試檔一律放在 `tests/`**，不跟 `src/` 的正式程式碼混在一起：單元、元件測試在 `tests/unit/`，資料夾結構照 `src/`，被測檔案用 `@/` 別名 import
 
 
 ## 命名慣例
