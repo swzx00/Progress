@@ -1,11 +1,18 @@
 import { computed, ref } from 'vue';
 
-const ALLOWED_EMAILS = ['swzx00@gmail.com'];
+import { ApiError } from '@/composables/useWorkItems';
 
-const TOKEN_STORAGE_KEY = 'google_id_token';
+const ALLOWED_EMAILS = ['swzx00@gmail.com'];
 
 interface GoogleCredentialResponse {
   credential: string;
+}
+
+/** google.accounts.id.prompt() 的狀態通知；FedCM 底下部分方法可能不存在，一律用可選呼叫 */
+interface PromptMomentNotification {
+  isSkippedMoment?: () => boolean;
+  isDismissedMoment?: () => boolean;
+  isNotDisplayed?: () => boolean;
 }
 
 declare global {
@@ -16,8 +23,12 @@ declare global {
           initialize: (config: {
             client_id: string;
             callback: (response: GoogleCredentialResponse) => void;
+            auto_select?: boolean;
+            use_fedcm_for_prompt?: boolean;
+            itp_support?: boolean;
           }) => void;
           renderButton: (element: HTMLElement, options: Record<string, unknown>) => void;
+          prompt?: (listener?: (notification: PromptMomentNotification) => void) => void;
           disableAutoSelect: () => void;
         };
       };
@@ -26,25 +37,41 @@ declare global {
 }
 
 /**
- * sessionStorage 在瀏覽器封鎖網站資料時存取會丟 SecurityError，模組載入時丟錯會讓整個 App 白畫面，
- * 所以讀寫都包 try/catch：讀不到就當作沒登入，寫不進去只是重新整理後要重新登入
+ * 登入憑證（Google ID Token）只放在記憶體，不存 localStorage／sessionStorage（使用者決定：存在瀏覽器儲存空間
+ * 有被網頁程式讀走的風險，且 swzx00.github.io 底下的其他網站共用同一份）。重新整理、重開分頁後靠 Google
+ * 自動登入（auto_select）拿新的 token；「長期記住登入」由 Google 自己用 accounts.google.com 的 HttpOnly
+ * Cookie 保管，這邊只拿一小時就失效的 token。
+ *
+ * localStorage 只記一個「這個瀏覽器登入過、沒按登出」的標記（AUTO_LOGIN_HINT_KEY，值只有 '1'，不是憑證），
+ * 有這個標記才在載入時嘗試自動登入；沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
  */
-const readStored = (key: string): string | null => {
+const AUTO_LOGIN_HINT_KEY = 'progress:auto-login';
+/** 舊版存在 sessionStorage 的 token 與時鐘差，載入時清掉 */
+const LEGACY_SESSION_KEYS = ['google_id_token', 'google_id_token_skew'];
+
+/** 瀏覽器封鎖網站資料時存取 storage 會丟錯，讀寫一律包 try/catch：讀不到當作沒有，寫不進去就算了 */
+const readHint = (): boolean => {
   try {
-    return sessionStorage.getItem(key);
+    return localStorage.getItem(AUTO_LOGIN_HINT_KEY) === '1';
   } catch {
-    return null;
+    return false;
   }
 };
 
-const writeStored = (key: string, value: string | null): void => {
+const writeHint = (on: boolean): void => {
   try {
-    if (value === null) sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
+    if (on) localStorage.setItem(AUTO_LOGIN_HINT_KEY, '1');
+    else localStorage.removeItem(AUTO_LOGIN_HINT_KEY);
   } catch {
-    // 存不進去不影響這次登入
+    // 存不進去只是下次不會自動登入
   }
 };
+
+try {
+  for (const key of LEGACY_SESSION_KEYS) sessionStorage.removeItem(key);
+} catch {
+  // 讀不到就沒有東西要清
+}
 
 const decodeJwtPayload = (token: string): Record<string, unknown> => {
   const base64Url = token.split('.')[1];
@@ -60,14 +87,16 @@ const decodeJwtPayload = (token: string): Record<string, unknown> => {
 
 /** 提早一點視為過期，避免剛好在送出途中過期 */
 const EXPIRY_MARGIN_MS = 60 * 1000;
+/** 到期前多久在背景自動續期 */
+const REFRESH_BEFORE_MS = 5 * 60 * 1000;
+/** 背景續期等多久沒拿到新 token 就算失敗（Google 沒回應、被瀏覽器擋下） */
+const REFRESH_TIMEOUT_MS = 15 * 1000;
 
 /**
- * 本機時鐘跟 Google 的時間差（毫秒，Google 減本機）。登入當下用 token 的 iat（核發時間）算一次，
- * 判斷過期時用「本機時間＋時間差」比 exp，本機時鐘不準時才不會把剛拿到的 token 當成過期。
- * 跟 token 一起存在 sessionStorage，重新整理後沿用
+ * 本機時鐘跟 Google 的時間差（毫秒，Google 減本機）。拿到 token 時用 iat（核發時間）算，
+ * 判斷過期時用「本機時間＋時間差」比 exp，本機時鐘不準時才不會把剛拿到的 token 當成過期
  */
-const SKEW_STORAGE_KEY = `${TOKEN_STORAGE_KEY}_skew`;
-let clockSkewMs = Number(readStored(SKEW_STORAGE_KEY)) || 0;
+let clockSkewMs = 0;
 
 const measureClockSkew = (token: string): number => {
   try {
@@ -78,25 +107,25 @@ const measureClockSkew = (token: string): number => {
   }
 };
 
-/** ID Token 是否已過期（看 JWT 的 exp，單位秒）；解不開或沒有 exp 時交給後端判斷，不當作過期 */
-const isTokenExpired = (token: string): boolean => {
+/** token 的到期時間（毫秒，Google 的時間）；解不開或沒有 exp 回傳 null，交給後端判斷 */
+const expiresAt = (token: string): number | null => {
   try {
     const { exp } = decodeJwtPayload(token);
-    return typeof exp === 'number' && exp * 1000 - EXPIRY_MARGIN_MS <= Date.now() + clockSkewMs;
+    return typeof exp === 'number' ? exp * 1000 : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
-const initialToken = readStored(TOKEN_STORAGE_KEY);
-// 重新整理時 sessionStorage 裡的 token 已經過期（約一小時），直接當作沒登入，不顯示管理功能
-const idToken = ref<string | null>(
-  initialToken && !isTokenExpired(initialToken) ? initialToken : null,
-);
-if (initialToken && !idToken.value) {
-  writeStored(TOKEN_STORAGE_KEY, null);
-  writeStored(SKEW_STORAGE_KEY, null);
-}
+/** 現在（換算成 Google 的時間）距離到期還有多久；沒有 exp 回傳 Infinity */
+const msUntilExpiry = (token: string): number => {
+  const exp = expiresAt(token);
+  return exp === null ? Infinity : exp - (Date.now() + clockSkewMs);
+};
+
+const isTokenExpired = (token: string): boolean => msUntilExpiry(token) <= EXPIRY_MARGIN_MS;
+
+const idToken = ref<string | null>(null);
 
 const userEmail = computed<string | null>(() => {
   if (!idToken.value) return null;
@@ -131,11 +160,35 @@ const loadGisScript = (): Promise<void> => {
   return scriptLoadPromise;
 };
 
+/** 背景續期：到期前 REFRESH_BEFORE_MS 觸發 */
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+const scheduleRefresh = (token: string): void => {
+  clearTimeout(refreshTimer);
+  const remaining = msUntilExpiry(token);
+  if (!Number.isFinite(remaining)) return;
+  refreshTimer = setTimeout(
+    () => {
+      void refreshLogin();
+    },
+    Math.max(0, remaining - REFRESH_BEFORE_MS),
+  );
+};
+
+/** 等待中的續期：拿到新 token（handleCredential）時一起 resolve(true) */
+let pendingRefresh: { promise: Promise<boolean>; resolve: (ok: boolean) => void } | null = null;
+
+const settleRefresh = (ok: boolean): void => {
+  pendingRefresh?.resolve(ok);
+  pendingRefresh = null;
+};
+
 const handleCredential = (response: GoogleCredentialResponse): void => {
   idToken.value = response.credential;
   clockSkewMs = measureClockSkew(response.credential);
-  writeStored(TOKEN_STORAGE_KEY, response.credential);
-  writeStored(SKEW_STORAGE_KEY, String(clockSkewMs));
+  writeHint(true);
+  scheduleRefresh(response.credential);
+  settleRefresh(true);
 };
 
 let initialized = false;
@@ -146,8 +199,62 @@ const ensureInitialized = async (): Promise<void> => {
   window.google?.accounts.id.initialize({
     client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
     callback: handleCredential,
+    // 之前同意過、瀏覽器只登入一個 Google 帳號時，prompt() 直接給 token，不用點（自動登入）
+    auto_select: true,
+    // Chrome 的自動登入走 FedCM（兩次自動登入至少間隔 10 分鐘，Google 的規定）
+    use_fedcm_for_prompt: true,
+    itp_support: true,
   });
   initialized = true;
+};
+
+/**
+ * 在背景跟 Google 換一張新的 token（google.accounts.id.prompt，auto_select）。回傳是否拿到。
+ * 同時有多個呼叫只發一次；Google 登入腳本還沒載入就直接回傳 false（不在這裡等腳本，避免卡住畫面）；
+ * 被略過、被關掉、或 REFRESH_TIMEOUT_MS 內沒回應都算失敗。失敗時不會登出，交給呼叫端決定
+ */
+const refreshLogin = (): Promise<boolean> => {
+  if (pendingRefresh) return pendingRefresh.promise;
+  const gis = window.google?.accounts?.id;
+  if (!gis?.prompt) return Promise.resolve(false);
+
+  let resolve!: (ok: boolean) => void;
+  const promise = new Promise<boolean>((r) => {
+    resolve = r;
+  });
+  pendingRefresh = { promise, resolve };
+  const timeout = setTimeout(() => settleRefresh(false), REFRESH_TIMEOUT_MS);
+  void promise.then(() => clearTimeout(timeout));
+
+  void ensureInitialized()
+    .then(() => {
+      gis.prompt?.((notification) => {
+        if (
+          notification.isNotDisplayed?.() ||
+          notification.isSkippedMoment?.() ||
+          notification.isDismissedMoment?.()
+        ) {
+          settleRefresh(false);
+        }
+      });
+    })
+    .catch(() => settleRefresh(false));
+  return promise;
+};
+
+/**
+ * 重新整理、重開分頁時自動登入：只有這個瀏覽器登入過、沒按登出（有 AUTO_LOGIN_HINT_KEY）才嘗試，
+ * 這時才載入 Google 登入腳本並呼叫 prompt()。拿不到（被 10 分鐘冷卻擋下、無痕模式、沒登入 Google）
+ * 就維持唯讀畫面，右上角照常有登入按鈕，不顯示錯誤
+ */
+const tryAutoLogin = async (): Promise<boolean> => {
+  if (idToken.value || !readHint()) return false;
+  try {
+    await ensureInitialized();
+  } catch {
+    return false;
+  }
+  return refreshLogin();
 };
 
 /**
@@ -166,24 +273,58 @@ const renderSignInButton = async (el: HTMLElement, dark = false): Promise<void> 
   });
 };
 
-const signOut = (): void => {
+/**
+ * 登入失效（續期失敗、後端回 UNAUTHORIZED）：清掉 token 回到唯讀畫面，但保留自動登入，
+ * 下次重新整理還能自動登入回來（不是使用者自己要登出）
+ */
+const clearLogin = (): void => {
+  clearTimeout(refreshTimer);
+  settleRefresh(false);
   idToken.value = null;
-  writeStored(TOKEN_STORAGE_KEY, null);
-  writeStored(SKEW_STORAGE_KEY, null);
+};
+
+/** 使用者按「登出」：清掉 token，關掉自動登入（之後要自己點登入才會再登入） */
+const signOut = (): void => {
+  clearLogin();
+  writeHint(false);
   window.google?.accounts.id.disableAutoSelect();
 };
 
 /**
- * 開始編輯前確認登入還有效：token 過期就登出並回傳 false。
- * 分頁開著超過一小時，token 會過期但畫面還是管理模式；在開表單／對話框前先擋下，
- * 避免使用者打完一大段內容按儲存才被後端退回、表單關閉。真正把關仍在後端
+ * 開始編輯前確認登入還有效：還沒過期直接通過；過期了先在背景續期，拿到新 token 就通過，
+ * 拿不到才登出（clearLogin）並回傳 false。在開表單／對話框前先檢查，避免打完內容才在儲存時被退回。
+ * 真正把關仍在後端
  */
-const ensureFreshLogin = (): boolean => {
+const ensureFreshLogin = async (): Promise<boolean> => {
   if (!idToken.value) return false;
   if (!isTokenExpired(idToken.value)) return true;
-  signOut();
+  if (await refreshLogin()) return true;
+  clearLogin();
   return false;
 };
+
+/**
+ * 寫入資料時被後端以 UNAUTHORIZED 退回（例如 token 剛好過期）：先續期，拿到新 token 就用它重送一次。
+ * 後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。
+ * 續期失敗或其他錯誤照原樣丟出，呼叫端照原本的方式處理（UNAUTHORIZED 就關畫面、clearLogin）
+ */
+const withLoginRetry = async <T>(token: string, run: (token: string) => Promise<T>): Promise<T> => {
+  try {
+    return await run(token);
+  } catch (e) {
+    if (!(e instanceof ApiError && e.code === 'UNAUTHORIZED')) throw e;
+    if (!(await refreshLogin()) || !idToken.value) throw e;
+    return run(idToken.value);
+  }
+};
+
+// 分頁切回來時檢查一次：電腦睡眠喚醒後計時器可能還沒觸發，token 快過期就先續期
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !idToken.value) return;
+    if (msUntilExpiry(idToken.value) <= REFRESH_BEFORE_MS) void refreshLogin();
+  });
+}
 
 export function useGoogleAuth() {
   return {
@@ -192,7 +333,11 @@ export function useGoogleAuth() {
     isLoggedIn,
     isAuthorized,
     renderSignInButton,
+    tryAutoLogin,
+    refreshLogin,
+    clearLogin,
     signOut,
     ensureFreshLogin,
+    withLoginRetry,
   };
 }

@@ -292,3 +292,27 @@ test('有遮罩時頁面不能捲動、不顯示捲軸：表單上再疊確認�
   await expect(drawer(page)).toBeHidden();
   await expect.poll(overflow).not.toBe('hidden');
 });
+
+test('重新整理後自動登入，維持管理畫面；按登出後重新整理維持唯讀、不會自動登入回來', async ({
+  page,
+}) => {
+  await openHome(page);
+  const addButton = page.getByRole('button', { name: '新增' });
+  await expect(addButton).toBeVisible();
+
+  // token 不存在瀏覽器裡：重新整理後靠 Google 自動登入拿回來
+  await page.reload();
+  await expect(addButton).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }),
+    ),
+  ).not.toMatch(/\.sig/);
+
+  await page.getByRole('button', { name: '登出' }).click();
+  await expect(page.getByText('唯讀模式')).toBeVisible();
+  await page.reload();
+  await expect(dataRows(page).first()).toBeVisible();
+  await expect(page.getByText('唯讀模式')).toBeVisible();
+  await expect(addButton).toBeHidden();
+});

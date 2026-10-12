@@ -9,7 +9,18 @@
 - 額外支援 `type=search&q=關鍵字[&field=欄位]`（`handleSearch_`），讀整張工作紀錄分頁找出符合的未刪除紀錄（含請假），給前端搜尋欄用，回應 `{ items, total }`：照「工作日期新的在前、同一天照項次」排序，最多回傳 `SEARCH_MAX_RESULTS`（200）筆，`total` 是全部符合的筆數。比對規則（`matchesSearch_`）跟前端 `src/utils/search-work-items.ts` 的 `matchesSearch` 手動同步，見 [search.md](ui/search.md)。關鍵字不可空白、上限 `SEARCH_KEYWORD_MAX`（100）字，`field` 只接受 `SEARCH_FIELDS`，不合格回 `{ error }`。公開讀取、不需登入
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
-**前端登入實作**：`useGoogleAuth.ts` 已改成真的串接 Google Identity Services（不是 stub）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕、登入後拿到的 ID Token 存 `sessionStorage`（瀏覽器封鎖網站資料時讀寫會丟錯，一律包 try/catch，讀不到就當作沒登入）。ID Token 約一小時過期：重新整理時 `sessionStorage` 裡的 token 已過期（看 JWT 的 `exp`，提早 1 分鐘；本機時鐘不準時用登入當下 token 的 `iat` 算出時間差校正，時間差跟 token 一起存 `sessionStorage`）就當作沒登入；分頁開著過期時，開新增／編輯／刪除等表單或對話框前用 `ensureFreshLogin()` 先擋下、登出並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面（跟公開檢視頁同一套邏輯），管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
+**前端登入實作**：`useGoogleAuth.ts` 串接 Google Identity Services（GIS）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面，管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
+
+**不自動登出**（使用者決定，2026-10-12）：
+- **ID Token 只放記憶體**，不存 `localStorage`／`sessionStorage`（存在瀏覽器儲存空間有被網頁程式讀走的風險，而且 `swzx00.github.io` 底下的其他網站共用同一份）。載入時會清掉舊版存在 `sessionStorage` 的 `google_id_token`／`google_id_token_skew`
+- **長期記住登入交給 Google**：GIS 用 `auto_select: true`（Chrome 走 FedCM，`use_fedcm_for_prompt: true`）初始化，需要 token 時呼叫 `google.accounts.id.prompt()`，Google 看自己在 `accounts.google.com` 的 HttpOnly Cookie 確認是本人就直接給新 token，不用點
+- **重新整理、重開分頁時自動登入**（`tryAutoLogin`，`HomeView` 掛載時呼叫）：只有 `localStorage` 有 `progress:auto-login` 標記（值 `'1'`，登入成功時寫入，**不是憑證**）才嘗試，沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
+- **背景續期**（`refreshLogin`）：拿到 token 後排計時器，到期前 5 分鐘自動續期；分頁切回來（`visibilitychange`）時 token 快過期也續期（電腦睡眠喚醒後計時器可能沒觸發）。同時有多個續期只呼叫一次 `prompt()`；`isNotDisplayed`／`isSkippedMoment`／`isDismissedMoment` 或 15 秒沒回應都算失敗；GIS 腳本還沒載入直接算失敗，不卡畫面
+- **開表單、對話框前**（`ensureFreshLogin`，非同步）：還沒過期直接通過；過期了（看 JWT 的 `exp`，提早 1 分鐘；本機時鐘不準時用 `iat` 算出時間差校正）先續期，拿到新 token 就照常開，拿不到才回到唯讀並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。調整順序是先在畫面套用新順序再檢查，續期失敗才還原
+- **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
+- **兩種登出**：使用者按「登出」（`signOut`）清掉 token、拿掉 `progress:auto-login` 標記並 `disableAutoSelect()`，之後要自己點登入；登入失效（續期失敗、`UNAUTHORIZED`，`clearLogin`）只清掉 token，保留自動登入，下次重新整理還能自動登入回來
+- **限制**（Google、瀏覽器的規定）：瀏覽器要登入著 Google 而且之前在這個網站同意過登入；FedCM 兩次自動登入至少隔 10 分鐘（10 分鐘內連續重新整理兩次，第二次要點登入）；無痕模式、關閉第三方登入或 FedCM 的瀏覽器自動登入會失敗，維持唯讀畫面、右上角照常有登入按鈕
+- e2e 的假 GIS（`e2e/fixtures.ts`）：`prompt()` 有 `window.__e2eIdToken` 就交給 `initialize` 的 callback，模擬自動登入
 
 **doPost(e)**
 - body 帶入 Google ID Token，後端呼叫 `https://oauth2.googleapis.com/tokeninfo` 驗證有效性（`verifyIdToken_`）：`aud` 要等於指令碼屬性 `GOOGLE_CLIENT_ID`（沒設這個屬性一律拒絕）、email 已驗證且是 swzx00@gmail.com，不符合直接拒絕
@@ -35,7 +46,7 @@
 
 **可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 存在 Apps Script 的指令碼屬性 `SHEET_ID`（`PropertiesService`，`getSheetId_`），不寫死在程式碼裡；同一處另有 `GOOGLE_CLIENT_ID`（前端 `.env` 那組，驗證 ID Token 的 `aud` 用）。部署步驟寫在 `Code.gs` 開頭的註解。
 
-- Google 登入狀態存在登入 session 內，不用每次操作重新登入
+- Google 登入狀態由 Google 保管（自動登入），token 只放記憶體、到期前自動續期，不用每次操作重新登入
 
 **共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端 `src/validation/work-item.ts` 直接 import。**目前 `Code.gs` 的 `VALIDATION_RULES` 是手動同步的**——原本規劃的 build script（`npm run build:gs`，把 JSON 轉成 Apps Script 可讀的 `schema.gs`）還沒實作，`apps-script/` 也還沒設定 clasp（目前是手動把 `Code.gs` 貼到 Apps Script 編輯器部署）。改 JSON 時 `Code.gs` 要一起改。
 

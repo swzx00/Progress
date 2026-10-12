@@ -69,6 +69,7 @@
 - **`doPost` 一律送 `Content-Type: text/plain;charset=utf-8`**（body 仍是 JSON），不要改成 `application/json` 或加自訂 header：跨網域會觸發 `OPTIONS` 預檢，Apps Script 不回應，正式站寫入全部被 CORS 擋。本機 MSW／dev proxy 不跨網域，測不出來，細節見 [docs/api.md](docs/api.md)
 - **日期格式**：Sheet 與 API 是 `YYYY/MM/DD`；前端內部是 `YYYY-MM-DD`（原生 `<input type="date">` 只吃這個）。兩者轉換**只在 `useWorkItems.ts`**（`toApiDate`／`fromApiDate`／`toApiItem`）。前端日期字串一律用 `src/utils/date.ts`（`toLocalDateString`／`todayString`／`parseLocalDate`／`addDays`），**不要用 `toISOString()`**（台灣凌晨會變前一天，`NDatePicker` 的時間戳會少一天），也不要用 `new Date('YYYY-MM-DD')`（當成 UTC）。例外：`export-excel.ts` 刻意用 UTC 建 Excel 日期
 - **前端登入只是體驗層**：`useGoogleAuth.ts` 的允許清單決定要不要渲染管理功能，真正把關在後端 `doPost`
+- **登入憑證不存瀏覽器儲存空間**（使用者決定）：ID Token 只放記憶體，不要改存 `localStorage`／`sessionStorage`；長期記住登入靠 Google 自動登入，細節見 [docs/api.md](docs/api.md)「不自動登出」
 - **手動同步清單**（改一處要一起改）：
 
   | 規則 | 位置 |
@@ -124,7 +125,7 @@ src/
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
     DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
-    useGoogleAuth.ts      # 登入狀態、ID Token 管理（ensureFreshLogin：開表單／對話框前檢查 token 是否過期）
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、到期前背景續期（refreshLogin）、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()

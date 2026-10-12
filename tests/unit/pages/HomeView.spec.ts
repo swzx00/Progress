@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   loading: null as unknown as Ref<boolean>,
   error: null as unknown as Ref<string | null>,
   signOut: vi.fn(),
+  clearLogin: vi.fn(),
+  tryAutoLogin: vi.fn(),
   ensureFreshLogin: vi.fn(),
   showToast: vi.fn(),
   rememberItems: vi.fn(),
@@ -47,7 +49,11 @@ vi.mock('@/composables/useGoogleAuth', async () => {
       isAuthorized: computed(() => true),
       renderSignInButton: vi.fn(),
       signOut: mocks.signOut,
+      clearLogin: mocks.clearLogin,
+      tryAutoLogin: mocks.tryAutoLogin,
       ensureFreshLogin: mocks.ensureFreshLogin,
+      // 續期重送的邏輯在 useGoogleAuth 測，這裡直接用目前的 token 呼叫一次
+      withLoginRetry: <T>(token: string, run: (token: string) => Promise<T>) => run(token),
     }),
   };
 });
@@ -183,7 +189,8 @@ beforeEach(() => {
   mocks.error.value = null;
   mocks.fetchByDate.mockResolvedValue(undefined);
   mocks.fetchRange.mockResolvedValue(undefined);
-  mocks.ensureFreshLogin.mockReturnValue(true);
+  mocks.ensureFreshLogin.mockResolvedValue(true);
+  mocks.tryAutoLogin.mockResolvedValue(false);
 });
 
 describe('讀取', () => {
@@ -334,7 +341,7 @@ describe('存檔（新增／編輯）', () => {
     await emitFrom(wrapper, 'WorkItemForm', 'save', savePayload());
 
     expect(mocks.showToast).toHaveBeenCalledWith('登入已過期，請重新登入');
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
     expect(exists(wrapper, 'WorkItemForm')).toBe(false);
   });
 
@@ -345,7 +352,7 @@ describe('存檔（新增／編輯）', () => {
     await emitFrom(wrapper, 'WorkItemForm', 'save', savePayload());
 
     expect(mocks.showToast).toHaveBeenCalledWith('工作目標為必填');
-    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
     expect(exists(wrapper, 'WorkItemForm')).toBe(true);
     expect(mocks.rememberItems).not.toHaveBeenCalled();
   });
@@ -356,7 +363,7 @@ describe('存檔（新增／編輯）', () => {
     await openCreate(wrapper);
     await emitFrom(wrapper, 'WorkItemForm', 'save', savePayload());
 
-    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
     expect(exists(wrapper, 'WorkItemForm')).toBe(true);
   });
 
@@ -374,7 +381,7 @@ describe('存檔（新增／編輯）', () => {
   });
 
   it('登入已過期：不打開表單，提示重新登入', async () => {
-    mocks.ensureFreshLogin.mockReturnValue(false);
+    mocks.ensureFreshLogin.mockResolvedValue(false);
     const wrapper = await mountView();
     await openCreate(wrapper);
     await emitFrom(wrapper, 'WorkItemTable', 'edit', mocks.items.value[0]);
@@ -391,7 +398,7 @@ describe('存檔（新增／編輯）', () => {
 
     expect(mocks.createItem).not.toHaveBeenCalled();
     expect(mocks.showToast).toHaveBeenCalledWith('尚未登入，無法儲存');
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
   });
 });
 
@@ -420,7 +427,7 @@ describe('刪除', () => {
     await emitFrom(wrapper, 'ConfirmDialog', 'confirm');
 
     expect(mocks.showToast).toHaveBeenCalledWith('登入已過期，請重新登入');
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
     expect(exists(wrapper, 'ConfirmDialog')).toBe(false);
   });
 
@@ -431,7 +438,7 @@ describe('刪除', () => {
     await emitFrom(wrapper, 'ConfirmDialog', 'confirm');
 
     expect(mocks.showToast).toHaveBeenCalledWith('找不到這筆紀錄');
-    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
     expect(exists(wrapper, 'ConfirmDialog')).toBe(true);
 
     mocks.deleteItem.mockResolvedValueOnce(undefined);
@@ -447,7 +454,7 @@ describe('刪除', () => {
     await emitFrom(wrapper, 'ConfirmDialog', 'confirm');
 
     expect(mocks.deleteItem).not.toHaveBeenCalled();
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
     expect(exists(wrapper, 'ConfirmDialog')).toBe(false);
   });
 });
@@ -460,10 +467,13 @@ describe('項次調整', () => {
     wrapper.findComponent({ name: 'WorkItemTable' }).vm.$emit('reorder', ['b', 'a']);
     await wrapper.vm.$nextTick();
 
+    // 畫面馬上套用新順序（不等登入檢查）
     expect(mocks.items.value.map((item) => [item.id, item.項次])).toEqual([
       ['b', 1],
       ['a', 2],
     ]);
+    // 確認登入還有效（ensureFreshLogin）之後才送出
+    await flushPromises();
     expect(mocks.reorderItems).toHaveBeenCalledWith('token', today, ['b', 'a']);
     expect(wrapper.findComponent({ name: 'WorkItemTable' }).props('reordering')).toBe(true);
     resolve();
@@ -479,7 +489,7 @@ describe('項次調整', () => {
 
     expect(mocks.items.value).toBe(before);
     expect(mocks.showToast).toHaveBeenCalledWith('紀錄已變更，請重新整理後再排序');
-    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
   });
 
   it('失敗前已經切到別天：不動目前畫面', async () => {
@@ -523,11 +533,11 @@ describe('項次調整', () => {
     await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a']);
 
     expect(mocks.items.value).toBe(before);
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
   });
 
   it('登入已過期：不送出，重新指定原本的順序讓表格同步回來，提示重新登入', async () => {
-    mocks.ensureFreshLogin.mockReturnValue(false);
+    mocks.ensureFreshLogin.mockResolvedValue(false);
     const wrapper = await mountView();
     const before = mocks.items.value;
     await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a']);
@@ -546,7 +556,7 @@ describe('項次調整', () => {
 
     expect(mocks.reorderItems).not.toHaveBeenCalled();
     expect(mocks.items.value).toBe(before);
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
   });
 });
 
@@ -678,7 +688,7 @@ describe('複製本日', () => {
     await emitFrom(wrapper, 'CopyDayDialog', 'confirm', TARGET);
 
     expect(mocks.showToast).toHaveBeenCalledWith('第 2 筆：工作目標為必填');
-    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearLogin).not.toHaveBeenCalled();
     expect(exists(wrapper, 'CopyDayDialog')).toBe(true);
   });
 
@@ -690,7 +700,7 @@ describe('複製本日', () => {
     await emitFrom(wrapper, 'CopyDayDialog', 'confirm', TARGET);
     await emitFrom(wrapper, 'ConfirmDialog', 'confirm');
 
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
     expect(exists(wrapper, 'CopyDayDialog')).toBe(false);
     expect(exists(wrapper, 'ConfirmDialog')).toBe(false);
   });
@@ -712,7 +722,7 @@ describe('設定類 Modal 的登入錯誤', () => {
     expect(exists(wrapper, name)).toBe(true);
 
     await emitFrom(wrapper, name, 'unauthorized');
-    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearLogin).toHaveBeenCalled();
     expect(exists(wrapper, name)).toBe(false);
   });
 });
