@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
+import { useScrollLock } from '@/composables/useScrollLock';
+
 /**
  * 按鈕配置參照 Apple Human Interface Guidelines（Alerts）：
  * - 取消在前（左）、動作在後（右）
@@ -36,6 +38,9 @@ const confirmBtn = ref<HTMLButtonElement | null>(null);
 onMounted(() => {
   (props.danger ? cancelBtn : confirmBtn).value?.focus();
 });
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

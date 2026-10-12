@@ -6,6 +6,7 @@ import AppLoading from '@/components/AppLoading.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import OptionsDropdownState from '@/components/OptionsDropdownState.vue';
 import { useOptions } from '@/composables/useOptions';
+import { useScrollLock } from '@/composables/useScrollLock';
 import { fetchDaySummary } from '@/composables/useWorkItems';
 import { vAutoResize } from '@/directives/auto-resize';
 import { LEAVE_STATUS, STATUS_OPTIONS, isLeaveItem, type WorkItem } from '@/types/work-item';
@@ -622,6 +623,9 @@ const onSubmit = async (): Promise<void> => {
     狀態: form.狀態,
   });
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

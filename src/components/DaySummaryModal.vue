@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
+import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
 import type { WorkItem } from '@/types/work-item';
 import { buildDaySummary } from '@/utils/day-summary';
@@ -33,6 +34,9 @@ const copy = async (): Promise<void> => {
     showToast('複製失敗，請手動選取文字複製');
   }
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>

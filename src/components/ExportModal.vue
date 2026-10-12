@@ -2,6 +2,7 @@
 import { NDatePicker } from 'naive-ui';
 import { computed, ref, watch } from 'vue';
 
+import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
 import { fetchByRange } from '@/composables/useWorkItems';
 import { parseLocalDate, toLocalDateString } from '@/utils/date';
@@ -115,6 +116,9 @@ const requestClose = (): void => {
   if (exporting.value) return;
   emit('close');
 };
+
+// 有遮罩：開著時頁面不能捲動、不顯示捲軸
+useScrollLock();
 </script>
 
 <template>
