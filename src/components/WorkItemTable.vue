@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { VueDraggable, type SortableEvent } from 'vue-draggable-plus';
 
 import ClampText from '@/components/ClampText.vue';
@@ -209,6 +209,35 @@ const moveRow = (group: DayGroup, index: number, direction: -1 | 1): void => {
   [ids[index], ids[target]] = [ids[target], ids[index]];
   emitReorder(group, ids);
 };
+
+/**
+ * 表頭固定住（sticky，貼在工具列下緣）的時候下緣加陰影（使用者決定）。CSS 沒有跨瀏覽器的「已經固定」選擇器，
+ * 捲動時比對表頭目前的位置跟它的 sticky top：已經貼齊（而且頁面有往下捲）就算固定住。
+ * 手機表頭不顯示（display: none，offsetParent 是 null），不判斷
+ */
+const headerRow = ref<HTMLElement | null>(null);
+const headerStuck = ref(false);
+
+const updateHeaderStuck = (): void => {
+  const el = headerRow.value;
+  if (!el || el.offsetParent === null) {
+    headerStuck.value = false;
+    return;
+  }
+  const stickyTop = parseFloat(getComputedStyle(el).top) || 0;
+  headerStuck.value = window.scrollY > 0 && el.getBoundingClientRect().top <= stickyTop + 0.5;
+};
+
+onMounted(() => {
+  updateHeaderStuck();
+  window.addEventListener('scroll', updateHeaderStuck, { passive: true });
+  window.addEventListener('resize', updateHeaderStuck, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', updateHeaderStuck);
+  window.removeEventListener('resize', updateHeaderStuck);
+});
 </script>
 
 <template>
@@ -223,7 +252,12 @@ const moveRow = (group: DayGroup, index: number, direction: -1 | 1): void => {
     }"
     role="table"
   >
-    <div class="work-item-table__row work-item-table__row--header" role="row">
+    <div
+      ref="headerRow"
+      class="work-item-table__row work-item-table__row--header"
+      :class="{ 'work-item-table__row--stuck': headerStuck }"
+      role="row"
+    >
       <div class="work-item-table__cell work-item-table__cell--index" role="columnheader">
         {{ searchMode ? '工作日期' : '項次' }}
       </div>
@@ -857,24 +891,27 @@ const moveRow = (group: DayGroup, index: number, direction: -1 | 1): void => {
       }
     }
 
+    // 表頭：手機卡片版面不顯示；平板、桌面往下捲時固定在工具列（DateNav，同樣 sticky）下面（使用者決定）。
+    // --sticky-offset 是工具列的實際高度，由 HomeView 量好設在 .home-view 上，沒設時貼齊畫面最上方。
+    // 底色是不透明的色階（今天、放假、搜尋各自覆寫），捲動時才蓋得住下面的列；
+    // z-index 讓它蓋過資料列裡有定位的元素（拖曳把手、展開列的 ::before）
     &--header {
       display: none;
 
       @media (min-width: 768px) {
+        position: sticky;
+        top: var(--sticky-offset, 0);
+        z-index: 2;
         display: grid;
         font-size: 15px;
         background: var(--color-black-100);
+        transition: box-shadow 0.2s ease;
       }
     }
 
-    &--header {
-      display: none;
-
-      @media (min-width: 768px) {
-        display: grid;
-        font-size: 15px;
-        background: var(--color-black-100);
-      }
+    // 表頭固定住的時候下緣加陰影，跟下面捲過去的資料列分開（使用者決定）
+    &--stuck {
+      box-shadow: 0 4px 8px -2px rgb(0 0 0 / 15%);
     }
 
     &:not(.work-item-table__row--header):nth-child(odd) {
