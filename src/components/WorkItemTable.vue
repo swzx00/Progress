@@ -217,6 +217,9 @@ const moveRow = (group: DayGroup, index: number, direction: -1 | 1): void => {
  */
 const headerRow = ref<HTMLElement | null>(null);
 const headerStuck = ref(false);
+/** 表頭高度：月份檢視的日期列固定在表頭下面（--table-header-height）；手機表頭不顯示，量到 0 */
+const headerHeight = ref(0);
+let headerObserver: ResizeObserver | undefined;
 
 const updateHeaderStuck = (): void => {
   const el = headerRow.value;
@@ -230,11 +233,18 @@ const updateHeaderStuck = (): void => {
 
 onMounted(() => {
   updateHeaderStuck();
+  if (headerRow.value && typeof ResizeObserver !== 'undefined') {
+    headerObserver = new ResizeObserver(() => {
+      headerHeight.value = headerRow.value?.getBoundingClientRect().height ?? 0;
+    });
+    headerObserver.observe(headerRow.value);
+  }
   window.addEventListener('scroll', updateHeaderStuck, { passive: true });
   window.addEventListener('resize', updateHeaderStuck, { passive: true });
 });
 
 onBeforeUnmount(() => {
+  headerObserver?.disconnect();
   window.removeEventListener('scroll', updateHeaderStuck);
   window.removeEventListener('resize', updateHeaderStuck);
 });
@@ -243,6 +253,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="work-item-table"
+    :style="{ '--table-header-height': `${headerHeight}px` }"
     :class="{
       'work-item-table--editable': editable,
       'work-item-table--viewing-today': viewingToday,
@@ -1739,25 +1750,29 @@ onBeforeUnmount(() => {
   }
 
   // 搜尋結果的工作日期：連結樣式的按鈕，點了跳到那天
-  // 月份檢視：每一天的容器（單日、搜尋結果只有一個），手機卡片版面日期列跟卡片之間留間距
+  // 月份檢視：每一天的容器（單日、搜尋結果只有一個）。也是日期列 sticky 的範圍：
+  // 捲過那一天，日期列就跟著離開，換下一天的日期列固定
   &__day {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-
-    @media (min-width: 768px) {
-      gap: 0;
-    }
   }
 
   // 月份檢視每天上面的日期列（使用者決定）：日期（含星期）＋放假徽章。手機只是卡片上方的標題；
   // 平板、桌面橫跨整張表，底色同單日表頭（今天藍、放假橘、今天剛好放假黃），上緣 2px 分隔線
+  // 往下捲時固定（使用者決定）：手機固定在畫面最上方（工具列、表頭都不固定），要有不透明底色蓋住捲過去的卡片；
+  // 平板、桌面固定在表頭下面（工具列高度 --sticky-offset 由 HomeView 量，表頭高度 --table-header-height 由這個元件量）。
+  // z-index 1：在資料列之上、表頭（2）之下
   &__day-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
-    padding: 0 4px;
+    padding: 8px 4px;
+    background: var(--color-black-000);
 
     @media (min-width: 768px) {
+      top: calc(var(--sticky-offset, 0px) + var(--table-header-height, 0px));
       padding: 6px 32px;
       background: var(--color-black-100);
       border-top: 2px solid var(--expand-border);
