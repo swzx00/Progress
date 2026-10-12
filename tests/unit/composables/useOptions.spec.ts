@@ -49,6 +49,7 @@ describe('fetchOptions', () => {
       options: OPTIONS,
       recentItems: [makeRecent({ 工作日期: '2026/10/09', 預計期限: '2026/10/31' })],
       workHours,
+      themeMode: 'dark',
     });
     await store.fetchOptions();
 
@@ -59,6 +60,7 @@ describe('fetchOptions', () => {
       預計期限: '2026-10-31',
     });
     expect(store.workHours.value).toEqual(workHours);
+    expect(store.themeMode.value).toBe('dark');
     expect(store.loading.value).toBe(false);
     expect(store.error.value).toBeNull();
   });
@@ -68,6 +70,7 @@ describe('fetchOptions', () => {
     respond({ options: OPTIONS });
     await store.fetchOptions();
     expect(store.recentItems.value).toEqual([]);
+    expect(store.themeMode.value).toBeNull();
     expect(store.workHours.value).toBeNull();
   });
 
@@ -207,6 +210,25 @@ describe('saveWorkHours', () => {
     await expect(store.saveWorkHours('token', setting)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });
+  });
+});
+
+describe('saveThemeMode（樣式設定跨裝置同步）', () => {
+  it('送出樣式，回應的 themeMode 覆寫本地', async () => {
+    const store = await load();
+    respond({ themeMode: 'light' });
+    await store.saveThemeMode('token', 'light');
+    expect(postBody()).toEqual({ idToken: 'token', action: 'saveThemeMode', themeMode: 'light' });
+    expect(store.themeMode.value).toBe('light');
+  });
+
+  it('登入錯誤帶 UNAUTHORIZED，本地設定不動', async () => {
+    const store = await load();
+    respond({ error: '請重新登入', code: 'UNAUTHORIZED' });
+    await expect(store.saveThemeMode('token', 'dark')).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+    expect(store.themeMode.value).toBeNull();
   });
 });
 

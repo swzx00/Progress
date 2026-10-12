@@ -76,7 +76,11 @@ const measureLayout = (): void => {
 
 onMounted(() => {
   // 這個瀏覽器登入過、沒按登出：重新整理、重開分頁時在背景用 Google 自動登入（token 不存在瀏覽器裡）
-  void tryAutoLogin();
+  // 自動登入完成（成功或失敗）後才依登入狀態決定能不能用「自動」樣式；之後登入、登出跟著切換
+  void tryAutoLogin().finally(() => {
+    setThemeAutoAllowed(isAuthorized.value);
+    watch(isAuthorized, setThemeAutoAllowed);
+  });
   measureLayout();
   if (typeof ResizeObserver === 'undefined') return;
   resizeObserver = new ResizeObserver(measureLayout);
@@ -263,9 +267,15 @@ const daySummaryOpen = ref(false);
 const exportOpen = ref(false);
 const workHoursOpen = ref(false);
 
-// 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前的選項前面打勾。
-// 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項
-const { mode: themeMode, isDark, setMode: setThemeMode } = useTheme();
+// 樣式（深色模式）：自動（依日出日落）／淺色／深色，目前實際套用的選項前面打勾。
+// 「工具」下拉選單的「樣式」子選單、右上角的月亮／太陽按鈕（未登入也能用）共用這份選項。
+// 「自動」只有登入才能用（使用者決定）：未登入只列淺色、深色，記住的是「自動」就打勾在淺色
+const {
+  effectiveMode: themeMode,
+  isDark,
+  setMode: setThemeMode,
+  setAutoAllowed: setThemeAutoAllowed,
+} = useTheme();
 
 // Google 登入按鈕跟著實際套用的主題（含「自動」算出來的結果）切換樣式：深色 filled_black、淺色 outline
 watch([signInButtonEl, isDark], ([el, dark]) => {
@@ -273,20 +283,51 @@ watch([signInButtonEl, isDark], ([el, dark]) => {
 });
 const THEME_KEY_PREFIX = 'theme:';
 const themeOptions = computed<DropdownOption[]>(() =>
-  THEME_MODES.map(({ mode, label }) => ({
-    label,
-    key: `${THEME_KEY_PREFIX}${mode}`,
-    icon: () =>
-      h(
-        'span',
-        { class: 'home-view__theme-check', 'aria-hidden': 'true' },
-        mode === themeMode.value ? '✓' : '',
-      ),
-  })),
+  THEME_MODES.filter(({ mode }) => mode !== 'auto' || isAuthorized.value).map(
+    ({ mode, label }) => ({
+      label,
+      key: `${THEME_KEY_PREFIX}${mode}`,
+      icon: () =>
+        h(
+          'span',
+          { class: 'home-view__theme-check', 'aria-hidden': 'true' },
+          mode === themeMode.value ? '✓' : '',
+        ),
+    }),
+  ),
 );
+/**
+ * 樣式設定跨裝置同步（使用者決定）：登入後讀「選項清單」分頁的「樣式設定」套用，登入時切換樣式就寫回 Sheet。
+ * 未登入（訪客）寫不了 Sheet，只記在自己瀏覽器的 localStorage（useTheme）；localStorage 也是登入時的快取，
+ * 讓重新整理的第一個畫面先照上次的設定，讀到 Sheet 後不同才切換
+ */
+const { themeMode: savedThemeMode, fetchOptions, saveThemeMode } = useOptions();
+
 const onThemeSelect = (key: string): void => {
-  setThemeMode(key.slice(THEME_KEY_PREFIX.length) as ThemeMode);
+  const next = key.slice(THEME_KEY_PREFIX.length) as ThemeMode;
+  setThemeMode(next);
+  if (!isAuthorized.value || !idToken.value || next === savedThemeMode.value) return;
+  void withLoginRetry(idToken.value, (token) => saveThemeMode(token, next)).catch(
+    (e: unknown) => {
+      // 只是沒同步到 Sheet，這台裝置的樣式照常生效
+      showToast(
+        e instanceof Error ? `樣式沒有同步到其他裝置：${e.message}` : '樣式沒有同步到其他裝置',
+      );
+      if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clearLogin();
+    },
+  );
 };
+
+// 登入後讀 Sheet 上的樣式設定（選項清單已經讀過就直接用），有設定就套用到這台裝置
+watch(
+  isAuthorized,
+  async (authorized) => {
+    if (!authorized) return;
+    await fetchOptions();
+    if (isAuthorized.value && savedThemeMode.value) setThemeMode(savedThemeMode.value);
+  },
+  { immediate: true },
+);
 
 // 「工具」下拉選單：選項清單（管理 Modal）、本日總結（整理當天工作進度文字的 Modal）、
 // 匯出 Excel（選範圍下載 .xlsx 的 Modal）、工時設定（上下班、午休時間的 Modal）、樣式（子選單，切換深色模式）
