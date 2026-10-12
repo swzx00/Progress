@@ -42,4 +42,10 @@
   - 點列本身不會展開（避免跟拖曳、上下移、操作按鈕誤觸）。**展開中的列，底色與 2px 四邊框線依各自色系**（使用者決定）：一般 `black-100`／框 `black-300`；今天 `blue-100`／`blue-300`；放假（非今天）`orange-100`／`orange-300`；今天剛好放假 `yellow-100`／`yellow-300`；請假列 `teal-050`／`teal-300`；逾期列 `red-050`／`red-300`。請假、逾期是列自己的屬性，顏色優先於今天／放假。實作：顏色是 CSS 變數 `--expand-bg`／`--expand-border`／`--expand-toggle`／`--expand-toggle-hover`／`--expand-marker`，預設值定義在 `.work-item-table`，今天／放假修飾符與列的 `--leave`／`--overdue` 覆寫（列自己的值優先，不用比選擇器權重）；色塊與框線畫在 `work-item-table__row--expanded` 的 `::before`（`isolation: isolate` + `z-index: -1`，在原本底色上、文字下，框線不影響排版），請假、逾期的左側標線也一起畫在 `::before` 上，不會被色塊蓋掉
   - 收合後如果那一列的上緣已經捲出畫面，用 `scrollIntoView` 自動捲回；開始拖曳（`VueDraggable` 的 `start`）時展開中的列自動收合；展開狀態不存檔，換日期（列的 id 不在了）就收回
   - Repo 膠囊展開時完整顯示（`max-width: 100%`、可換行），超長換行時圓角從 999px 改成 8px 的圓角矩形
+- **月份檢視**（使用者決定，2026-10-12，`month-mode` prop，切換方式見 [date-nav.md](date-nav.md)「月份檢視」）：一整個月的紀錄共用一個表頭（第一欄維持「項次」），依日期分組
+  - 月初在上面（`utils/month-view.ts` 的 `sortByDateAndIndex`）；沒有紀錄的日子直接跳過（國定假日沒有紀錄也不顯示）
+  - **每天上面一列日期列**（`work-item-table__day-heading`）：日期含星期 `10/12（一）`（`formatMonthDayLabel`，點了切到那天的單日檢視，emit `goToDate`）＋放假時的放假徽章（樣式同 `DateNav`），不顯示工時合計（使用者決定）。平板、桌面橫跨整張表、上緣 2px 分隔線；手機是卡片上方的標題
+  - **底色每天各自判斷**（使用者決定，同單日表格）：每天的容器（`work-item-table__day`）套用跟單日表格同一組修飾符 `work-item-table--viewing-today`／`work-item-table--holiday`，那一天的列、展開色、日期列（底色同單日表頭：一般 `black-100`、今天 `blue-100`、放假 `orange-100`、今天剛好放假 `yellow-100`；分隔線是那一組的 `--expand-border`；日期文字是 `--expand-toggle`）都跟著換。放假名稱由使用端傳 `day-off-label-of`（`useTaiwanHolidays` 的 `getDayOffLabel`）。共用的表頭不分天，用一般的 `black-100`
+  - **調整順序只能在同一天內**（使用者決定）：每天各自一個 `VueDraggable`（不共用 group，拖不到別天），上移／下移只跟同一天相鄰的交換，第一筆／最後一筆停用；emit `reorder` 時多帶那一天的日期，`HomeView` 的 `onReorder` 只換掉那一天的紀錄、用那個日期存檔
+  - 空狀態「這個月沒有紀錄」
 - **操作欄**（使用者決定）：按鈕一律橫排，顏色維持編輯藍／複製灰／刪除紅，依斷點切換呈現方式——手機卡片是文字按鈕（三顆平分整列寬度、圖示隱藏）；平板是 28px 正方形圖示按鈕（Lucide `pencil`／`copy`／`trash-2`，行內 SVG、ISC 授權），文字收起來，按鈕名稱靠 `aria-label`、滑過用 `title` 顯示文字提示；桌面（≥ 1024px）是圖示＋文字。刪除是破壞性動作，跟前面的按鈕間距拉開到 12px（桌面、平板、手機都是，其他按鈕之間維持原本的 gap），避免誤按。操作欄寬度：平板 100px、桌面 208px
