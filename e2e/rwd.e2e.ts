@@ -70,3 +70,57 @@ test('換到國定假日：顯示假日名稱與放假的空狀態', async ({ pa
   await expect(page.getByText('國慶日補假').first()).toBeVisible();
   await expect(page.locator('.work-item-table__empty')).toHaveText('這天放假呦！');
 });
+
+const rectTop = (locator: import('@playwright/test').Locator) =>
+  locator.evaluate((el) => el.getBoundingClientRect().top);
+
+test('往下捲：平板、桌面工具列固定在最上方、表頭接在它下面；手機都不固定', async ({
+  page,
+}, testInfo) => {
+  // 視窗壓矮，預設資料（3 筆）才捲得夠遠
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 330 });
+  await openHome(page);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const nav = page.locator('.date-nav');
+
+  if (testInfo.project.use.isMobile) {
+    await expect.poll(() => rectTop(nav)).toBeLessThan(0);
+    return;
+  }
+  // 還沒固定住時表頭沒有陰影
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(header(page)).not.toHaveClass(/work-item-table__row--stuck/);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+  await expect.poll(() => rectTop(nav)).toBe(0);
+  // 固定住時表頭下緣有陰影
+  await expect(header(page)).toHaveClass(/work-item-table__row--stuck/);
+  expect(await css(header(page), 'box-shadow')).not.toBe('none');
+  const navHeight = await nav.evaluate((el) => el.getBoundingClientRect().height);
+  await expect.poll(() => rectTop(header(page))).toBeCloseTo(navHeight, 0);
+  // 工具列、表頭蓋在資料列上面：最上方點到的是工具列，緊接在下面的是表頭
+  const hits = await page.evaluate((h) => {
+    const at = (y: number) => document.elementFromPoint(window.innerWidth / 2, y);
+    return [!!at(5)?.closest('.date-nav'), !!at(h + 5)?.closest('.work-item-table__row--header')];
+  }, navHeight);
+  expect(hits).toEqual([true, true]);
+});
+
+test('返回最上：捲過頁首才出現，點了回到最頂端並消失', async ({ page }) => {
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 330 });
+  await openHome(page);
+  const button = page.getByRole('button', { name: '返回最上' });
+  await expect(button).toBeHidden();
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(button).toBeVisible();
+  const box = (await button.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  // 固定在右下角
+  expect(viewport.width - (box.x + box.width)).toBeLessThanOrEqual(32);
+  expect(viewport.height - (box.y + box.height)).toBeLessThanOrEqual(32);
+
+  await button.click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(button).toBeHidden();
+});

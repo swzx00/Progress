@@ -2,6 +2,8 @@
 
 > 從 CLAUDE.md 拆出的細節。跨元件的規則（色彩 token、RWD、日期格式、手動同步清單）仍以 CLAUDE.md 為準。
 
+**表頭固定**（使用者決定，2026-10-12）：平板、桌面往下捲時，表頭（`work-item-table__row--header`）`position: sticky`，接在同樣固定的 `DateNav` 下面（`top: var(--sticky-offset, 0)`，工具列高度由 `HomeView` 量好；`z-index: 2`，蓋過資料列裡有定位的元素）。底色是不透明的色階，捲動時才蓋得住下面的列。固定住的時候下緣加陰影（`--stuck` 修飾符，`box-shadow: 0 4px 8px -2px rgb(0 0 0 / 15%)`）：CSS 沒有跨瀏覽器的「已經固定」選擇器，元件監聽 `scroll`／`resize`，表頭目前位置貼齊它的 sticky top 而且頁面有往下捲才算固定住。深色模式底色是黑的，陰影不明顯。手機卡片版面沒有表頭
+
 **表格顯示的合併欄位**（僅畫面呈現合併，資料仍是各自獨立欄位，表頭文字也標明合併了哪些欄位）：
 - **交辦單位 + 交辦人員**：共用一欄，表頭寫「交辦單位/人員」。手機卡片版面較寬，呈現單行「某某某（OO部門）」；桌面表格的這欄是固定窄欄（110px），單行塞不下，改呈現兩行堆疊「OO部門」換行「某某某」
 - **專案名稱 + 專案Repo**：共用一欄，表頭寫「專案名稱/Repo」。專案名稱在上，有填 Repo 才在下方多一行 `#AAA` `#BBBB` 標籤，沒填就不多顯示
@@ -45,6 +47,7 @@
 - **月份檢視**（使用者決定，2026-10-12，`month-mode` prop，切換方式見 [date-nav.md](date-nav.md)「月份檢視」）：一整個月的紀錄共用一個表頭（第一欄維持「項次」），依日期分組
   - 月初在上面（`utils/month-view.ts` 的 `sortByDateAndIndex`）；沒有紀錄的日子直接跳過（國定假日沒有紀錄也不顯示）
   - **每天上面一列日期列**（`work-item-table__day-heading`）：日期含星期 `10/12（一）`（`formatMonthDayLabel`，點了切到那天的單日檢視，emit `goToDate`）＋放假時的放假徽章（樣式同 `DateNav`），不顯示工時合計（使用者決定）。平板、桌面橫跨整張表、上緣 2px 分隔線；手機是卡片上方的標題
+  - **日期列往下捲時固定**（使用者決定，2026-10-12）：`position: sticky`，範圍是那一天的容器（`work-item-table__day`），捲過那一天就跟著離開、換下一天的日期列固定。平板、桌面固定在表頭下面（`top: calc(var(--sticky-offset) + var(--table-header-height))`，表頭高度由元件用 `ResizeObserver` 量好設在根元素）；手機固定在畫面最上方（`top: 0`，手機的工具列與表頭都不固定），底色 `black-000` 蓋住捲過去的卡片。`z-index: 1`，在資料列之上、表頭之下
   - **底色每天各自判斷**（使用者決定，同單日表格）：每天的容器（`work-item-table__day`）套用跟單日表格同一組修飾符 `work-item-table--viewing-today`／`work-item-table--holiday`，那一天的列、展開色、日期列（底色同單日表頭：一般 `black-100`、今天 `blue-100`、放假 `orange-100`、今天剛好放假 `yellow-100`；分隔線是那一組的 `--expand-border`；日期文字是 `--expand-toggle`）都跟著換。放假名稱由使用端傳 `day-off-label-of`（`useTaiwanHolidays` 的 `getDayOffLabel`）。共用的表頭不分天，用一般的 `black-100`
   - **調整順序只能在同一天內**（使用者決定）：每天各自一個 `VueDraggable`（不共用 group，拖不到別天），上移／下移只跟同一天相鄰的交換，第一筆／最後一筆停用；emit `reorder` 時多帶那一天的日期，`HomeView` 的 `onReorder` 只換掉那一天的紀錄、用那個日期存檔
   - 空狀態「這個月沒有紀錄」

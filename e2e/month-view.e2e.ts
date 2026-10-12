@@ -96,3 +96,35 @@ test('月份檢視沒有水平捲軸', async ({ page }) => {
   );
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('往下捲：日期列固定（平板、桌面在表頭下面，手機在畫面最上方），捲過那一天就換下一天', async ({
+  page,
+}, testInfo) => {
+  // 視窗壓矮，預設資料（10/06 一筆、10/07 三筆）才捲得到第二天的中間
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 420 });
+  await openMonth(page);
+  const secondDay = day(page, 1);
+  await secondDay.evaluate((el) => {
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY + 80);
+  });
+  const headingTop = () =>
+    secondDay
+      .locator('.work-item-table__day-heading')
+      .evaluate((el) => el.getBoundingClientRect().top);
+
+  if (testInfo.project.use.isMobile) {
+    await expect.poll(headingTop).toBe(0);
+  } else {
+    const stackHeight = await page.evaluate(
+      () =>
+        document.querySelector('.date-nav')!.getBoundingClientRect().height +
+        document.querySelector('.work-item-table__row--header')!.getBoundingClientRect().height,
+    );
+    await expect.poll(headingTop).toBeCloseTo(stackHeight, 0);
+  }
+  // 第一天已經捲過去：它的日期列跟著離開，不會疊在第二天上面
+  const firstTop = await day(page, 0)
+    .locator('.work-item-table__day-heading')
+    .evaluate((el) => el.getBoundingClientRect().top);
+  expect(firstTop).toBeLessThan(await headingTop());
+});

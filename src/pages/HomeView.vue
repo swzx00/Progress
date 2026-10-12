@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { NDropdown, type DropdownOption } from 'naive-ui';
-import { computed, h, ref, toRaw, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import AppLoading from '@/components/AppLoading.vue';
 import AppToast from '@/components/AppToast.vue';
+import BackToTop from '@/components/BackToTop.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CopyDayDialog from '@/components/CopyDayDialog.vue';
 import DaySummaryModal from '@/components/DaySummaryModal.vue';
@@ -53,6 +54,32 @@ const {
 } = useGoogleAuth();
 
 const signInButtonEl = ref<HTMLElement | null>(null);
+
+/**
+ * 平板、桌面工具列（DateNav）往下捲時固定在最上方，表格表頭接在它下面（使用者決定）：
+ * 工具列高度會隨寬度換行改變，量實際高度給表頭的 sticky top（--sticky-offset）。
+ * 頁首標題列的高度是「返回最上」按鈕出現的門檻
+ */
+const headerEl = ref<HTMLElement | null>(null);
+const dateNavRef = ref<{ $el: HTMLElement } | null>(null);
+const headerHeight = ref(0);
+const dateNavHeight = ref(0);
+let resizeObserver: ResizeObserver | undefined;
+
+const measureLayout = (): void => {
+  headerHeight.value = headerEl.value?.getBoundingClientRect().height ?? 0;
+  dateNavHeight.value = dateNavRef.value?.$el.getBoundingClientRect?.().height ?? 0;
+};
+
+onMounted(() => {
+  measureLayout();
+  if (typeof ResizeObserver === 'undefined') return;
+  resizeObserver = new ResizeObserver(measureLayout);
+  if (headerEl.value) resizeObserver.observe(headerEl.value);
+  if (dateNavRef.value?.$el instanceof Element) resizeObserver.observe(dateNavRef.value.$el);
+});
+
+onBeforeUnmount(() => resizeObserver?.disconnect());
 
 // 網址參數的規則見下方 syncUrl
 const route = useRoute();
@@ -598,8 +625,8 @@ const onWorkHoursUnauthorized = (): void => {
 </script>
 
 <template>
-  <div class="home-view">
-    <header class="home-view__header">
+  <div class="home-view" :style="{ '--sticky-offset': `${dateNavHeight}px` }">
+    <header ref="headerEl" class="home-view__header">
       <h1 class="home-view__title">工作進度</h1>
       <span v-if="!isAuthorized" class="home-view__badge">唯讀模式</span>
       <NDropdown trigger="click" :options="themeOptions" @select="onThemeSelect">
@@ -672,6 +699,7 @@ const onWorkHoursUnauthorized = (): void => {
     </header>
 
     <DateNav
+      ref="dateNavRef"
       v-model="selectedDate"
       v-model:view-mode="viewMode"
       :total-hours="totalHours"
@@ -929,6 +957,7 @@ const onWorkHoursUnauthorized = (): void => {
     </Transition>
 
     <AppToast />
+    <BackToTop :threshold="headerHeight" />
   </div>
 </template>
 
@@ -942,6 +971,14 @@ const onWorkHoursUnauthorized = (): void => {
   width: 100%;
   height: 100%;
   min-height: 100dvh;
+
+  // 底部留白：「返回最上」固定在右下角（BackToTop：距底 16px＋按鈕 44px＋間距 16px，平板桌面距底 32px），
+  // 捲到最底時最後一列的操作按鈕才不會被它蓋住
+  padding-bottom: 76px;
+
+  @media (min-width: 768px) {
+    padding-bottom: 108px;
+  }
 
   &__header {
     display: flex;
