@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
+import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useOptions } from '@/composables/useOptions';
 import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
@@ -30,6 +31,7 @@ const emit = defineEmits<{
 
 const { workHours, loading, error, fetchOptions, saveWorkHours } = useOptions();
 const { showToast } = useToast();
+const { withLoginRetry } = useGoogleAuth();
 
 // 時間欄位的值（原生 time input，空白是空字串）
 const draft = reactive({ start: '', end: '', breakStart: '', breakEnd: '' });
@@ -84,7 +86,8 @@ const onSave = async (): Promise<void> => {
   if (validateWorkHoursSetting(setting.value)) return;
   busy.value = true;
   try {
-    await saveWorkHours(props.idToken, setting.value);
+    const value = setting.value;
+    await withLoginRetry(props.idToken, (token) => saveWorkHours(token, value));
     showToast('已儲存工時設定', 'success');
     emit('close');
   } catch (e) {
@@ -99,7 +102,7 @@ const onClear = async (): Promise<void> => {
   if (busy.value) return;
   busy.value = true;
   try {
-    await saveWorkHours(props.idToken, null);
+    await withLoginRetry(props.idToken, (token) => saveWorkHours(token, null));
     submitAttempted.value = false;
     fillDraft(null);
     showToast('已清除工時設定', 'success');

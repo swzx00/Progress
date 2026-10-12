@@ -49,8 +49,11 @@ const {
   isLoggedIn,
   isAuthorized,
   renderSignInButton,
+  tryAutoLogin,
+  clearLogin,
   signOut,
   ensureFreshLogin,
+  withLoginRetry,
 } = useGoogleAuth();
 
 const signInButtonEl = ref<HTMLElement | null>(null);
@@ -72,6 +75,8 @@ const measureLayout = (): void => {
 };
 
 onMounted(() => {
+  // 這個瀏覽器登入過、沒按登出：重新整理、重開分頁時在背景用 Google 自動登入（token 不存在瀏覽器裡）
+  void tryAutoLogin();
   measureLayout();
   if (typeof ResizeObserver === 'undefined') return;
   resizeObserver = new ResizeObserver(measureLayout);
@@ -297,11 +302,15 @@ const toolOptions = computed<DropdownOption[]>(() => [
 const onToolSelect = (key: ToolKey | string): void => {
   if (key.startsWith(THEME_KEY_PREFIX)) onThemeSelect(key);
   else if (key === 'options') {
-    if (requireFreshLogin()) optionsManagerOpen.value = true;
+    void requireFreshLogin().then((ok) => {
+      if (ok) optionsManagerOpen.value = true;
+    });
   } else if (key === 'daySummary') daySummaryOpen.value = true;
   else if (key === 'export') exportOpen.value = true;
   else if (key === 'workHours') {
-    if (requireFreshLogin()) workHoursOpen.value = true;
+    void requireFreshLogin().then((ok) => {
+      if (ok) workHoursOpen.value = true;
+    });
   }
 };
 
@@ -316,11 +325,11 @@ const saving = ref(false);
 const { showToast } = useToast();
 
 /**
- * 開啟會寫入資料的表單／對話框前確認登入還有效：token 過期（分頁開著超過約一小時）就登出並提示，
- * 不讓使用者打完內容才在儲存時被退回
+ * 開啟會寫入資料的表單／對話框前確認登入還有效：token 過期（分頁開著超過約一小時）先在背景自動續期，
+ * 續期失敗才登出並提示，不讓使用者打完內容才在儲存時被退回
  */
-const requireFreshLogin = (): boolean => {
-  if (ensureFreshLogin()) return true;
+const requireFreshLogin = async (): Promise<boolean> => {
+  if (await ensureFreshLogin()) return true;
   showToast('登入已過期，請重新登入');
   return false;
 };
@@ -328,31 +337,31 @@ const requireFreshLogin = (): boolean => {
 // 存檔成功後更新近期紀錄（表單的推薦與預填用），下次開表單不用重新讀選項清單
 const { rememberItems } = useOptions();
 
-const openCreateForm = (): void => {
-  if (!requireFreshLogin()) return;
+const openCreateForm = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = false;
   formOpen.value = true;
 };
 
-const openLeaveForm = (): void => {
-  if (!requireFreshLogin()) return;
+const openLeaveForm = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = null;
   creatingLeave.value = true;
   formOpen.value = true;
 };
 
-const openEditForm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openEditForm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = item;
   copySource.value = null;
   formOpen.value = true;
 };
 
-const openCopyForm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openCopyForm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   editingItem.value = null;
   copySource.value = item;
   formOpen.value = true;
@@ -364,14 +373,15 @@ const closeForm = (): void => {
 
 /**
  * 儲存失敗一律用 Toast 提示：
- * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED，例如 token 過期）：關閉表單並強制登出，回到唯讀模式
+ * - 登入錯誤（沒有 token，或後端回 UNAUTHORIZED，例如 token 過期）：關閉表單並強制登出，回到唯讀模式。
+ *   後端回 UNAUTHORIZED 時 withLoginRetry 已經先續期重送過一次，還是失敗才會走到這裡
  * - 其他錯誤（欄位驗證、找不到紀錄、網路錯誤等）：表單維持開啟、保留已填內容，讓使用者修正後重送
  */
 const handleSaveError = (message: string, unauthorized: boolean): void => {
   showToast(message);
   if (unauthorized) {
     formOpen.value = false;
-    signOut();
+    clearLogin();
   }
 };
 
@@ -383,9 +393,10 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
   saving.value = true;
   try {
     if (editingItem.value) {
-      await updateItem(idToken.value, editingItem.value.id, payload);
+      const id = editingItem.value.id;
+      await withLoginRetry(idToken.value, (token) => updateItem(token, id, payload));
     } else {
-      await createItem(idToken.value, payload);
+      await withLoginRetry(idToken.value, (token) => createItem(token, payload));
     }
     rememberItems([{ ...payload, id: editingItem.value?.id }]);
     await refreshAfterChange();
@@ -428,8 +439,8 @@ const copyDayPayloads = (targetDate: string) =>
     .sort((a, b) => a.項次 - b.項次)
     .map((item) => buildCopyPayload(item, targetDate));
 
-const openCopyDay = (): void => {
-  if (!requireFreshLogin()) return;
+const openCopyDay = async (): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   copyDayError.value = null;
   copyDayOpen.value = true;
 };
@@ -443,7 +454,7 @@ const handleCopyDayUnauthorized = (message: string): void => {
   copyDayOpen.value = false;
   copyDayReplaceTarget.value = null;
   showToast(message);
-  signOut();
+  clearLogin();
 };
 
 const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> => {
@@ -454,7 +465,7 @@ const runCopyDay = async (targetDate: string, replace: boolean): Promise<void> =
   const payloads = copyDayPayloads(targetDate);
   copyingDay.value = true;
   try {
-    await batchCreateItems(idToken.value, payloads, replace);
+    await withLoginRetry(idToken.value, (token) => batchCreateItems(token, payloads, replace));
     rememberItems(payloads);
     copyDayOpen.value = false;
     copyDayReplaceTarget.value = null;
@@ -533,15 +544,10 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
   if (reordering.value) return;
   if (!idToken.value) {
     showToast('尚未登入，無法調整順序');
-    signOut();
+    clearLogin();
     return;
   }
   const before = items.value;
-  if (!requireFreshLogin()) {
-    // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
-    items.value = [...before];
-    return;
-  }
   const byId = new Map(before.map((item) => [item.id, item]));
   // 月份檢視 items 是整個月：只換掉那一天的紀錄，其他天不動
   const sameDay = new Set(ids);
@@ -552,15 +558,21 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
       return item ? [{ ...item, 項次: index + 1 }] : [];
     }),
   ];
+  // 先在畫面套用新順序，拖曳的手感才不會延遲；登入過期而且續期失敗時再還原
   items.value = reordered;
   reordering.value = true;
   try {
-    await reorderItems(idToken.value, date, ids);
+    if (!(await requireFreshLogin()) || !idToken.value) {
+      // 拖曳時表格已經先改了自己的順序，重新指定一次讓表格同步回原本的順序
+      if (toRaw(items.value) === reordered) items.value = [...before];
+      return;
+    }
+    await withLoginRetry(idToken.value, (token) => reorderItems(token, date, ids));
   } catch (e) {
     // items 還是這次套用的順序才還原；切過日期的話已經是重新讀到的資料，不能用快照蓋掉
     if (toRaw(items.value) === reordered) items.value = before;
     showToast(e instanceof Error ? e.message : '調整順序時發生未知錯誤');
-    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') signOut();
+    if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clearLogin();
   } finally {
     reordering.value = false;
   }
@@ -569,8 +581,8 @@ const onReorder = async (ids: string[], date = selectedDate.value): Promise<void
 const deleteTarget = ref<WorkItem | null>(null);
 const deleting = ref(false);
 
-const openDeleteConfirm = (item: WorkItem): void => {
-  if (!requireFreshLogin()) return;
+const openDeleteConfirm = async (item: WorkItem): Promise<void> => {
+  if (!(await requireFreshLogin())) return;
   deleteTarget.value = item;
 };
 
@@ -586,7 +598,7 @@ const closeDeleteConfirm = (): void => {
 const handleDeleteUnauthorized = (message: string): void => {
   deleteTarget.value = null;
   showToast(message);
-  signOut();
+  clearLogin();
 };
 
 const confirmDelete = async (): Promise<void> => {
@@ -597,7 +609,8 @@ const confirmDelete = async (): Promise<void> => {
   }
   deleting.value = true;
   try {
-    await deleteItem(idToken.value, deleteTarget.value.id);
+    const id = deleteTarget.value.id;
+    await withLoginRetry(idToken.value, (token) => deleteItem(token, id));
     deleteTarget.value = null;
     await refreshAfterChange();
   } catch (e) {
@@ -614,13 +627,13 @@ const confirmDelete = async (): Promise<void> => {
 /** 選項清單管理遇到登入錯誤：關閉 Modal 並強制登出（錯誤訊息已由 Modal 用 Toast 顯示） */
 const onOptionsUnauthorized = (): void => {
   optionsManagerOpen.value = false;
-  signOut();
+  clearLogin();
 };
 
 /** 工時設定遇到登入錯誤：比照選項清單管理，關閉 Modal 並強制登出 */
 const onWorkHoursUnauthorized = (): void => {
   workHoursOpen.value = false;
-  signOut();
+  clearLogin();
 };
 </script>
 

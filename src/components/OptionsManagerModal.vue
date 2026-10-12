@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useOptions } from '@/composables/useOptions';
 import { useScrollLock } from '@/composables/useScrollLock';
 import { useToast } from '@/composables/useToast';
@@ -32,6 +33,7 @@ const busy = ref(false);
 const deleteTarget = ref<string | null>(null);
 
 const { showToast } = useToast();
+const { withLoginRetry } = useGoogleAuth();
 
 /**
  * 新增／重新命名／刪除失敗一律用 Toast 提示（比照工作紀錄的儲存）：
@@ -89,7 +91,10 @@ const submitEdit = async (oldValue: string): Promise<void> => {
   }
   busy.value = true;
   try {
-    await renameOption(props.idToken, selectedCategory.value, oldValue, newValue);
+    const category = selectedCategory.value;
+    await withLoginRetry(props.idToken, (token) =>
+      renameOption(token, category, oldValue, newValue),
+    );
     cancelEdit();
   } catch (e) {
     handleActionError(e, '重新命名失敗');
@@ -110,7 +115,7 @@ const submitAdd = async (): Promise<void> => {
   }
   busy.value = true;
   try {
-    await addOption(props.idToken, category, value);
+    await withLoginRetry(props.idToken, (token) => addOption(token, category, value));
     newValueDrafts.value[category] = '';
   } catch (e) {
     handleActionError(e, '新增失敗');
@@ -127,7 +132,9 @@ const confirmDelete = async (): Promise<void> => {
   if (!deleteTarget.value || !selectedCategory.value) return;
   busy.value = true;
   try {
-    await deleteOption(props.idToken, selectedCategory.value, deleteTarget.value);
+    const category = selectedCategory.value;
+    const value = deleteTarget.value;
+    await withLoginRetry(props.idToken, (token) => deleteOption(token, category, value));
     deleteTarget.value = null;
   } catch (e) {
     handleActionError(e, '刪除失敗');
