@@ -14,6 +14,7 @@ import {
   type SearchQuery,
   type TextSegment,
 } from '@/utils/search-work-items';
+import { formatMonthDayLabel, sortByDateAndIndex } from '@/utils/month-view';
 
 const props = withDefaults(
   defineProps<{
@@ -34,6 +35,14 @@ const props = withDefaults(
     searchKeyword?: string;
     /** 點推薦搜尋時只搜的那個欄位，只標示那個欄位；一般搜尋沒有 */
     searchField?: SearchField;
+    /**
+     * 月份檢視（使用者決定）：items 是一整個月的紀錄，共用一個表頭，依日期分組（月初在上面），
+     * 每天上面一列日期列（日期含星期、放假徽章，點日期跳到那天）；今天、放假的底色每天各自判斷，
+     * 可以調整順序但只限同一天。表格本身的 viewingToday／dayOffLabel 在月份檢視不用
+     */
+    monthMode?: boolean;
+    /** 月份檢視：查某天的放假名稱（useTaiwanHolidays 的 getDayOffLabel），工作日回傳 null */
+    dayOffLabelOf?: (date: string) => string | null;
   }>(),
   {
     editable: false,
@@ -42,6 +51,8 @@ const props = withDefaults(
     searchMode: false,
     searchKeyword: '',
     searchField: undefined,
+    monthMode: false,
+    dayOffLabelOf: () => null,
   },
 );
 
@@ -49,9 +60,12 @@ const emit = defineEmits<{
   edit: [item: WorkItem];
   copy: [item: WorkItem];
   delete: [item: WorkItem];
-  /** 項次調整：那天所有紀錄（含請假）依新順序排列的 id，由使用端存檔 */
-  reorder: [ids: string[]];
-  /** 搜尋結果模式：點工作日期，跳到那天 */
+  /**
+   * 項次調整：那天所有紀錄（含請假）依新順序排列的 id，由使用端存檔。
+   * 月份檢視多帶那一天的日期（一次只排同一天）
+   */
+  reorder: [ids: string[], date?: string];
+  /** 搜尋結果、月份檢視：點工作日期，跳到那天 */
   goToDate: [date: string];
 }>();
 
@@ -68,23 +82,60 @@ const statusClass = (status: string): string | undefined => {
 
 /**
  * 列的順序一律照項次（使用者決定：逾期不再自動排到最前面，只保留紅色標線與「逾期」標籤，
- * 手動調整的順序才不會被打亂）。rows 是拖曳用的本地副本：拖曳時 VueDraggable 直接改它，
- * 再把新順序 emit 給使用端存檔；使用端更新（或失敗還原）items 後，這裡跟著重新同步
+ * 手動調整的順序才不會被打亂）。groups 是拖曳用的本地副本，每組是一天（各自一個 VueDraggable，
+ * 拖曳只能在同一天內）：拖曳時 VueDraggable 直接改那一組的 rows，再把新順序 emit 給使用端存檔；
+ * 使用端更新（或失敗還原）items 後，這裡跟著重新同步。
+ * 單日、搜尋結果只有一組（date 是空字串）；月份檢視依工作日期分組，月初在上面
  */
-const rows = ref<WorkItem[]>([]);
+interface DayGroup {
+  date: string;
+  rows: WorkItem[];
+}
+
+const groups = ref<DayGroup[]>([]);
 watch(
   () => props.items,
   (items) => {
     // 搜尋結果跨日期，照傳進來的順序（工作日期新的在前、同一天照項次）
-    rows.value = props.searchMode ? [...items] : [...items].sort((a, b) => a.項次 - b.項次);
+    if (props.searchMode) {
+      groups.value = [{ date: '', rows: [...items] }];
+      return;
+    }
+    if (!props.monthMode) {
+      groups.value = [{ date: '', rows: [...items].sort((a, b) => a.項次 - b.項次) }];
+      return;
+    }
+    const days: DayGroup[] = [];
+    for (const item of sortByDateAndIndex(items)) {
+      const last = days[days.length - 1];
+      if (last?.date === item.工作日期) last.rows.push(item);
+      else days.push({ date: item.工作日期, rows: [item] });
+    }
+    groups.value = days;
   },
   { immediate: true },
 );
 
-const emitOrder = (): void => {
-  emit(
-    'reorder',
-    rows.value.map((row) => row.id),
+const rowCount = computed(() => groups.value.reduce((sum, group) => sum + group.rows.length, 0));
+
+/** 月份檢視每天的底色跟單日表格一樣：今天藍、放假橘、今天剛好放假黃（套同一組修飾符） */
+const dayClass = (group: DayGroup): Record<string, boolean> =>
+  props.monthMode
+    ? {
+        'work-item-table--viewing-today': group.date === props.today,
+        'work-item-table--holiday': !!props.dayOffLabelOf(group.date),
+      }
+    : {};
+
+const emitReorder = (group: DayGroup, ids: string[]): void => {
+  if (props.monthMode) emit('reorder', ids, group.date);
+  else emit('reorder', ids);
+};
+
+const emitOrder = (group: DayGroup): void => {
+  emitReorder(
+    group,
+    group.rows.map((row) => row.id),
   );
 };
 
@@ -150,13 +201,13 @@ const highlightRepo = (repo: string): TextSegment[] =>
 const titleFullText = (item: WorkItem): string =>
   [item.專案名稱, item.專案Repo.map((repo) => `#${repo}`).join(' ')].filter(Boolean).join('\n');
 
-// 上移／下移：跟相鄰那筆交換位置
-const moveRow = (index: number, direction: -1 | 1): void => {
+// 上移／下移：跟同一天相鄰那筆交換位置
+const moveRow = (group: DayGroup, index: number, direction: -1 | 1): void => {
   const target = index + direction;
-  if (props.reordering || target < 0 || target >= rows.value.length) return;
-  const ids = rows.value.map((row) => row.id);
+  if (props.reordering || target < 0 || target >= group.rows.length) return;
+  const ids = group.rows.map((row) => row.id);
   [ids[index], ids[target]] = [ids[target], ids[index]];
-  emit('reorder', ids);
+  emitReorder(group, ids);
 };
 </script>
 
@@ -168,6 +219,7 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       'work-item-table--viewing-today': viewingToday,
       'work-item-table--holiday': dayOffLabel,
       'work-item-table--search': searchMode,
+      'work-item-table--month': monthMode,
     }"
     role="table"
   >
@@ -212,235 +264,79 @@ const moveRow = (index: number, direction: -1 | 1): void => {
       資料列可拖曳排序（vue-draggable-plus）：只有按住拖曳把手（work-item-table__drag-handle）才能拖，
       手機不用長按延遲（把手設了 touch-action: none，不會跟頁面捲動衝突）；存檔中或唯讀時停用。
       forceFallback 讓拖曳中的那一列由 SortableJS 自己畫（才能加陰影，fallback-class），原位置留半透明佔位（ghost-class）
+      每一組是一天（單日、搜尋結果只有一組），各自一個 VueDraggable，拖曳只能在同一天內。
+      月份檢視每天上面一列日期列，那一天的容器套用跟單日表格同一組今天／放假修飾符，底色每天各自判斷
     -->
-    <VueDraggable
-      v-model="rows"
-      class="work-item-table__body"
-      :disabled="!editable || reordering || searchMode"
-      :animation="150"
-      handle=".work-item-table__drag-handle"
-      :force-fallback="true"
-      fallback-class="work-item-table__row--dragging"
-      ghost-class="work-item-table__row--ghost"
-      @start="onDragStart"
-      @update="emitOrder"
+    <div
+      v-for="group in groups"
+      :key="group.date"
+      class="work-item-table__day"
+      :class="dayClass(group)"
     >
-      <div
-        v-for="(item, index) in rows"
-        :key="item.id"
-        class="work-item-table__row"
-        :class="{
-          'work-item-table__row--overdue': isOverdue(item, today),
-          'work-item-table__row--leave': isLeaveItem(item),
-          'work-item-table__row--expanded': isExpanded(item.id),
-        }"
-        :data-id="item.id"
-        role="row"
-      >
-        <!-- 項次：平板、桌面在數字上下放上移／下移（圖示：Lucide chevron-up／chevron-down，ISC 授權） -->
-        <!-- 搜尋結果模式：項次欄換成工作日期，點了跳到那天（跨日期的結果，項次本身沒有意義） -->
-        <div
-          v-if="searchMode"
-          class="work-item-table__cell work-item-table__cell--index work-item-table__cell--date"
-          role="cell"
-        >
+      <div v-if="monthMode" class="work-item-table__day-heading" role="row">
+        <div class="work-item-table__day-heading-cell" role="cell">
           <button
             type="button"
             class="work-item-table__date-link"
-            :title="`跳到 ${formatDate(item.工作日期)}`"
-            @click="emit('goToDate', item.工作日期)"
+            :title="`跳到 ${formatDate(group.date)}`"
+            @click="emit('goToDate', group.date)"
           >
-            {{ formatDate(item.工作日期) }}
+            {{ formatMonthDayLabel(group.date) }}
           </button>
-        </div>
-        <div v-else class="work-item-table__cell work-item-table__cell--index" role="cell">
-          <button
-            v-if="editable"
-            type="button"
-            class="work-item-table__move-btn"
-            title="上移"
-            aria-label="上移"
-            :disabled="reordering || index === 0"
-            @click="moveRow(index, -1)"
-          >
-            <svg
-              class="work-item-table__move-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="m18 15-6-6-6 6" />
-            </svg>
-          </button>
-          <span>{{ item.項次 }}</span>
-          <button
-            v-if="editable"
-            type="button"
-            class="work-item-table__move-btn"
-            title="下移"
-            aria-label="下移"
-            :disabled="reordering || index === rows.length - 1"
-            @click="moveRow(index, 1)"
-          >
-            <svg
-              class="work-item-table__move-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--title" role="cell">
-          <ClampText
-            :full-text="titleFullText(item)"
-            :expanded="isExpanded(item.id)"
-            :inline-toggle="false"
-            @toggle="toggleRow(item.id, $event)"
-          >
-            <div class="work-item-table__title-text">
-              <HighlightText :segments="highlight(item.專案名稱, '專案名稱')" />
-            </div>
-            <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
-              <span
-                v-for="repo in item.專案Repo"
-                :key="repo"
-                class="work-item-table__repo-tag"
-                data-ellipsis
-                ><HighlightText :segments="highlightRepo(repo)"
-              /></span>
-            </div>
-          </ClampText>
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--status" role="cell">
-          <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)"
-            ><HighlightText :segments="highlight(item.狀態, '狀態')" /></span
-          ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
-        </div>
-
-        <!--
-          拖曳把手（只在登入時顯示）：桌面、平板在列的最左邊（左側內距裡的 20px 窄欄），手機在卡片右上角。
-          上移／下移按鈕是同功能的無障礙替代，所以把手本身對螢幕閱讀器隱藏。
-          圖示：Lucide grip-vertical（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
-        -->
-        <span
-          v-if="editable && !searchMode"
-          class="work-item-table__drag-handle"
-          title="按住拖曳排序"
-          aria-hidden="true"
-        >
-          <svg
-            class="work-item-table__drag-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            focusable="false"
-          >
-            <circle cx="9" cy="12" r="1" />
-            <circle cx="9" cy="5" r="1" />
-            <circle cx="9" cy="19" r="1" />
-            <circle cx="15" cy="12" r="1" />
-            <circle cx="15" cy="5" r="1" />
-            <circle cx="15" cy="19" r="1" />
-          </svg>
-        </span>
-
-        <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
-        <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
-          <span class="work-item-table__assignee-stacked">
-            <span class="work-item-table__assignee-unit"
-              ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
-            /></span>
-            <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person"
-              ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')"
-            /></span>
-          </span>
-          <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline"
-            ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
-          /></span>
-          <span v-else class="work-item-table__assignee-inline"
-            ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')" />（<HighlightText
-              :segments="highlight(item.交辦單位, '交辦單位')"
-            />）</span
+          <span v-if="dayOffLabelOf(group.date)" class="work-item-table__holiday-badge"
+            >🏮 {{ dayOffLabelOf(group.date) }}</span
           >
         </div>
-
-        <div class="work-item-table__cell work-item-table__cell--target" role="cell">
-          <ClampText
-            :full-text="item.工作目標"
-            :expanded="isExpanded(item.id)"
-            @toggle="toggleRow(item.id, $event)"
-            ><HighlightText :segments="highlight(item.工作目標, '工作目標')"
-          /></ClampText>
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
-          <ClampText
-            :full-text="item.處理內容"
-            :expanded="isExpanded(item.id)"
-            @toggle="toggleRow(item.id, $event)"
-            ><span class="work-item-table__mobile-label">處理內容：</span
-            ><HighlightText :segments="highlight(item.處理內容, '處理內容')"
-          /></ClampText>
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
-          <div class="work-item-table__progress">
-            <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
-          </div>
-          <span class="work-item-table__progress-text">{{ formatProgress(item.完成度) }}%</span>
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
-          <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
-          }}<span class="work-item-table__mobile-label work-item-table__mobile-label--unit"
-            >hr</span
-          >
-        </div>
-
-        <div class="work-item-table__cell work-item-table__cell--due" role="cell">
-          <!-- 沒有預計期限時不顯示「期限：」標籤（使用者決定） -->
-          <span v-if="item.預計期限" class="work-item-table__mobile-label">期限：</span
-          >{{ formatDate(item.預計期限) }}
-        </div>
-
-        <!--
-        操作欄（橫排）：手機卡片是文字按鈕，平板是圖示按鈕（滑過用 title 顯示文字提示），桌面是圖示＋文字。
-        圖示：Lucide pencil／copy／trash-2（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
-      -->
+      </div>
+      <VueDraggable
+        v-model="group.rows"
+        class="work-item-table__body"
+        :disabled="!editable || reordering || searchMode"
+        :animation="150"
+        handle=".work-item-table__drag-handle"
+        :force-fallback="true"
+        fallback-class="work-item-table__row--dragging"
+        ghost-class="work-item-table__row--ghost"
+        @start="onDragStart"
+        @update="emitOrder(group)"
+      >
         <div
-          v-if="editable"
-          class="work-item-table__cell work-item-table__cell--actions"
-          role="cell"
+          v-for="(item, index) in group.rows"
+          :key="item.id"
+          class="work-item-table__row"
+          :class="{
+            'work-item-table__row--overdue': isOverdue(item, today),
+            'work-item-table__row--leave': isLeaveItem(item),
+            'work-item-table__row--expanded': isExpanded(item.id),
+          }"
+          :data-id="item.id"
+          role="row"
         >
-          <!-- 手機卡片沒有項次欄，上移／下移放在操作列最前面（平板、桌面隱藏，改用項次欄的） -->
-          <span v-if="!searchMode" class="work-item-table__move-group">
+          <!-- 項次：平板、桌面在數字上下放上移／下移（圖示：Lucide chevron-up／chevron-down，ISC 授權） -->
+          <!-- 搜尋結果模式：項次欄換成工作日期，點了跳到那天（跨日期的結果，項次本身沒有意義） -->
+          <div
+            v-if="searchMode"
+            class="work-item-table__cell work-item-table__cell--index work-item-table__cell--date"
+            role="cell"
+          >
             <button
+              type="button"
+              class="work-item-table__date-link"
+              :title="`跳到 ${formatDate(item.工作日期)}`"
+              @click="emit('goToDate', item.工作日期)"
+            >
+              {{ formatDate(item.工作日期) }}
+            </button>
+          </div>
+          <div v-else class="work-item-table__cell work-item-table__cell--index" role="cell">
+            <button
+              v-if="editable"
               type="button"
               class="work-item-table__move-btn"
               title="上移"
               aria-label="上移"
               :disabled="reordering || index === 0"
-              @click="moveRow(index, -1)"
+              @click="moveRow(group, index, -1)"
             >
               <svg
                 class="work-item-table__move-icon"
@@ -457,13 +353,15 @@ const moveRow = (index: number, direction: -1 | 1): void => {
                 <path d="m18 15-6-6-6 6" />
               </svg>
             </button>
+            <span>{{ item.項次 }}</span>
             <button
+              v-if="editable"
               type="button"
               class="work-item-table__move-btn"
               title="下移"
               aria-label="下移"
-              :disabled="reordering || index === rows.length - 1"
-              @click="moveRow(index, 1)"
+              :disabled="reordering || index === group.rows.length - 1"
+              @click="moveRow(group, index, 1)"
             >
               <svg
                 class="work-item-table__move-icon"
@@ -480,90 +378,269 @@ const moveRow = (index: number, direction: -1 | 1): void => {
                 <path d="m6 9 6 6 6-6" />
               </svg>
             </button>
-          </span>
-          <button
-            type="button"
-            class="work-item-table__action-btn work-item-table__action-btn--edit"
-            title="編輯"
-            aria-label="編輯"
-            @click="emit('edit', item)"
-          >
-            <svg
-              class="work-item-table__action-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
-              />
-              <path d="m15 5 4 4" />
-            </svg>
-            <span class="work-item-table__action-label">編輯</span>
-          </button>
-          <button
-            type="button"
-            class="work-item-table__action-btn work-item-table__action-btn--copy"
-            title="複製"
-            aria-label="複製"
-            @click="emit('copy', item)"
-          >
-            <svg
-              class="work-item-table__action-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-            </svg>
-            <span class="work-item-table__action-label">複製</span>
-          </button>
-          <button
-            type="button"
-            class="work-item-table__action-btn work-item-table__action-btn--danger"
-            title="刪除"
-            aria-label="刪除"
-            @click="emit('delete', item)"
-          >
-            <svg
-              class="work-item-table__action-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="M10 11v6" />
-              <path d="M14 11v6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-              <path d="M3 6h18" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-            <span class="work-item-table__action-label">刪除</span>
-          </button>
-        </div>
-      </div>
-    </VueDraggable>
+          </div>
 
-    <div v-if="rows.length === 0" class="work-item-table__empty">
+          <div class="work-item-table__cell work-item-table__cell--title" role="cell">
+            <ClampText
+              :full-text="titleFullText(item)"
+              :expanded="isExpanded(item.id)"
+              :inline-toggle="false"
+              @toggle="toggleRow(item.id, $event)"
+            >
+              <div class="work-item-table__title-text">
+                <HighlightText :segments="highlight(item.專案名稱, '專案名稱')" />
+              </div>
+              <div v-if="item.專案Repo.length > 0" class="work-item-table__title-repo">
+                <span
+                  v-for="repo in item.專案Repo"
+                  :key="repo"
+                  class="work-item-table__repo-tag"
+                  data-ellipsis
+                  ><HighlightText :segments="highlightRepo(repo)"
+                /></span>
+              </div>
+            </ClampText>
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--status" role="cell">
+            <span v-if="item.狀態" class="work-item-table__status" :class="statusClass(item.狀態)"
+              ><HighlightText :segments="highlight(item.狀態, '狀態')" /></span
+            ><span v-if="isOverdue(item, today)" class="work-item-table__badge">逾期</span>
+          </div>
+
+          <!--
+          拖曳把手（只在登入時顯示）：桌面、平板在列的最左邊（左側內距裡的 20px 窄欄），手機在卡片右上角。
+          上移／下移按鈕是同功能的無障礙替代，所以把手本身對螢幕閱讀器隱藏。
+          圖示：Lucide grip-vertical（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
+        -->
+          <span
+            v-if="editable && !searchMode"
+            class="work-item-table__drag-handle"
+            title="按住拖曳排序"
+            aria-hidden="true"
+          >
+            <svg
+              class="work-item-table__drag-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              focusable="false"
+            >
+              <circle cx="9" cy="12" r="1" />
+              <circle cx="9" cy="5" r="1" />
+              <circle cx="9" cy="19" r="1" />
+              <circle cx="15" cy="12" r="1" />
+              <circle cx="15" cy="5" r="1" />
+              <circle cx="15" cy="19" r="1" />
+            </svg>
+          </span>
+
+          <!-- 請假列不顯示交辦人員（使用者決定），只顯示交辦單位 -->
+          <div class="work-item-table__cell work-item-table__cell--assignee" role="cell">
+            <span class="work-item-table__assignee-stacked">
+              <span class="work-item-table__assignee-unit"
+                ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
+              /></span>
+              <span v-if="!isLeaveItem(item)" class="work-item-table__assignee-person"
+                ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')"
+              /></span>
+            </span>
+            <span v-if="isLeaveItem(item)" class="work-item-table__assignee-inline"
+              ><HighlightText :segments="highlight(item.交辦單位, '交辦單位')"
+            /></span>
+            <span v-else class="work-item-table__assignee-inline"
+              ><HighlightText :segments="highlight(item.交辦人員, '交辦人員')" />（<HighlightText
+                :segments="highlight(item.交辦單位, '交辦單位')"
+              />）</span
+            >
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--target" role="cell">
+            <ClampText
+              :full-text="item.工作目標"
+              :expanded="isExpanded(item.id)"
+              @toggle="toggleRow(item.id, $event)"
+              ><HighlightText :segments="highlight(item.工作目標, '工作目標')"
+            /></ClampText>
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--detail" role="cell">
+            <ClampText
+              :full-text="item.處理內容"
+              :expanded="isExpanded(item.id)"
+              @toggle="toggleRow(item.id, $event)"
+              ><span class="work-item-table__mobile-label">處理內容：</span
+              ><HighlightText :segments="highlight(item.處理內容, '處理內容')"
+            /></ClampText>
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--progress" role="cell">
+            <div class="work-item-table__progress">
+              <div class="work-item-table__progress-bar" :style="{ width: item.完成度 + '%' }" />
+            </div>
+            <span class="work-item-table__progress-text">{{ formatProgress(item.完成度) }}%</span>
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--hours" role="cell">
+            <span class="work-item-table__mobile-label">工時：</span>{{ item.今日工時
+            }}<span class="work-item-table__mobile-label work-item-table__mobile-label--unit"
+              >hr</span
+            >
+          </div>
+
+          <div class="work-item-table__cell work-item-table__cell--due" role="cell">
+            <!-- 沒有預計期限時不顯示「期限：」標籤（使用者決定） -->
+            <span v-if="item.預計期限" class="work-item-table__mobile-label">期限：</span
+            >{{ formatDate(item.預計期限) }}
+          </div>
+
+          <!--
+        操作欄（橫排）：手機卡片是文字按鈕，平板是圖示按鈕（滑過用 title 顯示文字提示），桌面是圖示＋文字。
+        圖示：Lucide pencil／copy／trash-2（https://lucide.dev，ISC 授權），路徑取自 lucide-static 1.52.0
+      -->
+          <div
+            v-if="editable"
+            class="work-item-table__cell work-item-table__cell--actions"
+            role="cell"
+          >
+            <!-- 手機卡片沒有項次欄，上移／下移放在操作列最前面（平板、桌面隱藏，改用項次欄的） -->
+            <span v-if="!searchMode" class="work-item-table__move-group">
+              <button
+                type="button"
+                class="work-item-table__move-btn"
+                title="上移"
+                aria-label="上移"
+                :disabled="reordering || index === 0"
+                @click="moveRow(group, index, -1)"
+              >
+                <svg
+                  class="work-item-table__move-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="m18 15-6-6-6 6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="work-item-table__move-btn"
+                title="下移"
+                aria-label="下移"
+                :disabled="reordering || index === group.rows.length - 1"
+                @click="moveRow(group, index, 1)"
+              >
+                <svg
+                  class="work-item-table__move-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            </span>
+            <button
+              type="button"
+              class="work-item-table__action-btn work-item-table__action-btn--edit"
+              title="編輯"
+              aria-label="編輯"
+              @click="emit('edit', item)"
+            >
+              <svg
+                class="work-item-table__action-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+                />
+                <path d="m15 5 4 4" />
+              </svg>
+              <span class="work-item-table__action-label">編輯</span>
+            </button>
+            <button
+              type="button"
+              class="work-item-table__action-btn work-item-table__action-btn--copy"
+              title="複製"
+              aria-label="複製"
+              @click="emit('copy', item)"
+            >
+              <svg
+                class="work-item-table__action-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+              </svg>
+              <span class="work-item-table__action-label">複製</span>
+            </button>
+            <button
+              type="button"
+              class="work-item-table__action-btn work-item-table__action-btn--danger"
+              title="刪除"
+              aria-label="刪除"
+              @click="emit('delete', item)"
+            >
+              <svg
+                class="work-item-table__action-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M3 6h18" />
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              <span class="work-item-table__action-label">刪除</span>
+            </button>
+          </div>
+        </div>
+      </VueDraggable>
+    </div>
+
+    <div v-if="rowCount === 0" class="work-item-table__empty">
       <template v-if="searchMode">找不到符合「{{ searchKeyword }}」的紀錄</template>
+      <template v-else-if="monthMode">這個月沒有紀錄</template>
       <template v-else-if="dayOffLabel && viewingToday">今天放假呦！</template>
       <template v-else-if="dayOffLabel">這天放假呦！</template>
       <template v-else-if="viewingToday">今天還沒有紀錄</template>
@@ -1625,6 +1702,70 @@ const moveRow = (index: number, direction: -1 | 1): void => {
   }
 
   // 搜尋結果的工作日期：連結樣式的按鈕，點了跳到那天
+  // 月份檢視：每一天的容器（單日、搜尋結果只有一個），手機卡片版面日期列跟卡片之間留間距
+  &__day {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    @media (min-width: 768px) {
+      gap: 0;
+    }
+  }
+
+  // 月份檢視每天上面的日期列（使用者決定）：日期（含星期）＋放假徽章。手機只是卡片上方的標題；
+  // 平板、桌面橫跨整張表，底色同單日表頭（今天藍、放假橘、今天剛好放假黃），上緣 2px 分隔線
+  &__day-heading {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+
+    @media (min-width: 768px) {
+      padding: 6px 32px;
+      background: var(--color-black-100);
+      border-top: 2px solid var(--expand-border);
+      border-bottom: 1px solid var(--color-black-200);
+
+      .work-item-table--viewing-today & {
+        background: var(--color-blue-100);
+        border-bottom-color: var(--color-blue-200);
+      }
+
+      .work-item-table--holiday & {
+        background: var(--color-orange-100);
+        border-bottom-color: var(--color-orange-200);
+      }
+
+      .work-item-table--holiday.work-item-table--viewing-today & {
+        background: var(--color-yellow-100);
+        border-bottom-color: var(--color-yellow-200);
+      }
+    }
+  }
+
+  &__day-heading-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+  }
+
+  // 放假徽章：同 DateNav（orange，今天剛好放假時 yellow）
+  &__holiday-badge {
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-orange-800);
+    white-space: nowrap;
+    border: 1px solid var(--color-orange-800);
+    border-radius: 999px;
+
+    .work-item-table--viewing-today & {
+      color: var(--color-yellow-800);
+      border-color: var(--color-yellow-800);
+    }
+  }
+
   &__date-link {
     padding: 0;
     font-size: 13px;
@@ -1638,6 +1779,17 @@ const moveRow = (index: number, direction: -1 | 1): void => {
     &:hover {
       color: var(--color-purple-800);
       text-decoration: underline;
+    }
+
+    // 月份檢視的日期列：顏色跟「展開／收合」一樣依那一天的色系（一般、今天、放假、今天剛好放假）
+    .work-item-table--month & {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--expand-toggle);
+
+      &:hover {
+        color: var(--expand-toggle-hover);
+      }
     }
 
     @media (min-width: 768px) {

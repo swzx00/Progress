@@ -31,6 +31,7 @@ import {
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
 import { isValidDateString, todayString } from '@/utils/date';
+import { monthRange } from '@/utils/month-view';
 import {
   SEARCH_FIELD_LABELS,
   SEARCH_FIELDS,
@@ -61,12 +62,21 @@ const urlDate = (): string | null => {
   return typeof value === 'string' && isValidDateString(value) ? value : null;
 };
 
+type ViewMode = 'day' | 'month';
+
 const selectedDate = ref(urlDate() ?? todayString());
+/**
+ * 以日／月為單位檢視（使用者決定）：月份檢視讀 selectedDate 所在月份的全部紀錄（doGet type=range），
+ * 切回單日檢視回到 selectedDate 那天；網址帶 view=month
+ */
+const viewMode = ref<ViewMode>(route.query.view === 'month' ? 'month' : 'day');
+const isMonthView = computed(() => viewMode.value === 'month');
 const {
   items,
   loading,
   error,
   fetchByDate,
+  fetchRange,
   createItem,
   batchCreateItems,
   updateItem,
@@ -78,7 +88,18 @@ const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
 const today = useToday();
 const isViewingToday = computed(() => selectedDate.value === today.value);
 
-watch(selectedDate, (date) => fetchByDate(date), { immediate: true });
+/** 讀目前畫面的資料：單日讀那天；月份檢視讀那個月（同一個月內換日期不用重讀） */
+const fetchCurrent = (): Promise<void> => {
+  if (!isMonthView.value) return fetchByDate(selectedDate.value);
+  const { from, to } = monthRange(selectedDate.value);
+  return fetchRange(from, to);
+};
+
+watch(
+  () => (isMonthView.value ? `month:${selectedDate.value.slice(0, 7)}` : selectedDate.value),
+  fetchCurrent,
+  { immediate: true },
+);
 
 const totalHours = computed(() =>
   loading.value ? undefined : items.value.reduce((sum, item) => sum + item.今日工時, 0),
@@ -124,14 +145,17 @@ const clearSearch = (): void => {
   searchLoading.value = false;
 };
 
+// 搜尋結果、月份檢視點工作日期：跳到那天的單日檢視
 const goToDate = (date: string): void => {
   clearSearch();
+  viewMode.value = 'day';
   selectedDate.value = date;
 };
 
 /**
  * 網址參數（使用者決定）：重新整理、分享連結都會回到同一個畫面
  * - date=YYYY-MM-DD：開到那天；一開始沒帶就維持乾淨的網址，切過日期才寫進去
+ * - view=month：月份檢視（單日檢視不帶）
  * - q（關鍵字）＋ field（點推薦時的欄位，值同 API 的 field）：開頁面就直接搜尋，搜尋欄也填好；
  *   結束搜尋（清空、點工作日期跳到那天）就拿掉。搜尋中 date 照樣留著，結束搜尋回到那天
  * - 格式不對（日期不存在、關鍵字空白或超過 SEARCH_KEYWORD_MAX、field 不是 SEARCH_FIELDS）就不採用，從網址拿掉
@@ -139,7 +163,7 @@ const goToDate = (date: string): void => {
  * 網址只由 syncUrl 從畫面狀態整個算出來：日期和搜尋同時改（例如點工作日期）時，
  * 分開 replace 會拿到還沒更新的 route.query 互相蓋掉
  */
-const URL_KEYS = ['date', 'q', 'field'];
+const URL_KEYS = ['date', 'view', 'q', 'field'];
 
 const urlSearch = (): SearchQuery | null => {
   const { q, field } = route.query;
@@ -157,6 +181,7 @@ const syncUrl = (): void => {
     Object.entries(route.query).filter(([key]) => !URL_KEYS.includes(key)),
   );
   if (dateInUrl) query.date = selectedDate.value;
+  if (isMonthView.value) query.view = 'month';
   if (searchQuery.value) {
     query.q = searchQuery.value.keyword;
     if (searchQuery.value.field) query.field = searchQuery.value.field;
@@ -178,7 +203,7 @@ watch(selectedDate, () => {
   dateInUrl = true;
   syncUrl();
 });
-watch(searchQuery, syncUrl);
+watch([searchQuery, viewMode], syncUrl);
 // 網址的 date 被程式改掉（例如之後加了連結）時跟著切過去
 watch(
   () => route.query.date,
@@ -193,10 +218,10 @@ const searchSummaryLabel = computed(() =>
   searchQuery.value?.field ? SEARCH_FIELD_LABELS[searchQuery.value.field] : '',
 );
 
-/** 新增、編輯、刪除後：重讀選到的那天；搜尋中也重新搜尋一次，結果才不會過時 */
+/** 新增、編輯、刪除後：重讀目前的畫面（那天或那個月）；搜尋中也重新搜尋一次，結果才不會過時 */
 const refreshAfterChange = async (): Promise<void> => {
   await Promise.all([
-    fetchByDate(selectedDate.value),
+    fetchCurrent(),
     searchQuery.value ? runSearch(searchQuery.value) : Promise.resolve(),
   ]);
 };
@@ -236,7 +261,8 @@ const onThemeSelect = (key: string): void => {
 type ToolKey = 'options' | 'daySummary' | 'export' | 'workHours';
 const toolOptions = computed<DropdownOption[]>(() => [
   { label: '選項清單', key: 'options' },
-  { label: '本日總結', key: 'daySummary' },
+  // 本日總結以單日為單位，月份檢視停用
+  { label: '本日總結', key: 'daySummary', disabled: isMonthView.value },
   { label: '匯出 Excel', key: 'export' },
   { label: '工時設定', key: 'workHours' },
   { label: '樣式', key: 'theme', children: themeOptions.value },
@@ -363,7 +389,10 @@ const copyDayError = ref<string | null>(null);
 // 目標日已有紀錄時等待使用者確認覆蓋
 const copyDayReplaceTarget = ref<{ date: string; count: number } | null>(null);
 
-const canCopyDay = computed(() => !loading.value && !error.value && items.value.length > 0);
+// 複製本日以單日為單位，月份檢視不顯示
+const canCopyDay = computed(
+  () => !isMonthView.value && !loading.value && !error.value && items.value.length > 0,
+);
 
 const formatDisplayDate = (date: string): string => date.replaceAll('-', '/');
 
@@ -468,11 +497,12 @@ const cancelCopyDayReplace = (): void => {
 /**
  * 項次調整（上移／下移、拖曳）：每次移動立即存檔。先在畫面上套用新順序（項次改成 1、2、3…），
  * 失敗就還原成移動前的資料並用 Toast 顯示錯誤；登入錯誤時登出（使用者決定）。
- * 送出期間切到別天（或切走再切回來）時，items 已經換成重新讀到的資料，就不還原
+ * 送出期間切到別天（或切走再切回來）時，items 已經換成重新讀到的資料，就不還原。
+ * 月份檢視只能排同一天，表格會多帶那一天的日期（單日檢視就是 selectedDate）
  */
 const reordering = ref(false);
 
-const onReorder = async (ids: string[]): Promise<void> => {
+const onReorder = async (ids: string[], date = selectedDate.value): Promise<void> => {
   if (reordering.value) return;
   if (!idToken.value) {
     showToast('尚未登入，無法調整順序');
@@ -486,14 +516,19 @@ const onReorder = async (ids: string[]): Promise<void> => {
     return;
   }
   const byId = new Map(before.map((item) => [item.id, item]));
-  const reordered = ids.flatMap((id, index) => {
-    const item = byId.get(id);
-    return item ? [{ ...item, 項次: index + 1 }] : [];
-  });
+  // 月份檢視 items 是整個月：只換掉那一天的紀錄，其他天不動
+  const sameDay = new Set(ids);
+  const reordered = [
+    ...before.filter((item) => !sameDay.has(item.id)),
+    ...ids.flatMap((id, index) => {
+      const item = byId.get(id);
+      return item ? [{ ...item, 項次: index + 1 }] : [];
+    }),
+  ];
   items.value = reordered;
   reordering.value = true;
   try {
-    await reorderItems(idToken.value, selectedDate.value, ids);
+    await reorderItems(idToken.value, date, ids);
   } catch (e) {
     // items 還是這次套用的順序才還原；切過日期的話已經是重新讀到的資料，不能用快照蓋掉
     if (toRaw(items.value) === reordered) items.value = before;
@@ -638,6 +673,7 @@ const onWorkHoursUnauthorized = (): void => {
 
     <DateNav
       v-model="selectedDate"
+      v-model:view-mode="viewMode"
       :total-hours="totalHours"
       :has-items="items.length > 0"
       :searching="searchQuery !== null"
@@ -777,6 +813,21 @@ const onWorkHoursUnauthorized = (): void => {
       <span class="home-view__error-icon" aria-hidden="true">⚠</span>
       <span>{{ error }}</span>
     </div>
+    <!-- 月份檢視（使用者決定）：每天一列日期列，底色每天各自判斷；點日期跳到那天的單日檢視，只能在同一天內調整順序 -->
+    <WorkItemTable
+      v-else-if="isMonthView"
+      :items="items"
+      :today="today"
+      :editable="isAuthorized"
+      month-mode
+      :day-off-label-of="getDayOffLabel"
+      :reordering="reordering"
+      @edit="openEditForm"
+      @copy="openCopyForm"
+      @reorder="onReorder"
+      @delete="openDeleteConfirm"
+      @go-to-date="goToDate"
+    />
     <WorkItemTable
       v-else
       :items="items"

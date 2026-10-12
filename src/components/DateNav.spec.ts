@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeCalendar } from '@/testing/taiwan-calendar';
+import { todayString } from '@/utils/date';
 
 /**
  * DateNav 的日期切換：上一天／下一天、上一個／下一個工作日（緊鄰那天本來就是工作日時停用）、
@@ -138,5 +139,37 @@ describe('搜尋中', () => {
     expect(wrapper.find('.add').exists()).toBe(false);
     expect(wrapper.find('button[aria-label="下一天"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('中秋節');
+  });
+});
+
+describe('日／月切換', () => {
+  it('點「日」「月」emit update:viewMode，選中的那一個 aria-pressed', async () => {
+    const wrapper = await mountNav('2030-09-12', { viewMode: 'day' });
+    const [day, month] = wrapper.findAll('.date-nav__mode-btn');
+    expect(day!.attributes('aria-pressed')).toBe('true');
+    expect(month!.attributes('aria-pressed')).toBe('false');
+    await month!.trigger('click');
+    expect(wrapper.emitted('update:viewMode')).toEqual([['month']]);
+  });
+
+  it('月份檢視：切上個月／下個月（日保留，沒有那一天就用月底），不顯示工作日按鈕、放假徽章、工時合計', async () => {
+    const wrapper = await mountNav('2030-10-31', {
+      viewMode: 'month',
+      totalHours: 8,
+      hasItems: true,
+    });
+    await button(wrapper, '下個月').trigger('click');
+    await button(wrapper, '上個月').trigger('click');
+    expect(emitted(wrapper)).toEqual(['2030-11-30', '2030-09-30']);
+    expect(wrapper.find('button[aria-label="上一個工作日"]').exists()).toBe(false);
+    expect(wrapper.find('button[aria-label="下一天"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('今日工時合計');
+  });
+
+  it('月份檢視：非本月顯示「回到本月」，本月顯示「本月」', async () => {
+    const other = await mountNav('2030-09-12', { viewMode: 'month' });
+    expect(other.get('.date-nav__today').text()).toBe('回到本月');
+    const current = await mountNav(todayString(), { viewMode: 'month' });
+    expect(current.get('.date-nav__today').text()).toBe('本月');
   });
 });

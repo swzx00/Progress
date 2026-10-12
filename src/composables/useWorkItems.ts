@@ -185,15 +185,15 @@ export function useWorkItems() {
   const items = ref<WorkItem[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
-  /** 連續切換日期時只採用最後一次的結果，避免晚回來的舊日期蓋掉目前日期 */
+  /** 連續切換日期（或日／月檢視）時只採用最後一次的結果，避免晚回來的舊資料蓋掉目前的畫面 */
   let latestFetch = 0;
 
-  const fetchByDate = async (date: string): Promise<void> => {
+  const load = async (request: () => Promise<WorkItem[]>): Promise<void> => {
     const seq = ++latestFetch;
     loading.value = true;
     error.value = null;
     try {
-      const result = await requestItemsByDate(date);
+      const result = await request();
       if (seq !== latestFetch) return;
       items.value = result;
     } catch (e) {
@@ -204,6 +204,12 @@ export function useWorkItems() {
       if (seq === latestFetch) loading.value = false;
     }
   };
+
+  const fetchByDate = (date: string): Promise<void> => load(() => requestItemsByDate(date));
+
+  /** 月份檢視：讀 from～to（YYYY-MM-DD，含頭尾）的紀錄放進 items，跟 fetchByDate 共用「只採用最後一次」 */
+  const fetchRange = (from: string, to: string): Promise<void> =>
+    load(() => fetchByRange(from, to));
 
   const createItem = (idToken: string, item: CreateInput): Promise<void> =>
     postAction(idToken, { action: 'create', item: toApiItem(item) });
@@ -241,6 +247,7 @@ export function useWorkItems() {
     loading,
     error,
     fetchByDate,
+    fetchRange,
     createItem,
     batchCreateItems,
     updateItem,
