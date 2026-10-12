@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NTooltip } from 'naive-ui';
-import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue';
 
 /**
  * 文字刪節：收合時最多顯示 mobileLines（手機）／lines（平板、桌面）行，超過的部分截斷。
@@ -10,7 +10,10 @@ import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue
  * - 按鈕顏色吃使用端設定的 CSS 變數 --expand-toggle／--expand-toggle-hover（依列的色系），
  *   沒設定時用 black-700／black-800
  * - 有滑鼠的裝置（hover: hover、pointer: fine）滑過被截斷的文字，用 NTooltip 顯示全文
- *   （延遲 0.3 秒、寬度上限 360px）；觸控裝置不做 tooltip
+ *   （延遲 0.3 秒）；觸控裝置不做 tooltip。tooltip 不截斷、平常不捲動（使用者決定）：超過 LONG_TOOLTIP_CHARS 字時
+ *   寬度從 360px 放寬到 560px，同樣字數高度少一半；寬度不超過視窗寬度減邊距（電腦視窗拉窄時才不會超出畫面）；
+ *   出現時看文字上方、下方哪邊空間大就放哪邊，高度上限是那一側剩下的空間，只有那一側也放不下時才在框內捲動
+ *   （Naive UI 只會上下翻轉、不會把 tooltip 推回畫面內，不限制高度的話超出畫面的部分會看不到）
  * - 子元素加 data-ellipsis 的（例如 Repo 膠囊單行「…」截斷），寬度被截斷也算被截斷
  * - inlineToggle 為 false 時（專案名稱/Repo：膠囊本身已經有「…」），不加「…」也不接在行尾，
  *   「<展開>」直接放在截斷內容的下一行（使用者決定）
@@ -42,6 +45,7 @@ const emit = defineEmits<{
 }>();
 
 const body = ref<HTMLElement | null>(null);
+const root = ref<HTMLElement | null>(null);
 /** 收合狀態下是否被截斷（只在收合時判斷，展開中維持上一次的結果，「收合」才知道要不要出現） */
 const clamped = ref(false);
 
@@ -57,6 +61,26 @@ const measure = (): void => {
   );
   if (more) more.style.display = '';
   clamped.value = heightClamped || widthClamped;
+};
+
+/** tooltip 內容超過幾個字就放寬 */
+const LONG_TOOLTIP_CHARS = 200;
+const tooltipStyle = computed(() => ({
+  maxWidth: `min(${props.fullText.length > LONG_TOOLTIP_CHARS ? 560 : 360}px, 100vw - 32px)`,
+}));
+/** tooltip 跟畫面上下緣、跟文字之間至少留多少（含 tooltip 自己的上下內距） */
+const TOOLTIP_GAP = 32;
+const tooltipPlacement = ref<'top-start' | 'bottom-start'>('top-start');
+const tooltipMaxHeight = ref('none');
+
+// tooltip 出現時：選文字上方、下方空間比較大的那一側，高度上限設成那一側剩下的空間
+const onTooltipShow = (show: boolean): void => {
+  if (!show || !root.value) return;
+  const rect = root.value.getBoundingClientRect();
+  const above = rect.top;
+  const below = window.innerHeight - rect.bottom;
+  tooltipPlacement.value = above >= below ? 'top-start' : 'bottom-start';
+  tooltipMaxHeight.value = `${Math.max(Math.max(above, below) - TOOLTIP_GAP, 120)}px`;
 };
 
 // 有滑鼠的裝置才做 tooltip
@@ -99,11 +123,13 @@ onBeforeUnmount(() => {
   <NTooltip
     :disabled="!canHover || !clamped || expanded"
     :delay="300"
-    placement="top-start"
-    :style="{ maxWidth: '360px' }"
+    :placement="tooltipPlacement"
+    :style="tooltipStyle"
+    @update:show="onTooltipShow"
   >
     <template #trigger>
       <div
+        ref="root"
         class="clamp-text"
         :class="{ 'clamp-text--expanded': expanded, 'clamp-text--block-toggle': !inlineToggle }"
         :style="{ '--clamp-lines': lines, '--clamp-mobile-lines': mobileLines }"
@@ -143,7 +169,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </template>
-    <div class="clamp-text__tooltip">{{ fullText }}</div>
+    <div class="clamp-text__tooltip" :style="{ maxHeight: tooltipMaxHeight }">{{ fullText }}</div>
   </NTooltip>
 </template>
 
@@ -238,9 +264,8 @@ onBeforeUnmount(() => {
     }
   }
 
-  // tooltip 內容：保留換行，太長的在框內捲動
+  // tooltip 內容：保留換行，平常完整顯示不捲動；高度上限由 onTooltipShow 依文字上下剩下的空間設定，放不下才捲動
   &__tooltip {
-    max-height: 320px;
     overflow: auto;
     word-break: break-all;
     white-space: pre-wrap;
