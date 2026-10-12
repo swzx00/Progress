@@ -230,9 +230,68 @@ describe('搜尋結果模式', () => {
   });
 });
 
+describe('月份檢視', () => {
+  const monthItems = (): WorkItem[] => [
+    makeItem({ id: 'd09-2', 項次: 2, 工作日期: TODAY }),
+    makeItem({ id: 'd01-1', 項次: 1, 工作日期: '2026-10-01' }),
+    makeItem({ id: 'd09-1', 項次: 1, 工作日期: TODAY }),
+    makeItem({ id: 'd05-1', 項次: 1, 工作日期: '2026-10-05' }),
+  ];
+  const dayOffLabelOf = (date: string): string | null => (date === TODAY ? '國慶日補假' : null);
+
+  const days = (wrapper: VueWrapper) => wrapper.findAll('.work-item-table__day');
+
+  it('共用一個表頭（項次），依日期分組、月初在上面，每天上面一列日期列（日期含星期）', () => {
+    const wrapper = mountTable({ items: monthItems(), monthMode: true, dayOffLabelOf });
+    expect(wrapper.findAll('.work-item-table__row--header')).toHaveLength(1);
+    expect(wrapper.get('[role="columnheader"]').text()).toBe('項次');
+    expect(days(wrapper).map((day) => day.get('.work-item-table__date-link').text())).toEqual([
+      '10/01（四）',
+      '10/05（一）',
+      '10/09（五）',
+    ]);
+    expect(
+      days(wrapper)[2]!
+        .findAll('.work-item-table__row')
+        .map((row) => row.attributes('data-id')),
+    ).toEqual(['d09-1', 'd09-2']);
+  });
+
+  it('放假徽章只在放假那天；底色每天各自判斷（今天、放假）', () => {
+    const wrapper = mountTable({ items: monthItems(), monthMode: true, dayOffLabelOf });
+    const [first, , last] = days(wrapper);
+    expect(first!.find('.work-item-table__holiday-badge').exists()).toBe(false);
+    expect(last!.get('.work-item-table__holiday-badge').text()).toBe('🏮 國慶日補假');
+    expect(first!.classes()).not.toContain('work-item-table--viewing-today');
+    expect(last!.classes()).toEqual(
+      expect.arrayContaining(['work-item-table--viewing-today', 'work-item-table--holiday']),
+    );
+    expect(wrapper.classes()).not.toContain('work-item-table--viewing-today');
+  });
+
+  it('點日期跳到那天', async () => {
+    const wrapper = mountTable({ items: monthItems(), monthMode: true });
+    await wrapper.findAll('.work-item-table__date-link')[1]!.trigger('click');
+    expect(wrapper.emitted('goToDate')).toEqual([['2026-10-05']]);
+  });
+
+  it('上移／下移只在同一天內，emit 那天的新順序與日期', async () => {
+    const wrapper = mountTable({ items: monthItems(), editable: true, monthMode: true });
+    const lastDay = days(wrapper)[2]!;
+    const up = lastDay.findAll('.work-item-table__cell--index button[aria-label="上移"]');
+    expect(up[0]!.attributes('disabled')).toBeDefined();
+    await up[1]!.trigger('click');
+    expect(wrapper.emitted('reorder')).toEqual([[['d09-2', 'd09-1'], TODAY]]);
+    // 只有一筆的那天：上移、下移都停用
+    const single = days(wrapper)[0]!.findAll('.work-item-table__cell--index button');
+    expect(single.every((button) => button.attributes('disabled') !== undefined)).toBe(true);
+  });
+});
+
 describe('空狀態', () => {
   it.each([
     [{ searchMode: true, searchKeyword: '官網' }, '找不到符合「官網」的紀錄'],
+    [{ monthMode: true }, '這個月沒有紀錄'],
     [{ dayOffLabel: '中秋節', viewingToday: true }, '今天放假呦！'],
     [{ dayOffLabel: '中秋節' }, '這天放假呦！'],
     [{ viewingToday: true }, '今天還沒有紀錄'],

@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   rememberItems: vi.fn(),
   fetchByDate: vi.fn(),
+  fetchRange: vi.fn(),
   createItem: vi.fn(),
   updateItem: vi.fn(),
   deleteItem: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('@/composables/useWorkItems', async (importOriginal) => {
       loading: mocks.loading,
       error: mocks.error,
       fetchByDate: mocks.fetchByDate,
+      fetchRange: mocks.fetchRange,
       createItem: mocks.createItem,
       batchCreateItems: mocks.batchCreateItems,
       updateItem: mocks.updateItem,
@@ -102,8 +104,8 @@ const unauthorized = () => new ApiError('登入已過期，請重新登入', 'UN
 // DateNav 只保留 slot，動作按鈕（複製本日、請假、新增）才點得到
 const DateNavStub = {
   name: 'DateNav',
-  props: ['modelValue'],
-  emits: ['update:modelValue'],
+  props: ['modelValue', 'viewMode'],
+  emits: ['update:modelValue', 'update:viewMode'],
   template: '<div><slot name="search" /><slot name="actions" /></div>',
 };
 
@@ -180,6 +182,7 @@ beforeEach(() => {
   mocks.loading.value = false;
   mocks.error.value = null;
   mocks.fetchByDate.mockResolvedValue(undefined);
+  mocks.fetchRange.mockResolvedValue(undefined);
   mocks.ensureFreshLogin.mockReturnValue(true);
 });
 
@@ -230,6 +233,63 @@ describe('網址的 ?date=', () => {
     await router.replace({ query: { date: '2026-09-03' } });
     await flushPromises();
     expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-03');
+  });
+});
+
+describe('月份檢視', () => {
+  it('切到月份檢視：讀那個月的紀錄，網址加 view=month，表格用 month-mode', async () => {
+    const wrapper = await mountView('/?date=2026-09-15');
+    await emitFrom(wrapper, 'DateNav', 'update:viewMode', 'month');
+    expect(mocks.fetchRange).toHaveBeenCalledWith('2026-09-01', '2026-09-30');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-15', view: 'month' });
+    expect(wrapper.findComponent({ name: 'WorkItemTable' }).props('monthMode')).toBe(true);
+  });
+
+  it('網址帶 view=month：直接開月份檢視；同一個月內換日期不重讀，換月份才重讀', async () => {
+    const wrapper = await mountView('/?date=2026-09-15&view=month');
+    expect(mocks.fetchByDate).not.toHaveBeenCalled();
+    expect(mocks.fetchRange).toHaveBeenCalledTimes(1);
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2026-09-20');
+    expect(mocks.fetchRange).toHaveBeenCalledTimes(1);
+    await emitFrom(wrapper, 'DateNav', 'update:modelValue', '2026-10-20');
+    expect(mocks.fetchRange).toHaveBeenLastCalledWith('2026-10-01', '2026-10-31');
+  });
+
+  it('view 不是 month：當成單日檢視，從網址拿掉', async () => {
+    await mountView('/?view=week');
+    expect(mocks.fetchByDate).toHaveBeenCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it('點日期：切回那天的單日檢視', async () => {
+    const wrapper = await mountView('/?date=2026-09-15&view=month');
+    await emitFrom(wrapper, 'WorkItemTable', 'goToDate', '2026-09-03');
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith('2026-09-03');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-03' });
+  });
+
+  it('調整順序：只換掉那一天的紀錄，用表格帶的日期存檔', async () => {
+    const other = makeItem({ id: 'x', 項次: 1, 工作日期: '2026-09-01' });
+    mocks.items.value = [other, ...dayItems().map((item) => ({ ...item, 工作日期: '2026-09-15' }))];
+    mocks.reorderItems.mockResolvedValue(undefined);
+    const wrapper = await mountView('/?date=2026-09-20&view=month');
+    await emitFrom(wrapper, 'WorkItemTable', 'reorder', ['b', 'a'], '2026-09-15');
+    expect(mocks.reorderItems).toHaveBeenCalledWith('token', '2026-09-15', ['b', 'a']);
+    expect(mocks.items.value.map((item) => [item.id, item.項次])).toEqual([
+      ['x', 1],
+      ['b', 1],
+      ['a', 2],
+    ]);
+  });
+
+  it('存檔後重讀整個月；不顯示「複製本日」', async () => {
+    const wrapper = await mountView('/?date=2026-09-15&view=month');
+    expect(wrapper.find('button[aria-label="複製本日"]').exists()).toBe(false);
+    mocks.createItem.mockResolvedValue(undefined);
+    await wrapper.get('button[aria-label="新增"]').trigger('click');
+    await emitFrom(wrapper, 'WorkItemForm', 'save', savePayload());
+    expect(mocks.fetchRange).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchRange).toHaveBeenLastCalledWith('2026-09-01', '2026-09-30');
   });
 });
 

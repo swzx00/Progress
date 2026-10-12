@@ -32,8 +32,8 @@
 | [docs/dev-tooling.md](docs/dev-tooling.md) | ESLint／Prettier／Stylelint、VS Code 設定、建置拆檔、npm audit、Node／npm 版本 |
 | [docs/testing.md](docs/testing.md) | Vitest 測試：指令、測試檔位置、慣例、前後端一致性測試（`Code.gs` ↔ 前端） |
 | [docs/ui/theme.md](docs/ui/theme.md) | 色階選色理由、放假色、字體、深色模式 |
-| [docs/ui/date-nav.md](docs/ui/date-nav.md) | DateNav 版面與按鈕、今天標示、日期選擇器、台灣國定假日 |
-| [docs/ui/work-item-table.md](docs/ui/work-item-table.md) | 表格合併欄、今天／斑馬紋底色、狀態顏色、文字刪節與展開、操作欄、項次調整（拖曳） |
+| [docs/ui/date-nav.md](docs/ui/date-nav.md) | DateNav 版面與按鈕、日／月切換（月份檢視）、今天標示、日期選擇器、台灣國定假日 |
+| [docs/ui/work-item-table.md](docs/ui/work-item-table.md) | 表格合併欄、今天／斑馬紋底色、狀態顏色、文字刪節與展開、操作欄、項次調整（拖曳）、月份檢視 |
 | [docs/ui/work-item-form.md](docs/ui/work-item-form.md) | 表單欄位規格、驗證、推薦與預填、項次欄、每日工時上限、未儲存確認、送出中、儲存失敗處理 |
 | [docs/ui/dialogs.md](docs/ui/dialogs.md) | ConfirmDialog、選項清單管理、工具下拉選單、本日總結 |
 | [docs/ui/copy.md](docs/ui/copy.md) | 單項複製、複製本日 |
@@ -57,7 +57,7 @@
 
 完整說明見 [docs/api.md](docs/api.md)。
 
-- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定）、`type=range&from&to`（匯出用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
+- `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
 - `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
@@ -85,6 +85,7 @@
   | 字體、行高 | `src/style.scss` 的 `body` ↔ `App.vue` 的 `themeOverrides.common`（`fontFamily`、`lineHeight`） |
   | 色值 hex | `tokens.scss` ↔ `App.vue` 的 Naive UI overrides ↔ `export-excel.ts` 的 ARGB |
   | 放假色判斷 | `DateNav` 的 `--today` 修飾符 ↔ `WorkItemTable` 的 `--holiday`＋`--viewing-today` |
+  | 放假徽章樣式 | `DateNav` 的 `__holiday-badge` ↔ `WorkItemTable` 月份檢視日期列的 `__holiday-badge` |
   | 搜尋欄寬度 | `DateNav` 的 `--switcher-width` ↔ 日期切換按鈕與日期選擇器寬度 |
 
   `npm run build:gs`（把 JSON 轉成 `schema.gs`）與 clasp 都還沒做，`Code.gs` 目前手動貼到 Apps Script 編輯器部署
@@ -106,7 +107,7 @@ src/
   pages/
     HomeView.vue           # 單一路由（/），依登入狀態切換管理／檢視畫面：isAuthorized 顯示新增/編輯/刪除，否則顯示唯讀畫面
   components/
-    WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式）
+    WorkItemTable.vue     # 表格排版（管理／檢視畫面共用，:editable 控制是否顯示操作欄，:viewing-today 控制表頭/卡片的今天樣式，month-mode 是月份檢視、search-mode 是搜尋結果）
     WorkItemSearch.vue    # 搜尋欄：輸入框＋推薦選擇下拉＋搜尋按鈕，放在 DateNav 的 search slot
     WorkItemForm.vue      # 新增/編輯表單（Drawer 呈現），項次欄唯讀顯示目前／預計項次
     OptionsManagerModal.vue # 管理選項清單（新增/重新命名/刪除），獨立 Modal，只有 isAuthorized 看得到入口
@@ -120,7 +121,7 @@ src/
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載
     WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
-    DateNav.vue           # ⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
+    DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理（ensureFreshLogin：開表單／對話框前檢查 token 是否過期）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
@@ -136,6 +137,7 @@ src/
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
     work-hours.ts          # 工時設定：時段與小時互換（rangeToHours／hoursToRange／roundToQuarter）、設定驗證（validateWorkHoursSetting，Code.gs 手動同步）
     search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
+    month-view.ts          # 月份檢視：monthRange／shiftMonth／isSameMonth／formatMonthDayLabel／sortByDateAndIndex
     date.ts                # 本地時間的 YYYY-MM-DD 日期字串（toLocalDateString／todayString／parseLocalDate／addDays），前端產生日期字串一律用這裡，不要用 toISOString
     sun-times.ts           # 日出日落時間（台北，天文公式計算），深色模式「自動」用
     recent-history.ts      # 近期紀錄：下拉推薦（recentUnit／recentAssignee／recentProject／recentRepos／withRecentFirst）、工作目標預填（targetKey／recentByTarget）、存檔後更新（upsertRecentItems）
@@ -177,7 +179,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 細節見 `docs/ui/` 各檔案。
 
 - 排版：A 版商務簡潔風（白底、細邊框表格、藍色點綴）；逾期用左側紅色標線＋「逾期」標籤，只做視覺標示、不主動通知
-- 單一路由 `/`（`HomeView.vue`），依 `isAuthorized` 切換管理／唯讀畫面；以**日期**為單位檢視
+- 單一路由 `/`（`HomeView.vue`），依 `isAuthorized` 切換管理／唯讀畫面；以**日期**為單位檢視，可切換成以**月份**為單位（`?view=month`，見 [docs/ui/date-nav.md](docs/ui/date-nav.md)）
 - 按鈕沒有用途時要 disabled，不能點了沒反應
 - 新增／編輯用 Drawer；設定類操作用置中 Modal（手機滿版）；刪除與破壞性動作一律先跳 `ConfirmDialog`（按鈕配置照 Apple HIG）
 - 錯誤一律用 `AppToast`；登入錯誤（`UNAUTHORIZED`）關閉表單並登出，其他錯誤保留畫面讓使用者重試
