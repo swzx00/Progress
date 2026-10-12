@@ -16,7 +16,7 @@
 | `tests/unit/utils/*.spec.ts`、`tests/unit/types/*.spec.ts` | 純函式單元測試：日期、工時換算、搜尋比對與標示、本日總結、近期推薦與預填、複製、匯出範圍與檔名、日出日落 |
 | `tests/unit/validation/*.spec.ts` | 表單驗證：`shared/validation-schema.json` 的每條規則、請假規則、每日工時合計訊息 |
 | `tests/apps-script/*.spec.ts` | 前後端一致性：在 Node 載入 `apps-script/Code.gs`，跟前端用同一組案例比對；`Code.gs` 接假的試算表跑後端共同規格與讀寫 Sheet 的細節（見下方） |
-| `tests/unit/composables/*.spec.ts` | API 邊界（`useWorkItems`、`useOptions`）：日期格式只在這裡轉換、回應一律 200 只看 `error`、`UNAUTHORIZED` 的 `ApiError`、已刪除過濾、預計項次與工時合計；台灣假日（`useTaiwanHolidays`）：補班日、連假、跨年、資料抓不到時的備援；登入（`useGoogleAuth`）：解析 ID Token、允許清單、登入按鈕、登出；Toast（`useToast`）：一次一則、新的取代舊的、4 秒自動消失 |
+| `tests/unit/composables/*.spec.ts` | API 邊界（`useWorkItems`、`useOptions`）：日期格式只在這裡轉換、回應一律 200 只看 `error`、`UNAUTHORIZED` 的 `ApiError`、已刪除過濾、預計項次與工時合計；台灣假日（`useTaiwanHolidays`）：補班日、連假、跨年、資料抓不到時的備援；登入（`useGoogleAuth`）：解析 ID Token、允許清單、token 只放記憶體、自動登入、到期前續期與失敗處理、`UNAUTHORIZED` 續期重送、登入按鈕、兩種登出；Toast（`useToast`）：一次一則、新的取代舊的、4 秒自動消失 |
 | `tests/unit/components/*.spec.ts` | 元件測試：`WorkItemForm`（項次、送出、24 小時檢查、請假、複製、未儲存確認、預填、工作時段）、`DateNav`（工作日按鈕停用、放假徽章與工時合計）、`WorkItemTable`（排序、上移下移、逾期與請假標示、搜尋結果模式、空狀態）、`WorkItemSearch`（推薦清單、鍵盤操作、清除）、`ExportModal`（匯出範圍換算、天數上限、沒有紀錄）、`CopyDayDialog`、`DaySummaryModal`、`OptionsManagerModal`、`WorkHoursSettingModal`、`ConfirmDialog`、`HighlightText`、`OptionsDropdownState`（選項載入中、載入失敗＋重新載入，`WorkItemForm` 裡四個下拉選單都會顯示）、`AppToast`（錯誤／成功樣式、關閉、一次一則） |
 | `tests/unit/pages/HomeView.spec.ts` | 主畫面流程：存檔、刪除、複製本日、項次調整失敗時的處理（登入錯誤關閉畫面並登出，其他錯誤保留畫面）、複製本日的工時檢查與覆蓋確認 |
 | `tests/backend/contract.ts` | 後端共同規格：MSW 與 `Code.gs` 跑同一組案例（見下方） |
@@ -88,7 +88,7 @@ happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的�
 
 - 時間固定在 2026/10/07（三）上午 10 點（`page.clock.setFixedTime`），MSW 的預設資料與「今天」才固定
 - 外部資源換成假的：Google 登入腳本（不連 Google，`renderButton` 放一顆假按鈕）、台灣行事曆（10/9、10/10 放假）、Google 字型（不下載）。要用 `context.route`，MSW 的 Service Worker 放行的請求從 Worker 發出，`page.route` 攔不到
-- `test.use({ loggedIn: true })`：在 sessionStorage 放一個擁有者的假 ID Token，直接進管理畫面（MSW 不驗證 token）
+- `test.use({ loggedIn: true })`：模擬「這個瀏覽器登入過」——`localStorage` 放自動登入標記（只在第一次載入時放，按登出清掉後重新整理不會又放回去），假的 GIS 在 `prompt()` 時給擁有者的假 ID Token，載入後自動登入進管理畫面（MSW 不驗證 token）
 
 ### Safari（WebKit）
 
