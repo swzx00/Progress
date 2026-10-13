@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { describeBackendContract, type BackendClient } from '../backend/contract';
 
@@ -45,4 +45,57 @@ const client: BackendClient = {
 
 describe('MSW 假後端', () => {
   describeBackendContract(() => client);
+});
+
+/**
+ * 自動填入（AutoFill.gs）：共同規格之外另外測，因為真後端儲存啟用的設定時會去開對方的試算表，
+ * MSW 沒有對方的試算表；Code.gs 那邊的行為在 tests/apps-script/auto-fill.spec.ts
+ */
+describe('MSW 假後端：自動填入', () => {
+  const URL = 'https://docs.google.com/spreadsheets/d/abcdefghijklmnopqrstuvwxyz/edit';
+  const post = (body: Record<string, unknown>) => client.post({ idToken: 'token', ...body });
+  const enable = () =>
+    post({ action: 'saveAutoFillSetting', autoFill: { enabled: true, url: URL, name: '林家丞' } });
+  const fillNow = (text: string, date = '2026/10/13') =>
+    post({ action: 'autoFillNow', date, text });
+
+  it('設定：預設停用，存好讀得回來，不放進 doGet', async () => {
+    expect((await post({ action: 'getAutoFillSetting' })).autoFill).toEqual({
+      enabled: false,
+      url: '',
+      name: '',
+    });
+    expect((await enable()).autoFill).toEqual({ enabled: true, url: URL, name: '林家丞' });
+    expect((await post({ action: 'getAutoFillSetting' })).autoFill).toEqual({
+      enabled: true,
+      url: URL,
+      name: '林家丞',
+    });
+    expect(await client.get({ type: 'options' })).not.toHaveProperty('autoFill');
+  });
+
+  it('設定的驗證', async () => {
+    const save = (autoFill: unknown) => post({ action: 'saveAutoFillSetting', autoFill });
+    expect((await save({ enabled: 'yes' })).error).toBe('自動填入設定格式不正確');
+    expect((await save({ enabled: true, url: '', name: '林家丞' })).error).toBe('請填寫試算表網址');
+    expect((await save({ enabled: true, url: URL, name: '' })).error).toBe('請填寫姓名');
+  });
+
+  it('填入：沒啟用回錯誤；空的格子寫入、一樣的內容不動、不同的內容不覆蓋', async () => {
+    expect((await fillNow('內容')).error).toBe('自動填入沒有啟用');
+    await enable();
+    expect(await fillNow(' 內容 ')).toEqual({ status: 'written' });
+    expect(await fillNow('內容')).toEqual({ status: 'unchanged' });
+    expect((await fillNow('別的內容')).error).toBe(
+      '對方試算表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
+    );
+    expect(await fillNow('別天的內容', '2026/10/14')).toEqual({ status: 'written' });
+  });
+
+  it('填入的驗證', async () => {
+    await enable();
+    expect((await fillNow('內容', '2026-10-13')).error).toBe('日期格式不正確');
+    expect((await fillNow('  ')).error).toBe('沒有可以填入的內容');
+    expect((await fillNow('字'.repeat(5001))).error).toBe('填入內容不可超過 5000 個字');
+  });
 });

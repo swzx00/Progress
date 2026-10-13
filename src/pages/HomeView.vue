@@ -671,6 +671,12 @@ const onOptionsUnauthorized = (): void => {
   clearLogin();
 };
 
+/** 本日總結（自動填入設定、填入）遇到登入錯誤：比照選項清單管理，關閉 Modal 並強制登出 */
+const onDaySummaryUnauthorized = (): void => {
+  daySummaryOpen.value = false;
+  clearLogin();
+};
+
 /** 工時設定遇到登入錯誤：比照選項清單管理，關閉 Modal 並強制登出 */
 const onWorkHoursUnauthorized = (): void => {
   workHoursOpen.value = false;
@@ -986,10 +992,12 @@ const onWorkHoursUnauthorized = (): void => {
 
     <Transition name="day-summary">
       <DaySummaryModal
-        v-if="daySummaryOpen && isAuthorized"
-        :date="formatDisplayDate(selectedDate)"
+        v-if="daySummaryOpen && isAuthorized && idToken"
+        :date="selectedDate"
         :items="items"
+        :id-token="idToken"
         @close="daySummaryOpen = false"
+        @unauthorized="onDaySummaryUnauthorized"
       />
     </Transition>
 

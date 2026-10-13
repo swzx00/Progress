@@ -37,7 +37,7 @@ type UpdateInput = Partial<Omit<WorkItem, 'id'>>;
  * <input type="date"> 規格就是吃這個格式；Apps Script／Google Sheet 那端存的
  * 是 YYYY/MM/DD。轉換集中在這裡，其他地方不用知道 API 實際傳輸格式是什麼。
  */
-const toApiDate = (date: string): string => date.replaceAll('-', '/');
+export const toApiDate = (date: string): string => date.replaceAll('-', '/');
 export const fromApiDate = (date: string): string => date.replaceAll('/', '-');
 
 const toApiItem = <T extends Partial<Pick<WorkItem, '工作日期' | '預計期限'>>>(item: T): T => ({

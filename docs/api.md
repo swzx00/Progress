@@ -17,7 +17,7 @@
 - **重新整理、重開分頁時自動登入**（`tryAutoLogin`，`HomeView` 掛載時呼叫）：只有 `localStorage` 有 `progress:auto-login` 標記（值 `'1'`，登入成功時寫入，**不是憑證**）才嘗試，沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
 - **背景續期**（`refreshLogin`）：拿到 token 後排計時器，到期前 5 分鐘自動續期；分頁切回來（`visibilitychange`）時 token 快過期也續期（電腦睡眠喚醒後計時器可能沒觸發）。同時有多個續期只呼叫一次 `prompt()`；`isNotDisplayed`／`isSkippedMoment`／`isDismissedMoment` 或 15 秒沒回應都算失敗；GIS 腳本還沒載入直接算失敗，不卡畫面
 - **開表單、對話框前**（`ensureFreshLogin`，非同步）：還沒過期直接通過；過期了（看 JWT 的 `exp`，提早 1 分鐘；本機時鐘不準時用 `iat` 算出時間差校正）先續期，拿到新 token 就照常開，拿不到才回到唯讀並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。調整順序是先在畫面套用新順序再檢查，續期失敗才還原
-- **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
+- **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定、本日總結的自動填入設定與「填入」都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
 - **兩種登出**：使用者按「登出」（`signOut`）清掉 token、拿掉 `progress:auto-login` 標記並 `disableAutoSelect()`，之後要自己點登入；登入失效（續期失敗、`UNAUTHORIZED`，`clearLogin`）只清掉 token，保留自動登入，下次重新整理還能自動登入回來
 - **限制**（Google、瀏覽器的規定）：瀏覽器要登入著 Google 而且之前在這個網站同意過登入；FedCM 兩次自動登入至少隔 10 分鐘（10 分鐘內連續重新整理兩次，第二次要點登入）；無痕模式、關閉第三方登入或 FedCM 的瀏覽器自動登入會失敗，維持唯讀畫面、右上角照常有登入按鈕
 - e2e 的假 GIS（`e2e/fixtures.ts`）：`prompt()` 有 `window.__e2eIdToken` 就交給 `initialize` 的 callback，模擬自動登入

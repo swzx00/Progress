@@ -31,6 +31,12 @@
     - 第一行「`N.標題`」（編號後面不空格）：有專案 Repo 就放 Repo（多個用逗號串，`AAA,BBBB`，同 Sheet 格式），工作目標**開頭**有單號就接在 Repo 後面（空一格）；沒有 Repo 放專案名稱，再沒有放工作目標（這兩種情況不加單號）。單號是「`#` 或 `T` 加 4–5 位數字」（`extractTaskCode`，例如 `#7902`、`T1234`，後面緊接著還有數字就不算）
     - 下面每一行是處理內容的一行，前面加「`- `」（略過空行；本身已經是「-」開頭的維持原樣）；沒有處理內容就只有第一行
     - 範例：`1.web-components-vue3/notify-message-recruit`／`- 即時通測試`／`2.release_source #7902`／`- 與 PM 確認工單內容`
+  - **自動填入**（使用者決定，2026-10-13，規則見 [auto-fill.md](../auto-fill.md)）：本日總結 Modal 下方用細線隔開一塊「自動填入」設定，每個工作日 16:00～17:00 由後端把當天的總結填進別人的試算表
+    - 設定存在**後端**（「選項清單」分頁的「自動填入設定」欄），不存瀏覽器；`src/composables/useAutoFill.ts` 用要登入的 `doPost`（`getAutoFillSetting`）讀，模組層級快取，第一次開 Modal 才讀（顯示「設定載入中…」，失敗顯示原因＋「重新載入」）
+    - 欄位：「啟用」checkbox、試算表網址、姓名。**沒勾「啟用」時網址、姓名 disabled**（值保留）；「儲存」在沒有修改時 disabled。按「儲存」才驗證（`src/utils/auto-fill.ts` 的 `validateAutoFillSetting`，跟 `AutoFill.gs` 的 `validateAutoFill_` 手動同步），第一次按之後錯誤即時更新；後端啟用時還會試著開對方的試算表、找姓名，失敗用錯誤 Toast 顯示原因、欄位保留。成功顯示 success Toast「已儲存自動填入設定」
+    - 「填入」按鈕在「複製」左邊：把 Textarea **目前的文字**（含手動修改）填進對方試算表**這一天**的格子（`doPost` 的 `autoFillNow`），不檢查工作日、工時（未滿 8 小時也照樣填）。只有**後端存的設定是啟用**時才能按（畫面上勾了但還沒儲存不算），Textarea 是空的、送出中也 disabled（送出中文字改成「填入中」）。結果：寫入 →「已填入對方的試算表」、已經是一樣的內容 →「對方的試算表已經是一樣的內容」（都是 success Toast）；格子已經有不同的內容（不覆蓋）、找不到格子等錯誤用錯誤 Toast
+    - 登入錯誤（`UNAUTHORIZED`，`withLoginRetry` 續期後仍失敗）：emit `unauthorized`，`HomeView` 關閉 Modal 並 `clearLogin()`
+    - 版面：Textarea 至少保留 120px，桌面 Modal 高度 `min(90vh, 760px)`，放不下時整個面板捲動；手機「填入」「複製」各佔一半、桌面靠右
   - 「匯出 Excel」：開 `ExportModal`，見 [export-excel.md](export-excel.md)
   - 「工時設定」：開 `WorkHoursSettingModal`，見 [work-hours.md](work-hours.md)
   - 「樣式」：子選單選 自動（依日出日落）／淺色／深色，見 [theme.md](theme.md)
