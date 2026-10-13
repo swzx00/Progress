@@ -6,6 +6,7 @@
  *   2. 「專案設定」→「指令碼屬性」新增 GOOGLE_CLIENT_ID（前端 .env 那組，用來驗證 ID Token 的 aud；沒設定時所有寫入都會被拒絕）
  *   3. 部署為網頁應用程式（執行身分：我；存取權限：所有人）
  * 第 3 步第一次執行會跳出 Google 授權畫面，屬於正常流程。
+ * 自動填入（本日總結 → 別人的試算表）在 AutoFill.gs，跟這個檔案放在同一個專案，部署步驟見那份檔案開頭。
  * 一次性的資料整理函式（舊版月份分頁合併、選項清單整理）放在 Migrations.gs，需要時才貼進專案執行。
  */
 
@@ -115,6 +116,7 @@ var TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 // 不會出現在管理選項清單或下拉選單。可用的值手動同步自前端 src/composables/useTheme.ts 的 THEME_MODES
 var THEME_MODE_HEADER = '樣式設定';
 var THEME_MODE_VALUES = ['auto', 'light', 'dark'];
+
 
 // ===== Sheet 共用工具 =====
 
@@ -1046,6 +1048,10 @@ function handleAction_(body) {
     return handleSaveWorkHours_(body.workHours === undefined ? null : body.workHours);
   }
   if (body.action === 'saveThemeMode') return handleSaveThemeMode_(body.themeMode);
+  // 自動填入（AutoFill.gs）
+  if (body.action === 'getAutoFillSetting') return jsonOutput_({ autoFill: getAutoFill_() });
+  if (body.action === 'saveAutoFillSetting') return handleSaveAutoFill_(body.autoFill);
+  if (body.action === 'autoFillNow') return handleAutoFillNow_(body.date, body.text);
 
   return jsonOutput_({ error: '未知的 action' });
 }

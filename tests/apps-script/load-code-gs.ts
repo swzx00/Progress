@@ -3,11 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { createContext, runInContext } from 'node:vm';
 
 /**
- * 在 Node 裡載入 apps-script/Code.gs，取出不碰 Sheet 的純函式與常數，跟前端的同一套規則比對。
+ * 在 Node 裡載入 apps-script/Code.gs（＋同一個專案的 AutoFill.gs），取出不碰 Sheet 的純函式與常數，跟前端的同一套規則比對。
  * Code.gs 的頂層只有 var 與 function 宣告，載入時不會呼叫 SpreadsheetApp 等 Apps Script 服務；
  * 這裡只測不需要那些服務的函式，所以不用 mock
  */
-const CODE_GS = fileURLToPath(new URL('../../apps-script/Code.gs', import.meta.url));
+const SCRIPTS = ['Code.gs', 'AutoFill.gs'];
+const scriptPath = (name: string): string =>
+  fileURLToPath(new URL(`../../apps-script/${name}`, import.meta.url));
 
 // 只列出測試用到的部分，型別刻意寫寬，Code.gs 本身沒有型別
 export interface CodeGs {
@@ -35,11 +37,15 @@ export interface CodeGs {
   normalizeSearch_: (value: unknown) => string;
   getNextDailyIndex_: (dayRows: { item: { 項次: number } }[]) => number;
   apiDateToUtc_: (value: string) => number;
+  buildDaySummary_: (items: unknown[]) => string;
+  leaveStartTime_: (leaveHours: number, workHours: unknown) => string | null;
 }
 
 export const loadCodeGs = (): CodeGs => {
   const context = createContext({});
-  runInContext(readFileSync(CODE_GS, 'utf-8'), context, { filename: 'Code.gs' });
+  SCRIPTS.forEach((name) =>
+    runInContext(readFileSync(scriptPath(name), 'utf-8'), context, { filename: name }),
+  );
   // vm 裡的陣列、物件來自另一個 realm，轉成 JSON 再解析，toEqual 比對時才不會因為原型不同而失敗
   return new Proxy(context as unknown as CodeGs, {
     get: (target, key: string) => {

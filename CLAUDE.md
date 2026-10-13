@@ -28,6 +28,7 @@
 | 檔案 | 內容 |
 |---|---|
 | [docs/sheet-schema.md](docs/sheet-schema.md) | Google Sheet 各分頁與欄位的完整說明、請假固定值、已刪除紀錄分頁、自動排序、選項清單分頁（含工時設定欄）、日期儲存格格式 |
+| [docs/auto-fill.md](docs/auto-fill.md) | 自動填入：本日總結每個工作日填進別人的試算表（設定、對方試算表結構、觸發器判斷順序、手動填入、部署） |
 | [docs/api.md](docs/api.md) | Apps Script `doGet`／`doPost` 各 type／action 的參數、回應與驗證、前端登入、本機 CORS proxy |
 | [docs/dev-tooling.md](docs/dev-tooling.md) | ESLint／Prettier／Stylelint、VS Code 設定、建置拆檔、npm audit、Node／npm 版本 |
 | [docs/testing.md](docs/testing.md) | Vitest 測試：指令、測試檔位置、慣例、前後端一致性測試（`Code.gs` ↔ 前端） |
@@ -49,7 +50,7 @@
 - **項次**每天從 1 開始，新增時由後端決定（最大項次＋1）
 - **請假**：同一分頁，狀態＝`休假`，固定欄位由後端覆蓋（`leave.fixed`），不寫回選項清單，`休假` 不在 `STATUS_OPTIONS` 裡
 - **刪除**：整列搬到「已刪除紀錄」分頁封存（多一欄刪除時間）
-- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」欄
+- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」「自動填入設定」欄
 - 每日工時合計（含請假）不可超過 24 小時，前後端都擋；超過 8 小時只在畫面標紅
 - 資料模式是日誌式：同一專案每天新增一列，不覆寫舊資料
 
@@ -58,7 +59,7 @@
 完整說明見 [docs/api.md](docs/api.md)。
 
 - `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定＋樣式設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
-- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`
+- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`／`getAutoFillSetting`／`saveAutoFillSetting`／`autoFillNow`（自動填入，實作在 `AutoFill.gs`，另有每個工作日 16 點的時間觸發器 `runAutoFill`，見 [docs/auto-fill.md](docs/auto-fill.md)）
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
@@ -77,6 +78,7 @@
   | 欄位驗證 | `shared/validation-schema.json`（唯一事實來源，前端直接 import）↔ `Code.gs` 的 `VALIDATION_RULES`、`LEAVE_RULES`、`DAILY_HOURS_MAX`、`WORK_HOURS_DAILY_STANDARD` |
   | 狀態選項 | `src/types/work-item.ts` 的 `STATUS_OPTIONS`（要 `as const`，不放 JSON）↔ `Code.gs` 的 `STATUS_OPTIONS` |
   | 每日項次規則 | `Code.gs` 的 `getNextDailyIndex_` ↔ `useWorkItems.ts` 的 `fetchDaySummary` ↔ MSW |
+  | 本日總結文字 | `src/utils/day-summary.ts` 的 `buildDaySummary` ↔ `AutoFill.gs` 的 `buildDaySummary_`（含 `EXCLUDED_PROJECTS`、`TASK_CODE_PATTERN`） |
   | 工時超過訊息 | 前端 `dailyHoursMessage` ↔ `Code.gs` 的 `dailyHoursError_` ↔ MSW |
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
   | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
@@ -157,6 +159,7 @@ shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
   Code.gs
+  AutoFill.gs               # 自動填入（本日總結 → 別人的試算表）：跟 Code.gs 同一個專案、共用全域，觸發器 runAutoFill、installAutoFillTrigger
   Migrations.gs             # 一次性資料整理（mergeMonthSheets 舊版月份分頁合併、compactOptionsSheet 選項清單整理），要用時才貼進 Apps Script 專案
   LegacyImport.gs           # 一次性匯入舊版「工作進度-2026H1／H2」試算表，用法見檔案開頭註解，匯入完可從 Apps Script 專案刪掉
   build/schema.gs           # （規劃中，尚未實作）由 shared/validation-schema.json 產生
