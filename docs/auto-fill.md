@@ -58,7 +58,11 @@
    - `LINE_CHANNEL_ACCESS_TOKEN`：LINE Developers 該 channel「Messaging API」分頁發行的 long-lived Channel access token。**是密鑰**，拿到的人能用這個官方帳號發訊息：不寫進程式碼（repo 會公開）、不放 Sheet 或前端、不印在執行記錄或信裡；外流就在同一處 Reissue
    - `LINE_USER_ID`：同一個 channel「Basic settings」的 Your user ID（`U` 開頭）。手機 LINE 要先把官方帳號加為好友，不然推播會失敗
 2. 沒設定、LINE 回非 200（例如 token 失效 401）、連線失敗：改寄信給 `OWNER_EMAIL`，信的最後註明 LINE 為什麼沒送出；原因也寫進執行記錄（`Logger.log`）
-3. 訊息格式：第一行是標題（也是信的主旨），例如「【工作進度】2026/10/13 已自動填入」「【工作進度】2026/10/13 自動填入沒有完成：原因」，空一行後是內容。LINE 一則文字最多 5000 字（`LINE_TEXT_MAX`），超過就截斷並加「…（內容太長，後面省略）」，信不截斷
+3. 訊息格式：第一行是標題（也是信的主旨），例如「【工作進度】2026/10/13 已自動填入」「【工作進度】2026/10/13 自動填入沒有完成：原因」，空一行後是內容，最後一段是連結（使用者決定，`autoFillLinks_`）：
+   - `對方試算表：<自動填入設定的網址>`（沒填網址、讀不到設定時省略）
+   - `工作進度：https://swzx00.github.io/Progress/?date=YYYY-MM-DD`（`APP_URL`，直接開到那一天，方便補填；`testAutoFillNotify` 沒有日期，不帶 `date`）
+   
+   LINE 一則文字最多 5000 字（`LINE_TEXT_MAX`），超過時只截內容並加「…（內容太長，後面省略）」，標題與連結一定保留（`buildLineText_`）；信不截斷。正式站網址改了（例如換網域）要一起改 `APP_URL`
 4. 費用：LINE Notify 已在 2025/3/31 停止服務，所以用 Messaging API；免費的「輕用量」方案每月 200 則主動推播，這裡每個工作日最多 1 則，用不完
 
 `testAutoFillNotify()`：在編輯器手動執行，送一則「【工作進度】測試通知」，執行記錄寫出用了 LINE 還是改寄信。
