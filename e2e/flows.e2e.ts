@@ -4,7 +4,7 @@ import { dataRows } from './helpers';
 import { expect, openHome, test } from './fixtures';
 
 /**
- * 完整操作流程：在真的瀏覽器裡新增、編輯、刪除、請假、複製本日、調整順序、搜尋、匯出、本日總結。
+ * 完整操作流程：在真的瀏覽器裡新增、編輯、刪除、請假、複製本日、調整順序、搜尋、匯出、本日總結（含自動填入）。
  * 打 MSW 假後端（每次打開頁面資料重來），流程跟版面寬度無關，只在桌面跑（playwright.config.ts）。
  * 今天（2026/10/07）的預設資料：官網改版 4hr、會員系統優化 3hr、年度報告 1hr，共 8hr
  */
@@ -216,6 +216,37 @@ test('本日總結：整理成文字', async ({ page }) => {
   // 每筆是「項次.Repo 或專案名稱」＋「- 處理內容」（規則在 utils/day-summary）
   await expect(text).toHaveValue(/^1\.AAA,BBBB\n- 完成首頁 RWD 調整\n2\.member-web/);
   await expect(text).toHaveValue(/3\.年度報告\n- 等待業務部提供數據$/);
+});
+
+test('本日總結：自動填入沒啟用時欄位與「填入」都 disabled，啟用、儲存後才能填入', async ({
+  page,
+}) => {
+  await openHome(page);
+  await page.getByRole('button', { name: '工具' }).click();
+  await page.locator('.n-dropdown-option', { hasText: '本日總結' }).click();
+  const dialog = page.getByRole('dialog', { name: '本日總結' });
+  const url = dialog.getByRole('textbox', { name: '試算表網址' });
+  const name = dialog.getByRole('textbox', { name: '姓名' });
+  const fill = dialog.getByRole('button', { name: '填入' });
+
+  await expect(url).toBeDisabled();
+  await expect(name).toBeDisabled();
+  await expect(fill).toBeDisabled();
+
+  await dialog.getByRole('checkbox', { name: '啟用' }).check();
+  await url.fill('https://docs.google.com/spreadsheets/d/abcdefghijklmnopqrstuvwxyz/edit');
+  await name.fill('林家丞');
+  // 還沒儲存：「填入」看的是後端的設定，照樣 disabled
+  await expect(fill).toBeDisabled();
+  await dialog.getByRole('button', { name: '儲存' }).click();
+  await expect(toast(page)).toContainText('已儲存自動填入設定');
+
+  await fill.click();
+  await expect(toast(page)).toContainText('已填入對方的試算表');
+  // 改過內容再填一次：格子已經有內容，不覆蓋
+  await dialog.getByRole('textbox', { name: '本日總結內容' }).fill('改過的內容');
+  await fill.click();
+  await expect(toast(page)).toContainText('為了不覆蓋別人的紀錄');
 });
 
 test('網址帶 ?date=：開到那天，切換日期同步網址（不新增瀏覽紀錄），重新整理還是那天', async ({
