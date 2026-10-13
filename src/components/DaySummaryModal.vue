@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 
 import AppLoading from '@/components/AppLoading.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useAutoFill } from '@/composables/useAutoFill';
 import { useGoogleAuth } from '@/composables/useGoogleAuth';
 import { useScrollLock } from '@/composables/useScrollLock';
@@ -15,6 +16,7 @@ import {
   type AutoFillSetting,
 } from '@/utils/auto-fill';
 import { buildDaySummary } from '@/utils/day-summary';
+import { WORK_HOURS_DAILY_STANDARD } from '@/utils/work-hours';
 
 /**
  * 本日總結：把選到那天的工作紀錄照 buildDaySummary 的規則整理成文字，放在 Textarea 裡讓使用者
@@ -118,6 +120,29 @@ const onSave = async (): Promise<void> => {
 const fillEnabled = computed(() => setting.value?.enabled === true);
 const filling = ref(false);
 
+// 這天的工時合計（含請假）。未滿每日工時標準時先跳確認（使用者決定）：紀錄可能還沒填完；
+// 自動執行遇到這種情況直接不寫入，手動填入讓使用者自己決定
+const dayHours = computed(
+  () =>
+    Math.round(props.items.reduce((sum, item) => sum + (Number(item.今日工時) || 0), 0) * 100) /
+    100,
+);
+const hoursConfirmOpen = ref(false);
+
+const onFillClick = (): void => {
+  if (filling.value || !fillEnabled.value || !text.value.trim()) return;
+  if (dayHours.value < WORK_HOURS_DAILY_STANDARD) {
+    hoursConfirmOpen.value = true;
+    return;
+  }
+  void fill();
+};
+
+const confirmFill = (): void => {
+  hoursConfirmOpen.value = false;
+  void fill();
+};
+
 const fill = async (): Promise<void> => {
   if (filling.value || !fillEnabled.value || !text.value.trim()) return;
   filling.value = true;
@@ -179,7 +204,7 @@ useScrollLock();
             :disabled="!fillEnabled || filling || !text.trim()"
             :aria-busy="filling"
             :title="fillEnabled ? '把上面的內容填進對方試算表的這一天' : '啟用自動填入後才能使用'"
-            @click="fill"
+            @click="onFillClick"
           >
             {{ filling ? '填入中' : '填入' }}
           </button>
@@ -256,6 +281,16 @@ useScrollLock();
         </form>
       </section>
     </div>
+
+    <ConfirmDialog
+      v-if="hoursConfirmOpen"
+      :title="`工時未滿 ${WORK_HOURS_DAILY_STANDARD} 小時`"
+      :message="`這天的工時合計 ${dayHours} 小時，未滿 ${WORK_HOURS_DAILY_STANDARD} 小時，紀錄可能還沒填完。確定要填入嗎？`"
+      confirm-label="填入"
+      cancel-label="取消"
+      @confirm="confirmFill"
+      @cancel="hoursConfirmOpen = false"
+    />
   </div>
 </template>
 

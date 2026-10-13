@@ -67,8 +67,8 @@ beforeEach(() => {
 });
 
 const ITEMS: WorkItem[] = [
-  makeItem({ id: 'a', 項次: 1, 工作目標: '首頁切版', 處理內容: '完成 RWD' }),
-  makeItem({ id: 'b', 項次: 2, 工作目標: '登入流程', 完成度: 100 }),
+  makeItem({ id: 'a', 項次: 1, 工作目標: '首頁切版', 處理內容: '完成 RWD', 今日工時: 4 }),
+  makeItem({ id: 'b', 項次: 2, 工作目標: '登入流程', 完成度: 100, 今日工時: 4 }),
 ];
 
 const mountModal = (items: WorkItem[] = ITEMS): VueWrapper =>
@@ -269,6 +269,49 @@ describe('填入', () => {
       const wrapper = mountModal();
       await textarea(wrapper).setValue('  ');
       expect(fillBtn(wrapper).element.disabled).toBe(true);
+    });
+
+    describe('這天工時合計（含請假）未滿 8 小時：先跳確認', () => {
+      const SHORT: WorkItem[] = [
+        makeItem({ id: 'a', 項次: 1, 工作目標: '首頁切版', 今日工時: 3 }),
+        makeItem({ id: 'b', 項次: 2, 狀態: '休假', 工作目標: '特休', 今日工時: 2.5 }),
+      ];
+      const dialog = (wrapper: VueWrapper) => wrapper.find('[role="alertdialog"]');
+
+      it('顯示工時合計，取消就不填', async () => {
+        const wrapper = mountModal(SHORT);
+        await fillBtn(wrapper).trigger('click');
+        expect(dialog(wrapper).text()).toContain('工時未滿 8 小時');
+        expect(dialog(wrapper).text()).toContain('這天的工時合計 5.5 小時');
+        expect(mocks.fillAutoFill).not.toHaveBeenCalled();
+        await dialog(wrapper).get('button:first-child').trigger('click');
+        expect(dialog(wrapper).exists()).toBe(false);
+        expect(mocks.fillAutoFill).not.toHaveBeenCalled();
+      });
+
+      it('確定後才填入', async () => {
+        const wrapper = mountModal(SHORT);
+        await fillBtn(wrapper).trigger('click');
+        await dialog(wrapper).get('button:last-child').trigger('click');
+        await flushPromises();
+        expect(dialog(wrapper).exists()).toBe(false);
+        expect(mocks.fillAutoFill).toHaveBeenCalledWith(
+          'token',
+          '2026-10-09',
+          buildDaySummary(SHORT),
+        );
+      });
+
+      it('剛好 8 小時（含請假）：不用確認', async () => {
+        const wrapper = mountModal([
+          makeItem({ id: 'a', 項次: 1, 工作目標: '首頁切版', 今日工時: 6 }),
+          makeItem({ id: 'b', 項次: 2, 狀態: '休假', 工作目標: '特休', 今日工時: 2 }),
+        ]);
+        await fillBtn(wrapper).trigger('click');
+        await flushPromises();
+        expect(dialog(wrapper).exists()).toBe(false);
+        expect(mocks.fillAutoFill).toHaveBeenCalled();
+      });
     });
 
     it('填入中：按鈕 disabled、顯示「填入中」', async () => {
