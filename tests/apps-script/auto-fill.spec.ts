@@ -20,7 +20,8 @@ import {
 const TARGET_ID = 'target-sheet-id-1234567890';
 const TARGET_URL = `https://docs.google.com/spreadsheets/d/${TARGET_ID}/edit?gid=0#gid=0`;
 const NAME = '林家丞';
-const SHEET_NAME = '20991';
+// 對方的月份分頁實際上是「2026/10」這種寫法（下載成 .xlsx 時「/」會被拿掉，變成 202610）
+const SHEET_NAME = '2099/1';
 const WORK_HOURS = { start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' };
 
 let backend: CodeGsBackend;
@@ -263,13 +264,22 @@ describe('自動執行（觸發器）', () => {
 
       create({ 工作日期: '2099/02/02', 專案名稱: '官網' });
       run(new Date(2099, 1, 2, 16));
-      expect(backend.mails.at(-1)!.subject).toContain('找不到「20992」分頁');
+      expect(backend.mails.at(-1)!.subject).toContain('找不到 2099 年 2 月的分頁');
 
       target.getSheetByName(SHEET_NAME)!.getRange(5, 2).setValue('改名了');
       create({ 專案名稱: '官網' });
       run();
       expect(backend.mails.at(-1)!.subject).toContain('找不到「林家丞」');
       expect(backend.mails.at(-1)!.body).toContain('1.官網');
+    });
+
+    it('其他月份的分頁不會被當成這個月（2099/11、209911、2099/10 都不是 1 月）', () => {
+      setup();
+      ['2099/11', '209911', '2099/10', '2098/1'].forEach((name) => buildTarget(name));
+      expect(enable().error).toBeUndefined();
+      create({ 專案名稱: '官網' });
+      expect(run().status).toBe('error');
+      expect(backend.mails.at(-1)!.subject).toContain('找不到 2099 年 1 月的分頁');
     });
 
     it('打不開對方的試算表：寄信', () => {
@@ -350,7 +360,7 @@ describe('本日總結的「填入」按鈕（autoFillNow）', () => {
       expect(fillNow('內容', '2099-01-05').error).toBe('日期格式不正確');
       expect(fillNow('  ').error).toBe('沒有可以填入的內容');
       expect(fillNow('字'.repeat(5001)).error).toBe('填入內容不可超過 5000 個字');
-      expect(fillNow('內容', '2099/01/07').error).toBe('「20991」分頁裡找不到 2099/01/07 這一欄');
+      expect(fillNow('內容', '2099/01/07').error).toBe('「2099/1」分頁裡找不到 2099/01/07 這一欄');
     });
   });
 });
@@ -369,5 +379,56 @@ describe('installAutoFillTrigger', () => {
         inTimezone: 'Asia/Taipei',
       },
     ]);
+  });
+});
+
+describe('月份分頁的名稱', () => {
+  it.each([
+    '20991',
+    '209901',
+    '2099/1',
+    '2099/01',
+    '2099-1',
+    '2099-01',
+    '2099.01',
+    '2099年1月',
+    ' 2099 / 01 ',
+  ])('「%s」都找得到', (name) => {
+    setup();
+    buildTarget(name);
+    expect(enable().error).toBeUndefined();
+    create({ 專案名稱: '官網' });
+    expect(run().status).toBe('written');
+    expect(target.getSheetByName(name)!.getRange(5, 5).getValues()[0]![0]).toBe('1.官網');
+  });
+});
+
+describe('findAutoFillSheet_：比對分頁名稱的年、月', () => {
+  const find = (names: string[], date: string): string | null => {
+    const book = backend.newSpreadsheet();
+    names.forEach((name) => book.insertSheet(name));
+    const found = (
+      backend.global.findAutoFillSheet_ as (book: unknown, date: string) => FakeSheet | null
+    )(book, date);
+    return found ? found.getName() : null;
+  };
+
+  it.each(['202609', '2026/09', '2026-09', '20269', '2026/9', '2026-9', '2026.09', '2026年9月'])(
+    '9 月：「%s」',
+    (name) => {
+      expect(find(['202610', '2026/8', name], '2026/09/15')).toBe(name);
+    },
+  );
+
+  it('10～12 月不會跟 1 月搞混', () => {
+    expect(find(['202610', '202611', '202612'], '2026/01/05')).toBeNull();
+    expect(find(['20261', '202611'], '2026/11/02')).toBe('202611');
+    expect(find(['202611', '20261'], '2026/01/05')).toBe('20261');
+  });
+
+  it('不是月份的分頁名稱略過', () => {
+    expect(
+      find(['工作進度', '2026', '2026/13', '2026/09/01', 'v2026/09'], '2026/09/15'),
+    ).toBeNull();
   });
 });

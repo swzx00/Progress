@@ -165,10 +165,28 @@ function getAutoFill_() {
   return result;
 }
 
-// 對方試算表這個月的分頁名稱：年＋月，月份不補零（例如 202610、20269）
-function autoFillSheetName_(date) {
+// 對方試算表的月份分頁名稱寫法不固定（使用者決定）：202610、2026/10、2026-10、2026.10、2026年10月 都算，
+// 月份補不補零都可以，名稱前後的空白忽略。下載成 .xlsx 時「/」會被拿掉（Excel 的分頁名稱不能有 /），
+// 所以不能照下載的檔案寫死一種
+var AUTO_FILL_SHEET_NAME_PATTERN = /^(\d{4})\s*(?:[/.-]|年)?\s*(\d{1,2})\s*月?$/;
+
+// 找 date（YYYY/MM/DD）那個月的分頁：比對分頁名稱的年、月數字，找不到回 null
+function findAutoFillSheet_(book, date) {
   var parts = date.split('/');
-  return parts[0] + String(Number(parts[1]));
+  var year = Number(parts[0]);
+  var month = Number(parts[1]);
+  var sheets = book.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var match = AUTO_FILL_SHEET_NAME_PATTERN.exec(String(sheets[i].getName()).trim());
+    if (match && Number(match[1]) === year && Number(match[2]) === month) return sheets[i];
+  }
+  return null;
+}
+
+// 錯誤訊息用的月份（例如「2026 年 10 月」）
+function autoFillMonthLabel_(date) {
+  var parts = date.split('/');
+  return parts[0] + ' 年 ' + Number(parts[1]) + ' 月';
 }
 
 // 在對方分頁的前 AUTO_FILL_SCAN_COLUMNS 欄找姓名，回傳列號（1-based），找不到回 -1
@@ -217,7 +235,7 @@ function checkAutoFillTarget_(setting) {
     return '打不開這份試算表，請確認網址正確，而且你的帳號有編輯權限';
   }
   var today = Utilities.formatDate(new Date(), getSheetTimeZone_(), 'yyyy/MM/dd');
-  var sheet = book.getSheetByName(autoFillSheetName_(today)) || book.getSheets()[0];
+  var sheet = findAutoFillSheet_(book, today) || book.getSheets()[0];
   if (!sheet || findAutoFillNameRow_(sheet, setting.name) === -1) {
     return '在試算表裡找不到「' + setting.name + '」，請確認姓名跟試算表上的寫法一樣';
   }
@@ -306,9 +324,11 @@ function fillAutoFillCell_(setting, date, text) {
   } catch (err) {
     return fail('打不開對方的試算表，請確認網址正確，而且你的帳號有編輯權限');
   }
-  var sheetName = autoFillSheetName_(date);
-  var sheet = book.getSheetByName(sheetName);
-  if (!sheet) return fail('找不到「' + sheetName + '」分頁');
+  var sheet = findAutoFillSheet_(book, date);
+  if (!sheet) {
+    return fail('找不到 ' + autoFillMonthLabel_(date) + '的分頁（例如「202610」「2026/10」「2026-10」）');
+  }
+  var sheetName = sheet.getName();
   var row = findAutoFillNameRow_(sheet, setting.name);
   if (row === -1) return fail('「' + sheetName + '」分頁裡找不到「' + setting.name + '」');
   var col = findAutoFillDateColumn_(sheet, date, book.getSpreadsheetTimeZone());
