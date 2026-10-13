@@ -37,6 +37,11 @@ export interface CodeGs {
   normalizeSearch_: (value: unknown) => string;
   getNextDailyIndex_: (dayRows: { item: { 項次: number } }[]) => number;
   apiDateToUtc_: (value: string) => number;
+  AUTO_FILL_NAME_MAX: number;
+  AUTO_FILL_TEXT_MAX: number;
+  validateAutoFill_: (setting: unknown) => string | null;
+  /** AutoFill.gs 的 AUTO_FILL_URL_PATTERN.source（RegExp 經過下面的 JSON 轉換會變成空物件，另外取） */
+  autoFillUrlPatternSource: () => string;
   buildDaySummary_: (items: unknown[]) => string;
   leaveStartTime_: (leaveHours: number, workHours: unknown) => string | null;
 }
@@ -49,6 +54,9 @@ export const loadCodeGs = (): CodeGs => {
   // vm 裡的陣列、物件來自另一個 realm，轉成 JSON 再解析，toEqual 比對時才不會因為原型不同而失敗
   return new Proxy(context as unknown as CodeGs, {
     get: (target, key: string) => {
+      if (key === 'autoFillUrlPatternSource') {
+        return () => runInContext('AUTO_FILL_URL_PATTERN.source', context) as string;
+      }
       const value = (target as unknown as Record<string, unknown>)[key];
       return typeof value === 'function' || value === undefined
         ? value

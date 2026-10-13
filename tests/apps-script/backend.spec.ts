@@ -5,13 +5,13 @@ import { describeBackendContract, type BackendClient } from '../backend/contract
 import { loadCodeGsBackend, type CodeGsBackend } from './load-code-gs-backend';
 
 /**
- * Code.gs 接假的試算表（fake-spreadsheet.ts）跑後端共同規格（tests/backend/contract.ts），
+ * Code.gs（＋同一個專案的 AutoFill.gs）接假的試算表（fake-spreadsheet.ts）跑後端共同規格（tests/backend/contract.ts），
  * 跟 MSW 假後端同一組案例
  */
 let backend: CodeGsBackend;
 
 beforeEach(() => {
-  backend = loadCodeGsBackend();
+  backend = loadCodeGsBackend({}, { extraFiles: ['AutoFill.gs'] });
 });
 
 const client: BackendClient = {
