@@ -35,6 +35,8 @@ export interface CodeGs {
   normalizeSearch_: (value: unknown) => string;
   getNextDailyIndex_: (dayRows: { item: { 項次: number } }[]) => number;
   apiDateToUtc_: (value: string) => number;
+  buildDaySummary_: (items: unknown[]) => string;
+  leaveStartTime_: (leaveHours: number, workHours: unknown) => string | null;
 }
 
 export const loadCodeGs = (): CodeGs => {
