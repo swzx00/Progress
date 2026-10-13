@@ -81,6 +81,7 @@
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
   | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
   | 工時設定驗證 | `src/utils/work-hours.ts` 的 `validateWorkHoursSetting` ↔ `Code.gs` 的 `validateWorkHours_` |
+  | 自動填入設定驗證 | `src/utils/auto-fill.ts` 的 `validateAutoFillSetting`／`AUTO_FILL_*` ↔ `AutoFill.gs` 的 `validateAutoFill_`／`AUTO_FILL_*` ↔ MSW |
   | 樣式設定的值 | `src/composables/useTheme.ts` 的 `THEME_MODES` ↔ `Code.gs` 的 `THEME_MODE_VALUES` ↔ MSW |
   | 近期紀錄 | 前端 `RECENT_DAYS`／`filterRecentItems` ↔ `Code.gs` 的 `getRecentItems_` |
   | MSW 假後端 | `src/mocks/handlers.ts` 整體跟 `Code.gs` 同規則 |
@@ -119,7 +120,7 @@ src/
     OptionsDropdownState.vue # 可搜尋下拉選單（交辦單位、交辦人員、專案名稱、專案 Repo）放在 NSelect empty slot 的狀態畫面：載入中（AppLoading＋「選項載入中」）／載入失敗（「選項清單載入失敗」＋「重新載入」）
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
-    DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋複製按鈕
+    DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋填入／複製按鈕；下方自動填入設定（啟用、試算表網址、姓名，存在後端，沒啟用時欄位與「填入」disabled）
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載
     WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間
     BackToTop.vue         # 返回最上：右下角固定的圖示按鈕，捲過頁首標題列才出現，點了捲回最頂端
@@ -132,6 +133,7 @@ src/
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
     useTheme.ts            # 深色模式：自動（依日出日落，只有登入才能用；登出時維持當下的顏色）／淺色／深色，套用 <html data-theme>；擁有者的設定存在 Sheet 跨裝置同步（HomeView 登入後讀、切換時寫回）
     useScrollLock.ts      # 有遮罩的畫面（表單 Drawer、Modal／對話框）開著時鎖住頁面捲動、隱藏捲軸（模組層級計數，可疊多層），在元件 setup 呼叫
+    useAutoFill.ts        # 自動填入的 API（getAutoFillSetting／saveAutoFillSetting／autoFillNow，都是要登入的 doPost）與設定快取（模組層級）
     useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
@@ -139,6 +141,7 @@ src/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
+    auto-fill.ts           # 自動填入設定：型別、驗證（validateAutoFillSetting，AutoFill.gs 手動同步）、有沒有修改（isSameAutoFillSetting）
     work-hours.ts          # 工時設定：時段與小時互換（rangeToHours／hoursToRange／roundToQuarter）、設定驗證（validateWorkHoursSetting，Code.gs 手動同步）
     search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
     month-view.ts          # 月份檢視：monthRange／shiftMonth／isSameMonth／formatMonthDayLabel／sortByDateAndIndex
