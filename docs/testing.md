@@ -41,17 +41,17 @@
 
 `Code.gs` 有幾套規則是從前端手動同步過去的。`tests/apps-script/consistency.spec.ts` 用 `node:vm` 載入 `Code.gs` 與 `AutoFill.gs`（頂層只有 `var` 與 `function`，不會呼叫 Apps Script 服務），比對：
 
-- 常數：`VALIDATION_RULES` ↔ `shared/validation-schema.json`、`LEAVE_RULES`、`STATUS_OPTIONS`、每日工時上限、工時設定標準、近期紀錄天數、匯出天數上限、搜尋欄位與上限
-- 函式（同一組案例跑兩邊，結果要相同）：`validateItem_` ↔ `validateWorkItem`／`validateLeave`、`dailyHoursError_` ↔ `dailyHoursMessage`、`validateWorkHours_` ↔ `validateWorkHoursSetting`、`matchesSearch_` ↔ `matchesSearch`、`buildDaySummary_` ↔ `buildDaySummary`、`leaveStartTime_` ↔ `hoursToRange(每日工時 − 請假, 請假).start`
+- 常數：`VALIDATION_RULES` ↔ `shared/validation-schema.json`、`LEAVE_RULES`、`STATUS_OPTIONS`、每日工時上限、工時設定標準、近期紀錄天數、匯出天數上限、搜尋欄位與上限、自動填入的姓名與填入字數上限、網址格式（`AUTO_FILL_URL_PATTERN` 的 source；RegExp 經過載入器的 JSON 轉換會變成空物件，用 `autoFillUrlPatternSource()` 直接在 vm 裡取）
+- 函式（同一組案例跑兩邊，結果要相同）：`validateItem_` ↔ `validateWorkItem`／`validateLeave`、`dailyHoursError_` ↔ `dailyHoursMessage`、`validateWorkHours_` ↔ `validateWorkHoursSetting`、`matchesSearch_` ↔ `matchesSearch`、`buildDaySummary_` ↔ `buildDaySummary`、`leaveStartTime_` ↔ `hoursToRange(每日工時 − 請假, 請假).start`、`validateAutoFill_` ↔ `validateAutoFillSetting`（啟用／停用 × 各種網址 × 各種姓名的組合）
 
 改 `Code.gs` 或前端任一邊，這裡失敗就代表另一邊忘了改。
 
 ## 後端共同規格（MSW ↔ Code.gs）
 
-`tests/backend/contract.ts` 的 `describeBackendContract` 是一組後端規格：每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步、匯出範圍與搜尋的參數檢查。錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。同一組案例跑兩次：
+`tests/backend/contract.ts` 的 `describeBackendContract` 是一組後端規格：每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步、匯出範圍與搜尋的參數檢查、自動填入的設定讀寫與驗證、「填入」的驗證（啟用時要開對方試算表的部分 MSW 沒有，只在 `auto-fill.spec.ts` 測）。錯誤訊息比對的原始碼包含 `Code.gs` 與 `AutoFill.gs`。錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。同一組案例跑兩次：
 
 - `tests/msw/handlers.spec.ts`：用 `msw/node` 對 MSW handlers 發請求（`npm run dev` 預設打的假後端）
-- `tests/apps-script/backend.spec.ts`：`Code.gs` 的 `doGet`／`doPost` 接假的試算表
+- `tests/apps-script/backend.spec.ts`：`Code.gs` 的 `doGet`／`doPost` 接假的試算表（`extraFiles` 一起載入 `AutoFill.gs`）
 
 兩邊行為不一樣，就會有一邊失敗。MSW 只模擬工時相關的欄位驗證，其他欄位驗證在一致性測試比對。
 

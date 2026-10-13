@@ -23,10 +23,12 @@ export interface BackendClient {
 export const DAY = '2099/01/05';
 export const OTHER_DAY = '2099/01/06';
 
-const CODE_GS_SOURCE = readFileSync(
-  fileURLToPath(new URL('../../apps-script/Code.gs', import.meta.url)),
-  'utf-8',
-);
+// Code.gs 與同一個 Apps Script 專案的 AutoFill.gs（自動填入的錯誤訊息寫在那裡）
+const CODE_GS_SOURCE = ['Code.gs', 'AutoFill.gs']
+  .map((name) =>
+    readFileSync(fileURLToPath(new URL(`../../apps-script/${name}`, import.meta.url)), 'utf-8'),
+  )
+  .join('\n');
 const codeGs = loadCodeGs();
 
 type Input = Omit<WorkItem, 'id' | '項次' | '已刪除'>;
@@ -465,6 +467,61 @@ export const describeBackendContract = (getClient: () => BackendClient): void =>
       const res = await getClient().post({ action: 'saveThemeMode', themeMode: 'dark' });
       expect(res.code).toBe('UNAUTHORIZED');
       expect((await get({ type: 'options' })).themeMode).toBeNull();
+    });
+  });
+
+  describe('自動填入（同 AutoFill.gs，啟用時要開對方試算表的部分在 tests/apps-script/auto-fill.spec.ts）', () => {
+    const URL = 'https://docs.google.com/spreadsheets/d/abcdefghijklmnopqrstuvwxyz/edit';
+    const save = (autoFill: unknown) => post({ action: 'saveAutoFillSetting', autoFill });
+    const fillNow = (text: unknown, date = DAY) => post({ action: 'autoFillNow', date, text });
+
+    it('預設停用、空白；停用時存得進網址與姓名；不放進公開的 options', async () => {
+      expect((await post({ action: 'getAutoFillSetting' })).autoFill).toEqual({
+        enabled: false,
+        url: '',
+        name: '',
+      });
+      const saved = { enabled: false, url: URL, name: '林家丞' };
+      expect((await save({ ...saved, url: ` ${URL} `, name: ' 林家丞 ' })).autoFill).toEqual(saved);
+      expect((await post({ action: 'getAutoFillSetting' })).autoFill).toEqual(saved);
+      expect(await get({ type: 'options' })).not.toHaveProperty('autoFill');
+    });
+
+    it.each([
+      [{ enabled: 'yes', url: URL, name: '林家丞' }],
+      [null],
+      [{ enabled: true, url: '', name: '林家丞' }],
+      [{ enabled: true, url: 'https://example.com/x', name: '林家丞' }],
+      [{ enabled: false, url: 'not a url', name: '' }],
+      [{ enabled: true, url: URL, name: ' ' }],
+    ])('設定不合法（%j）：錯誤訊息同 AutoFill.gs，不寫入', async (autoFill) => {
+      const res = await save(autoFill);
+      expectCodeGsMessage(res.error);
+      expect((await post({ action: 'getAutoFillSetting' })).autoFill).toEqual({
+        enabled: false,
+        url: '',
+        name: '',
+      });
+    });
+
+    it('姓名超過上限：訊息同 AutoFill.gs', async () => {
+      const autoFill = { enabled: false, url: '', name: '名'.repeat(21) };
+      expect((await save(autoFill)).error).toBe(codeGs.validateAutoFill_(autoFill));
+    });
+
+    it('填入的驗證：錯誤訊息同 AutoFill.gs（沒啟用也是錯誤）', async () => {
+      expectCodeGsMessage((await fillNow('內容', '2099-01-05')).error);
+      expectCodeGsMessage((await fillNow('  ')).error);
+      expect((await fillNow('字'.repeat(codeGs.AUTO_FILL_TEXT_MAX + 1))).error).toBe(
+        `填入內容不可超過 ${codeGs.AUTO_FILL_TEXT_MAX} 個字`,
+      );
+      expectCodeGsMessage((await fillNow('內容')).error);
+    });
+
+    it('沒登入不能讀、不能存、不能填', async () => {
+      for (const action of ['getAutoFillSetting', 'saveAutoFillSetting', 'autoFillNow']) {
+        expect((await getClient().post({ action })).code).toBe('UNAUTHORIZED');
+      }
     });
   });
 

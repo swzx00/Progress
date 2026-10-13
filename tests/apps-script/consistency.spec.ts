@@ -5,6 +5,13 @@ import schema from '../../shared/validation-schema.json';
 import { THEME_MODES } from '@/composables/useTheme';
 import { STATUS_OPTIONS } from '@/types/work-item';
 import { makeItem } from '@/testing/fixtures';
+import {
+  AUTO_FILL_NAME_MAX,
+  AUTO_FILL_TEXT_MAX,
+  AUTO_FILL_URL_PATTERN,
+  validateAutoFillSetting,
+  type AutoFillSetting,
+} from '@/utils/auto-fill';
 import { buildDaySummary } from '@/utils/day-summary';
 import { RECENT_DAYS } from '@/utils/recent-history';
 import { EXPORT_MAX_DAYS } from '@/utils/export-excel';
@@ -318,5 +325,47 @@ describe('請假開始時間：Code.gs leaveStartTime_ ↔ 前端 hoursToRange(�
   it('整天請假、沒有設定回 null', () => {
     expect(gs.leaveStartTime_(8, settings[0])).toBeNull();
     expect(gs.leaveStartTime_(2, null)).toBeNull();
+  });
+});
+
+describe('自動填入設定：前端 validateAutoFillSetting ↔ AutoFill.gs validateAutoFill_', () => {
+  it('常數', () => {
+    expect(gs.AUTO_FILL_NAME_MAX).toBe(AUTO_FILL_NAME_MAX);
+    expect(gs.AUTO_FILL_TEXT_MAX).toBe(AUTO_FILL_TEXT_MAX);
+    // RegExp 經過 loadCodeGs 的 JSON 轉換會變成空物件，直接在 vm 裡取 source 比對
+    expect(gs.autoFillUrlPatternSource()).toBe(AUTO_FILL_URL_PATTERN.source);
+  });
+
+  const URL = 'https://docs.google.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw';
+  const urls = [
+    '',
+    '  ',
+    URL,
+    `${URL}/edit?gid=383459105#gid=383459105`,
+    `  ${URL}/edit  `,
+    `${URL}?usp=sharing`,
+    `${URL}#gid=0`,
+    'https://docs.google.com/spreadsheets/d/short/edit',
+    'http://docs.google.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    'https://docs.google.com/document/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    'https://example.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    `${URL}x!`,
+    'not a url',
+  ];
+  const names = [
+    '',
+    '  ',
+    '林家丞',
+    ' 林家丞 ',
+    '名'.repeat(20),
+    '名'.repeat(21),
+    ` ${'名'.repeat(20)} `,
+  ];
+  const cases: AutoFillSetting[] = [true, false].flatMap((enabled) =>
+    urls.flatMap((url) => names.map((name) => ({ enabled, url, name }))),
+  );
+
+  it.each(cases)('%j', (setting) => {
+    expect(gs.validateAutoFill_(setting)).toBe(validateAutoFillSetting(setting));
   });
 });
