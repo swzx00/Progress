@@ -46,7 +46,7 @@
 
 **工作紀錄分頁建立機制**：`create`／`batchCreate` 寫入時分頁不存在就建立（`getOrCreateDataSheet_`），讀取時分頁不存在就回傳空的。不用觸發器預先建立分頁
 
-**可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 存在 Apps Script 的指令碼屬性 `SHEET_ID`（`PropertiesService`，`getSheetId_`），不寫死在程式碼裡；同一處另有 `GOOGLE_CLIENT_ID`（前端 `.env` 那組，驗證 ID Token 的 `aud` 用）。部署步驟寫在 `Code.gs` 開頭的註解。
+**可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 存在 Apps Script 的指令碼屬性 `SHEET_ID`（`PropertiesService`，`getSheetId_`），不寫死在程式碼裡；同一處另有 `GOOGLE_CLIENT_ID`（前端 `.env` 那組，驗證 ID Token 的 `aud` 用），以及自動填入通知用的 `LINE_CHANNEL_ACCESS_TOKEN`、`LINE_USER_ID`（token 是密鑰，見 [auto-fill.md](auto-fill.md) 的「通知」）。部署步驟寫在 `Code.gs` 開頭的註解。
 
 - Google 登入狀態由 Google 保管（自動登入），token 只放記憶體、到期前自動續期，不用每次操作重新登入
 
