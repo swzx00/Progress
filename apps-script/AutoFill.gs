@@ -10,6 +10,10 @@
  *      用到寄信（MailApp）、管理觸發器（ScriptApp），會要求重新授權
  *   2. 編輯器執行一次 installAutoFillTrigger()，建立每天 16 點那一小時內執行的觸發器
  *   3. 啟用與否看前端「本日總結」裡的設定；觸發器跑的是指令碼最新存檔的版本（不是網頁應用程式部署的版本）
+ *   4. 通知用 LINE（Messaging API）：「專案設定」→「指令碼屬性」新增 LINE_CHANNEL_ACCESS_TOKEN（long-lived 的
+ *      Channel access token，是密鑰，不要寫進程式碼或 Sheet）與 LINE_USER_ID（LINE Developers「Basic settings」的
+ *      Your user ID），手機 LINE 要先把官方帳號加為好友；編輯器執行 testAutoFillNotify() 確認收得到。
+ *      沒設定或推播失敗時改寄信給 OWNER_EMAIL
  */
 
 // ===== 常數 =====
@@ -290,13 +294,116 @@ function isAutoFillWorkday_(date) {
   return day !== 0 && day !== 6;
 }
 
-// 例外情況寄信通知擁有者（使用者決定：沒問題就自動寫，有問題才通知）
-function notifyAutoFill_(date, reason, detail) {
+// ===== 通知（使用者決定：LINE 為主、Email 備援，成功也通知） =====
+
+// LINE Messaging API 的 push message：推給自己（LINE_USER_ID），token 與 user ID 放在指令碼屬性
+var LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
+// 一則文字訊息的字數上限（LINE 的限制），超過就截斷
+var LINE_TEXT_MAX = 5000;
+var LINE_TRUNCATED_SUFFIX = '\n…（內容太長，後面省略）';
+// 工作進度正式站（GitHub Pages），通知附上直接開到那一天的連結（?date=YYYY-MM-DD）
+var APP_URL = 'https://swzx00.github.io/Progress/';
+
+/**
+ * 通知最後附的連結（使用者決定）：對方試算表（自動填入設定的網址）、工作進度正式站（有日期就開到那一天）。
+ * 讀設定失敗或沒填網址就只附正式站
+ */
+function autoFillLinks_(date) {
+  var lines = [];
+  try {
+    var url = getAutoFill_().url;
+    if (url) lines.push('對方試算表：' + url);
+  } catch (err) {
+    // 讀不到設定（例如 Sheet 打不開）也要能通知，只是少一個連結
+  }
+  lines.push('工作進度：' + APP_URL + (date ? '?date=' + date.replace(/\//g, '-') : ''));
+  return lines.join('\n');
+}
+
+// LINE 的訊息：標題＋內容＋連結，超過 LINE_TEXT_MAX 只截內容，標題與連結一定保留
+function buildLineText_(title, body, links) {
+  var head = title + '\n\n';
+  var tail = links ? '\n\n' + links : '';
+  var room = LINE_TEXT_MAX - head.length - tail.length;
+  if (body.length > room) body = body.slice(0, Math.max(room - LINE_TRUNCATED_SUFFIX.length, 0)) + LINE_TRUNCATED_SUFFIX;
+  return head + body + tail;
+}
+
+// 推一則 LINE 文字訊息給自己，成功回 null，失敗回原因（不含 token）
+function pushAutoFillLine_(text) {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  var userId = props.getProperty('LINE_USER_ID');
+  if (!token || !userId) return '沒有設定指令碼屬性 LINE_CHANNEL_ACCESS_TOKEN／LINE_USER_ID';
+  try {
+    var res = UrlFetchApp.fetch(LINE_PUSH_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: userId, messages: [{ type: 'text', text: text }] }),
+      muteHttpExceptions: true,
+    });
+    var code = res.getResponseCode();
+    if (code === 200) return null;
+    return 'LINE 回應 HTTP ' + code + '：' + String(res.getContentText()).slice(0, 300);
+  } catch (err) {
+    return 'LINE 連線失敗：' + String(err);
+  }
+}
+
+/**
+ * 通知擁有者：先推 LINE，沒設定或失敗就改寄信給 OWNER_EMAIL（信裡註明 LINE 為什麼沒送出），
+ * 回傳實際用的管道 'line'／'email'。title 是第一行（信的主旨），body 是內容，最後附上 links（autoFillLinks_）
+ */
+function sendAutoFillNotice_(title, body, links) {
+  var lineError = pushAutoFillLine_(buildLineText_(title, body, links));
+  if (!lineError) return 'line';
+  Logger.log('LINE 通知沒有送出，改寄信：' + lineError);
   MailApp.sendEmail(
     OWNER_EMAIL,
-    '【工作進度】' + date + ' 自動填入沒有完成：' + reason,
-    reason + '\n\n' + (detail ? detail + '\n\n' : '') + '這次沒有寫入任何內容，請手動確認。'
+    title,
+    body + (links ? '\n\n' + links : '') + '\n\n（LINE 通知沒有送出：' + lineError + '，改用 Email 通知）'
   );
+  return 'email';
+}
+
+// 沒有寫入（例外情況）
+function notifyAutoFill_(date, reason, detail) {
+  sendAutoFillNotice_(
+    '【工作進度】' + date + ' 自動填入沒有完成：' + reason,
+    reason + '\n\n' + (detail ? detail + '\n\n' : '') + '這次沒有寫入任何內容，請手動確認。',
+    autoFillLinks_(date)
+  );
+}
+
+// 已寫入，或對方的格子已經是一樣的內容（使用者決定成功也通知，順便確認觸發器每天都有在跑）
+function notifyAutoFillDone_(date, result, text) {
+  if (result.status === 'written') {
+    sendAutoFillNotice_(
+      '【工作進度】' + date + ' 已自動填入',
+      '已填進對方試算表的「' + result.sheetName + '」分頁。\n\n填入的內容：\n' + text,
+      autoFillLinks_(date)
+    );
+  } else {
+    sendAutoFillNotice_(
+      '【工作進度】' + date + ' 對方的試算表已經是一樣的內容',
+      '格子裡已經是今天的總結（可能先用「填入」按鈕填過），這次沒有重複寫入。',
+      autoFillLinks_(date)
+    );
+  }
+}
+
+/**
+ * 測試通知：在 Apps Script 編輯器手動執行，手機 LINE 應該收到一則測試訊息；
+ * 沒收到看「執行記錄」，LINE 推播失敗的原因會印在那裡（並改寄一封測試信）
+ */
+function testAutoFillNotify() {
+  var channel = sendAutoFillNotice_(
+    '【工作進度】測試通知',
+    '收到這則訊息，代表自動填入的通知設定正確。',
+    autoFillLinks_('')
+  );
+  Logger.log(channel === 'line' ? '已用 LINE 送出' : 'LINE 沒有送出，已改寄信到 ' + OWNER_EMAIL);
 }
 
 function sameCellText_(a, b) {
@@ -310,7 +417,7 @@ function sameCellText_(a, b) {
 
 /**
  * 把 text 填進對方試算表 date（YYYY/MM/DD）那天、自己那一列的格子，回傳 { status, reason?, existing? }：
- * written（已寫入）／unchanged（格子已經是一樣的內容）／conflict（格子已經有不同的內容，不覆蓋別人的紀錄）／
+ * written（已寫入）／unchanged（格子已經是一樣的內容），這兩種帶 sheetName／conflict（格子已經有不同的內容，不覆蓋別人的紀錄）／
  * error（打不開試算表、找不到分頁／姓名／日期、寫入失敗，reason 是原因）。
  * 自動執行（runAutoFill_）跟本日總結的「填入」按鈕（handleAutoFillNow_）共用
  */
@@ -336,21 +443,21 @@ function fillAutoFillCell_(setting, date, text) {
 
   var cell = sheet.getRange(row, col);
   var existing = cell.getValues()[0][0];
-  if (sameCellText_(existing, text)) return { status: 'unchanged' };
+  if (sameCellText_(existing, text)) return { status: 'unchanged', sheetName: sheetName };
   if (!sameCellText_(existing, '')) return { status: 'conflict', existing: String(existing) };
   try {
     cell.setValue(text);
   } catch (err) {
     return fail('寫入失敗，可能沒有編輯權限');
   }
-  return { status: 'written' };
+  return { status: 'written', sheetName: sheetName };
 }
 
 /**
  * 自動填入一次（觸發器，now 是執行的時間），回傳 { status }：
- * disabled（沒啟用）／holiday（不用上班）／written／unchanged 不通知；
- * empty（當天沒有可填的紀錄）、insufficient（工時合計未滿每日工時標準，不寫入）、conflict、error 寄信通知
- * （使用者決定：沒問題就自動寫，有問題才通知）
+ * disabled（沒啟用）／holiday（不用上班）不通知；written、unchanged 通知已完成；
+ * empty（當天沒有可填的紀錄）、insufficient（工時合計未滿每日工時標準，不寫入）、conflict、error 通知沒有完成。
+ * 通知走 sendAutoFillNotice_（LINE 為主、Email 備援）
  */
 function runAutoFill_(now) {
   var setting = getAutoFill_();
@@ -385,7 +492,9 @@ function runAutoFill_(now) {
   }
 
   var result = fillAutoFillCell_(setting, date, text);
-  if (result.status === 'error') {
+  if (result.status === 'written' || result.status === 'unchanged') {
+    notifyAutoFillDone_(date, result, text);
+  } else if (result.status === 'error') {
     notifyAutoFill_(date, result.reason, '要填入的內容：\n' + text);
   } else if (result.status === 'conflict') {
     notifyAutoFill_(
@@ -398,7 +507,7 @@ function runAutoFill_(now) {
   return { status: result.status };
 }
 
-// 本日總結的「填入」按鈕：把畫面上（可能手動改過）的文字填進對方試算表那一天的格子，結果直接回前端，不寄信
+// 本日總結的「填入」按鈕：把畫面上（可能手動改過）的文字填進對方試算表那一天的格子，結果直接回前端，不通知
 var AUTO_FILL_TEXT_MAX = 5000;
 
 function handleAutoFillNow_(date, text) {
@@ -419,7 +528,7 @@ function handleAutoFillNow_(date, text) {
   return jsonOutput_({ status: result.status });
 }
 
-// 觸發器呼叫的函式（installAutoFillTrigger 建立），沒啟用就直接結束；沒預期到的錯誤也寄信通知
+// 觸發器呼叫的函式（installAutoFillTrigger 建立），沒啟用就直接結束；沒預期到的錯誤也通知
 function runAutoFill() {
   var now = new Date();
   // 跟 doPost 共用同一把鎖：讀工作紀錄時不會碰到寫到一半的排序，也不會跟「填入」按鈕同時寫同一格

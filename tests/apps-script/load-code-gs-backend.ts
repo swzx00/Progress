@@ -61,6 +61,8 @@ export interface CodeGsBackend {
   logs: string[];
   /** LockService 的拿鎖（'lock'）、放鎖（'release'）紀錄 */
   lockCalls: string[];
+  /** 打到 LINE push API 的請求（含失敗的） */
+  linePushes: { token: string; to: string; text: string }[];
   /** MailApp.sendEmail 寄過的信 */
   mails: { to: string; subject: string; body: string }[];
   /** ScriptApp.newTrigger 建立的觸發器設定、deleteTrigger 刪掉的觸發器 */
@@ -79,11 +81,19 @@ export interface LoadOptions {
   holidays?: Record<string, { date: string; isHoliday: boolean }[] | number>;
   /** 已經存在的觸發器（ScriptApp.getProjectTriggers）的函式名稱 */
   existingTriggers?: string[];
+  /** LINE push API 的回應：HTTP 狀態碼（預設 200），'throw' 模擬連線失敗 */
+  lineResponse?: number | 'throw';
 }
 
 export const loadCodeGsBackend = (
   properties: Record<string, string> = {},
-  { extraFiles = [], lockAvailable = true, holidays = {}, existingTriggers = [] }: LoadOptions = {},
+  {
+    extraFiles = [],
+    lockAvailable = true,
+    holidays = {},
+    existingTriggers = [],
+    lineResponse = 200,
+  }: LoadOptions = {},
 ): CodeGsBackend => {
   const props: Record<string, string> = {
     SHEET_ID: 'sheet-id',
@@ -99,6 +109,7 @@ export const loadCodeGsBackend = (
   const logs: string[] = [];
   const lockCalls: string[] = [];
   const mails: CodeGsBackend['mails'] = [];
+  const linePushes: CodeGsBackend['linePushes'] = [];
   const triggers: CodeGsBackend['triggers'] = { created: [], deleted: [] };
   const projectTriggers = existingTriggers.map((handler) => ({
     getHandlerFunction: () => handler,
@@ -132,7 +143,24 @@ export const loadCodeGsBackend = (
       }),
     },
     UrlFetchApp: {
-      fetch: (url: string) => {
+      fetch: (url: string, params?: { headers?: Record<string, string>; payload?: string }) => {
+        if (url === 'https://api.line.me/v2/bot/message/push') {
+          const body = JSON.parse(params?.payload ?? '{}') as {
+            to: string;
+            messages: { type: string; text: string }[];
+          };
+          linePushes.push({
+            token: (params?.headers?.Authorization ?? '').replace(/^Bearer /, ''),
+            to: body.to,
+            text: body.messages[0]!.text,
+          });
+          if (lineResponse === 'throw') throw new Error('Address unavailable');
+          return {
+            getResponseCode: () => lineResponse,
+            getContentText: () =>
+              lineResponse === 200 ? '{}' : '{"message":"Authentication failed"}',
+          };
+        }
         const holiday = /\/TaiwanCalendar\/data\/(\d{4})\.json$/.exec(url);
         if (holiday) {
           const data = holidays[holiday[1]!] ?? 404;
@@ -200,6 +228,7 @@ export const loadCodeGsBackend = (
     logs,
     lockCalls,
     mails,
+    linePushes,
     triggers,
     doGet: (params) =>
       parse((global.doGet as (e: unknown) => { content: string })({ parameter: params })),
