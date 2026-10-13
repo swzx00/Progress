@@ -49,7 +49,7 @@ const buildTarget = (name = SHEET_NAME): FakeSheet => {
 };
 
 const setup = (options: LoadOptions = {}): void => {
-  backend = loadCodeGsBackend({}, options);
+  backend = loadCodeGsBackend({}, { ...options, extraFiles: ['AutoFill.gs'] });
   target = backend.newSpreadsheet();
   backend.books.set(TARGET_ID, target);
 };
