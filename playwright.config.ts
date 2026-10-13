@@ -9,7 +9,8 @@ import { defineConfig, devices } from '@playwright/test';
  * 要另外 npm run test:e2e:safari（第一次先 npx playwright install webkit）
  * WebKit 攔不到 MSW Service Worker 轉發的請求，fixtures.ts 的假資源不會生效，依賴假資料的檢查在 WebKit 跳過
  */
-const PORT = 5174;
+// 跟開發用的 5310 分開（使用者決定），開著 npm run dev 也能跑；用假的登入，不需要在 Google Cloud 登記
+const PORT = 5320;
 const DESKTOP_ONLY = ['**/flows.e2e.ts', '**/a11y.e2e.ts'];
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
 

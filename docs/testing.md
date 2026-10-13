@@ -73,7 +73,7 @@
 
 ## 瀏覽器測試（Playwright）
 
-happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的行為用 Playwright 在真的 Chromium 裡測。`playwright.config.ts` 自己起 `vite`（port 5174，打 MSW 假後端，不吃本機 `.env`），每個測試跑三種寬度：`mobile`（Pixel 7）、`tablet`（820px）、`desktop`（1280px），對應 CLAUDE.md 的 RWD 斷點。
+happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的行為用 Playwright 在真的 Chromium 裡測。`playwright.config.ts` 自己起 `vite`（port 5320，跟開發用的 5310 分開，打 MSW 假後端，不吃本機 `.env`），每個測試跑三種寬度：`mobile`（Pixel 7）、`tablet`（820px）、`desktop`（1280px），對應 CLAUDE.md 的 RWD 斷點。
 
 - `rwd.e2e.ts`：沒有橫向捲軸、手機卡片／平板合併欄／桌面完整欄位、逾期紅線（顏色跟 `tokens.scss` 比對）、國定假日的徽章與空狀態
 - `theme.e2e.ts`：切深色後 `data-theme`、底色、文字色階對調，重新整理後維持；唯讀模式
