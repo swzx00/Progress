@@ -259,7 +259,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 **回滾**：前端在 `main` 上 `git revert` 有問題的合併再 push，自動重新部署；後端在 Apps Script「管理部署作業」切回舊版本（網址不變）。不要 force push `main`。
 
 **上線前的測試方式**（不做測試站，使用者決定，2026-10-10）：
-- 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5173` 這個來源，這樣才能在本機測登入流程
+- 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5310` 這個來源，這樣才能在本機測登入流程。開發伺服器固定用 5310（`vite.config.ts` 的 `server.port`＋`strictPort`，被佔用時直接報錯、不會自動換埠號；使用者決定），e2e 用 5320
 - 上線前在 release 分支本機驗證：`npm run lint`、`npm run test:run`、`npm run build`；用 `npx vite build --base=/Progress/` 搭配 `npx vite preview` 確認 GitHub Pages 子路徑下的資源路徑（Windows 的 Git Bash 要加 `MSYS_NO_PATHCONV=1`，不然 `/Progress/` 會被轉成本機路徑）；真後端實測用 `VITE_ENABLE_MSW=false` 的 `npm run dev`（經 `appsScriptDevProxyPlugin`）
 - 正式網域（HTTPS）上的 Google 登入、從 GitHub Pages 呼叫 Apps Script 是否被 CORS 擋，本機測不到，上線後在正式站確認；有問題就在 `main` 上 revert，幾分鐘內回到上一版
 - **不做測試站的原因**：原本規劃把 release／dev 部署到 `/Progress/developer/`，但放在正式站底下的路徑只隔開了網址——同一個網域，瀏覽器儲存的資料共用（例如深色模式設定存在 localStorage）；同一個 `gh-pages` 分支，正式站部署要設 `keep_files` 才不會刪掉測試站，設錯就可能互相覆蓋；同一個 Apps Script 和 Sheet，在測試站操作等於改正式資料。目前實際使用者只有一人、revert 很快，成本大於好處。之後真的需要測試站時，另開一個 repo（例如 `Progress-staging`）的 GitHub Pages，搭配另一份 Apps Script 和測試用 Sheet，不要放在 `/Progress/` 底下
