@@ -1157,7 +1157,8 @@ function fillAutoFillCell_(setting, date, text) {
 /**
  * 自動填入一次（觸發器，now 是執行的時間），回傳 { status }：
  * disabled（沒啟用）／holiday（不用上班）／written／unchanged 不通知；
- * empty（當天沒有可填的紀錄）、conflict、error 寄信通知（使用者決定：沒問題就自動寫，有問題才通知）
+ * empty（當天沒有可填的紀錄）、insufficient（工時合計未滿每日工時標準，不寫入）、conflict、error 寄信通知
+ * （使用者決定：沒問題就自動寫，有問題才通知）
  */
 function runAutoFill_(now) {
   var setting = getAutoFill_();
@@ -1175,6 +1176,20 @@ function runAutoFill_(now) {
   if (!text) {
     notifyAutoFill_(date, '今天沒有可以填入的工作紀錄', '請先在工作進度補上今天的紀錄，再手動填到對方的試算表。');
     return { status: 'empty' };
+  }
+  // 工時合計（含請假）未滿每日工時標準，代表紀錄可能還沒填完，先不寫（使用者決定；手動「填入」不檢查）
+  var totalHours = 0;
+  items.forEach(function (item) {
+    totalHours += Number(item.今日工時) || 0;
+  });
+  totalHours = roundHours_(totalHours);
+  if (totalHours < WORK_HOURS_DAILY_STANDARD) {
+    notifyAutoFill_(
+      date,
+      '今天的工時合計未滿 ' + WORK_HOURS_DAILY_STANDARD + ' 小時',
+      '目前工時合計 ' + totalHours + ' 小時，請確認紀錄都填完了，再手動填入（本日總結的「填入」按鈕不檢查工時）。\n\n要填入的內容：\n' + text
+    );
+    return { status: 'insufficient' };
   }
 
   var result = fillAutoFillCell_(setting, date, text);

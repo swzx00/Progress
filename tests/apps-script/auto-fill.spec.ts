@@ -27,8 +27,9 @@ let backend: CodeGsBackend;
 let target: FakeSpreadsheet;
 
 const post = (body: Record<string, unknown>) => backend.doPost({ idToken: 'token', ...body });
+/** 新增一筆紀錄，預設 8 小時（自動執行要工時合計滿 8 小時才寫入） */
 const create = (overrides: Partial<WorkItem> = {}): void => {
-  const data = post({ action: 'create', item: input(overrides) });
+  const data = post({ action: 'create', item: input({ 今日工時: 8, ...overrides }) });
   expect(data.error).toBeUndefined();
 };
 
@@ -227,6 +228,23 @@ describe('自動執行（觸發器）', () => {
       expect(backend.mails[0]!.body).toContain('1.官網');
     });
 
+    it('工時合計（含請假）未滿 8 小時：不寫入，寄信附上要填的內容', () => {
+      create({ 專案名稱: '官網', 今日工時: 5.75 });
+      expect(run().status).toBe('insufficient');
+      expect(myCell()).toBe('');
+      expect(backend.mails[0]!.subject).toContain('工時合計未滿 8 小時');
+      expect(backend.mails[0]!.body).toContain('目前工時合計 5.75 小時');
+      expect(backend.mails[0]!.body).toContain('1.官網');
+    });
+
+    it('工作加請假剛好 8 小時：寫入，最後加請假時間', () => {
+      create({ 專案名稱: '官網', 今日工時: 6 });
+      post({ action: 'create', item: leaveInput({ 今日工時: 2 }) });
+      expect(run().status).toBe('written');
+      expect(myCell()).toBe('1.官網\n\n16:00 請假');
+      expect(backend.mails).toEqual([]);
+    });
+
     it('當天沒有紀錄：寄信提醒', () => {
       expect(run().status).toBe('empty');
       expect(backend.mails[0]!.subject).toContain('沒有可以填入的工作紀錄');
@@ -312,7 +330,8 @@ describe('本日總結的「填入」按鈕（autoFillNow）', () => {
       expect(enable().error).toBeUndefined();
     });
 
-    it('填入畫面上的文字（可能手動改過），不管工作日', () => {
+    it('填入畫面上的文字（可能手動改過），不管工作日、工時合計（未滿 8 小時也照樣寫）', () => {
+      create({ 專案名稱: '官網', 今日工時: 1 });
       expect(fillNow('  手動整理的內容\n- 第二行  ')).toEqual({ status: 'written' });
       expect(myCell()).toBe('手動整理的內容\n- 第二行');
       expect(fillNow('手動整理的內容\n- 第二行')).toEqual({ status: 'unchanged' });
