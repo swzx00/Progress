@@ -240,7 +240,7 @@ useScrollLock();
           </label>
           <p class="day-summary__desc">
             每個工作日 16:00～17:00 把當天的總結填進下面的試算表；工時未滿 8
-            小時、格子已經有內容時不寫入，改寄信通知。
+            小時、格子已經有內容時不寫入。結果都會用 LINE 通知（LINE 沒設定好時改寄信）。
           </p>
 
           <label class="day-summary__field">

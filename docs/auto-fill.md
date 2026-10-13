@@ -41,14 +41,31 @@
 |---|---|---|
 | 1 | 沒啟用 | 結束（`disabled`） |
 | 2 | 不是工作日：查台灣辦公日曆（跟前端同一份 ruyut/TaiwanCalendar，含補班日），抓不到就只看週末（`isAutoFillWorkday_`） | 結束（`holiday`） |
-| 3 | 當天沒有可填的內容 | 不寫入，**寄信**（`empty`） |
-| 4 | 工時合計（含請假）未滿 `WORK_HOURS_DAILY_STANDARD`（8）小時 | 不寫入，**寄信**附目前時數與要填的內容（`insufficient`） |
-| 5 | 打不開試算表，或找不到分頁、姓名、日期欄，或寫入失敗 | 不寫入，**寄信**說明原因（`error`） |
-| 6 | 格子已經有**不同的**內容 | **不覆蓋別人的紀錄**，寄信附兩邊的內容（`conflict`） |
-| 7 | 格子已經是一樣的內容（換行統一、去頭尾空白後比對） | 不動（`unchanged`） |
-| 8 | 格子是空的 | 寫入（`written`） |
+| 3 | 當天沒有可填的內容 | 不寫入，**通知**（`empty`） |
+| 4 | 工時合計（含請假）未滿 `WORK_HOURS_DAILY_STANDARD`（8）小時 | 不寫入，**通知**附目前時數與要填的內容（`insufficient`） |
+| 5 | 打不開試算表，或找不到分頁、姓名、日期欄，或寫入失敗 | 不寫入，**通知**說明原因（`error`） |
+| 6 | 格子已經有**不同的**內容 | **不覆蓋別人的紀錄**，通知附兩邊的內容（`conflict`） |
+| 7 | 格子已經是一樣的內容（換行統一、去頭尾空白後比對） | 不動，通知「對方的試算表已經是一樣的內容」（`unchanged`） |
+| 8 | 格子是空的 | 寫入，通知「已自動填入」附分頁名稱與內容（`written`） |
 
-沒問題就自動寫、有問題才寄信（使用者決定），信寄給 `OWNER_EMAIL`，主旨「【工作進度】YYYY/MM/DD 自動填入沒有完成：原因」。執行時丟出沒預期到的錯誤（含拿不到鎖）也寄信。
+執行時丟出沒預期到的錯誤（含拿不到鎖）也通知。不是工作日、沒啟用不通知。
+
+## 通知（LINE 為主、Email 備援）
+
+使用者決定，2026-10-13：有問題、成功都通知（成功也通知可以順便確認觸發器每天都有在跑），走 `sendAutoFillNotice_`：
+
+1. 先用 **LINE Messaging API** 的 push message（`https://api.line.me/v2/bot/message/push`）推一則文字訊息給自己。設定放在 Apps Script **指令碼屬性**：
+   - `LINE_CHANNEL_ACCESS_TOKEN`：LINE Developers 該 channel「Messaging API」分頁發行的 long-lived Channel access token。**是密鑰**，拿到的人能用這個官方帳號發訊息：不寫進程式碼（repo 會公開）、不放 Sheet 或前端、不印在執行記錄或信裡；外流就在同一處 Reissue
+   - `LINE_USER_ID`：同一個 channel「Basic settings」的 Your user ID（`U` 開頭）。手機 LINE 要先把官方帳號加為好友，不然推播會失敗
+2. 沒設定、LINE 回非 200（例如 token 失效 401）、連線失敗：改寄信給 `OWNER_EMAIL`，信的最後註明 LINE 為什麼沒送出；原因也寫進執行記錄（`Logger.log`）
+3. 訊息格式：第一行是標題（也是信的主旨），例如「【工作進度】2026/10/13 已自動填入」「【工作進度】2026/10/13 自動填入沒有完成：原因」，空一行後是內容，最後一段是連結（使用者決定，`autoFillLinks_`）：
+   - `對方試算表：<自動填入設定的網址>`（沒填網址、讀不到設定時省略）
+   - `工作進度：https://swzx00.github.io/Progress/?date=YYYY-MM-DD`（`APP_URL`，直接開到那一天，方便補填；`testAutoFillNotify` 沒有日期，不帶 `date`）
+   
+   LINE 一則文字最多 5000 字（`LINE_TEXT_MAX`），超過時只截內容並加「…（內容太長，後面省略）」，標題與連結一定保留（`buildLineText_`）；信不截斷。正式站網址改了（例如換網域）要一起改 `APP_URL`
+4. 費用：LINE Notify 已在 2025/3/31 停止服務，所以用 Messaging API；免費的「輕用量」方案每月 200 則主動推播，這裡每個工作日最多 1 則，用不完
+
+`testAutoFillNotify()`：在編輯器手動執行，送一則「【工作進度】測試通知」，執行記錄寫出用了 LINE 還是改寄信。
 
 ## 手動「填入」（`doPost` 的 `autoFillNow`）
 
@@ -57,10 +74,15 @@
 - 不檢查是不是工作日；工時合計未滿 8 小時時，前端先跳確認視窗，使用者按「填入」才送出（後端不擋，使用者決定）
 - 內容去頭尾空白後不能是空的、最多 `AUTO_FILL_TEXT_MAX`（5000）字
 - 沒啟用回錯誤；格子已經有不同的內容一樣**不覆蓋**，回錯誤；找不到格子回原因
-- 結果直接回前端（`{ status: 'written' | 'unchanged' }` 或 `{ error }`），不寄信
+- 結果直接回前端（`{ status: 'written' | 'unchanged' }` 或 `{ error }`），不通知
 
 ## 部署
 
 1. 專案新增指令碼檔案 `AutoFill.gs`，跟新的 `Code.gs` 一起貼上、部署新版本；用到寄信（`MailApp`）、管理觸發器（`ScriptApp`），會要求重新授權
 2. 編輯器執行一次 `installAutoFillTrigger()`
 3. 自己的帳號要有對方試算表的**編輯**權限，寫入會以自己的名義記在對方的版本記錄裡
+4. LINE 通知（一次性設定，見上方「通知」）：
+   1. LINE Official Account Manager（manager.line.biz）建立官方帳號（免費的輕用量方案），「設定」→「Messaging API」啟用並選擇／建立 Provider，Webhook 不用填；建議「回應設定」關掉自動回應訊息
+   2. LINE Developers Console（developers.line.biz/console）→ 該 channel：「Basic settings」複製 Your user ID；「Messaging API」發行 Channel access token（long-lived），並用手機掃 QR code 加好友
+   3. Apps Script「專案設定」→「指令碼屬性」新增 `LINE_CHANNEL_ACCESS_TOKEN`、`LINE_USER_ID`
+   4. 編輯器執行 `testAutoFillNotify()`，手機收到測試訊息就完成；`UrlFetchApp` 原本就授權過，不用重新授權，觸發器也不用重建

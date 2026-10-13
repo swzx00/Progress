@@ -62,7 +62,7 @@
 - `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`／`getAutoFillSetting`／`saveAutoFillSetting`／`autoFillNow`（自動填入，實作在 `AutoFill.gs`，另有每個工作日 16 點的時間觸發器 `runAutoFill`，見 [docs/auto-fill.md](docs/auto-fill.md)）
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
-- Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
+- Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性；自動填入通知的 LINE token（`LINE_CHANNEL_ACCESS_TOKEN`，**是密鑰**）與 `LINE_USER_ID` 也只放指令碼屬性，不進程式碼、Sheet 或前端。部署步驟在 `Code.gs` 開頭註解
 
 # 關鍵慣例（容易踩雷）
 
