@@ -301,10 +301,32 @@ var LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 // 一則文字訊息的字數上限（LINE 的限制），超過就截斷
 var LINE_TEXT_MAX = 5000;
 var LINE_TRUNCATED_SUFFIX = '\n…（內容太長，後面省略）';
+// 工作進度正式站（GitHub Pages），通知附上直接開到那一天的連結（?date=YYYY-MM-DD）
+var APP_URL = 'https://swzx00.github.io/Progress/';
 
-function truncateLineText_(text) {
-  if (text.length <= LINE_TEXT_MAX) return text;
-  return text.slice(0, LINE_TEXT_MAX - LINE_TRUNCATED_SUFFIX.length) + LINE_TRUNCATED_SUFFIX;
+/**
+ * 通知最後附的連結（使用者決定）：對方試算表（自動填入設定的網址）、工作進度正式站（有日期就開到那一天）。
+ * 讀設定失敗或沒填網址就只附正式站
+ */
+function autoFillLinks_(date) {
+  var lines = [];
+  try {
+    var url = getAutoFill_().url;
+    if (url) lines.push('對方試算表：' + url);
+  } catch (err) {
+    // 讀不到設定（例如 Sheet 打不開）也要能通知，只是少一個連結
+  }
+  lines.push('工作進度：' + APP_URL + (date ? '?date=' + date.replace(/\//g, '-') : ''));
+  return lines.join('\n');
+}
+
+// LINE 的訊息：標題＋內容＋連結，超過 LINE_TEXT_MAX 只截內容，標題與連結一定保留
+function buildLineText_(title, body, links) {
+  var head = title + '\n\n';
+  var tail = links ? '\n\n' + links : '';
+  var room = LINE_TEXT_MAX - head.length - tail.length;
+  if (body.length > room) body = body.slice(0, Math.max(room - LINE_TRUNCATED_SUFFIX.length, 0)) + LINE_TRUNCATED_SUFFIX;
+  return head + body + tail;
 }
 
 // 推一則 LINE 文字訊息給自己，成功回 null，失敗回原因（不含 token）
@@ -318,7 +340,7 @@ function pushAutoFillLine_(text) {
       method: 'post',
       contentType: 'application/json',
       headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ to: userId, messages: [{ type: 'text', text: truncateLineText_(text) }] }),
+      payload: JSON.stringify({ to: userId, messages: [{ type: 'text', text: text }] }),
       muteHttpExceptions: true,
     });
     var code = res.getResponseCode();
@@ -331,13 +353,17 @@ function pushAutoFillLine_(text) {
 
 /**
  * 通知擁有者：先推 LINE，沒設定或失敗就改寄信給 OWNER_EMAIL（信裡註明 LINE 為什麼沒送出），
- * 回傳實際用的管道 'line'／'email'。title 是第一行（信的主旨），body 是內容
+ * 回傳實際用的管道 'line'／'email'。title 是第一行（信的主旨），body 是內容，最後附上 links（autoFillLinks_）
  */
-function sendAutoFillNotice_(title, body) {
-  var lineError = pushAutoFillLine_(title + '\n\n' + body);
+function sendAutoFillNotice_(title, body, links) {
+  var lineError = pushAutoFillLine_(buildLineText_(title, body, links));
   if (!lineError) return 'line';
   Logger.log('LINE 通知沒有送出，改寄信：' + lineError);
-  MailApp.sendEmail(OWNER_EMAIL, title, body + '\n\n（LINE 通知沒有送出：' + lineError + '，改用 Email 通知）');
+  MailApp.sendEmail(
+    OWNER_EMAIL,
+    title,
+    body + (links ? '\n\n' + links : '') + '\n\n（LINE 通知沒有送出：' + lineError + '，改用 Email 通知）'
+  );
   return 'email';
 }
 
@@ -345,7 +371,8 @@ function sendAutoFillNotice_(title, body) {
 function notifyAutoFill_(date, reason, detail) {
   sendAutoFillNotice_(
     '【工作進度】' + date + ' 自動填入沒有完成：' + reason,
-    reason + '\n\n' + (detail ? detail + '\n\n' : '') + '這次沒有寫入任何內容，請手動確認。'
+    reason + '\n\n' + (detail ? detail + '\n\n' : '') + '這次沒有寫入任何內容，請手動確認。',
+    autoFillLinks_(date)
   );
 }
 
@@ -354,12 +381,14 @@ function notifyAutoFillDone_(date, result, text) {
   if (result.status === 'written') {
     sendAutoFillNotice_(
       '【工作進度】' + date + ' 已自動填入',
-      '已填進對方試算表的「' + result.sheetName + '」分頁。\n\n填入的內容：\n' + text
+      '已填進對方試算表的「' + result.sheetName + '」分頁。\n\n填入的內容：\n' + text,
+      autoFillLinks_(date)
     );
   } else {
     sendAutoFillNotice_(
       '【工作進度】' + date + ' 對方的試算表已經是一樣的內容',
-      '格子裡已經是今天的總結（可能先用「填入」按鈕填過），這次沒有重複寫入。'
+      '格子裡已經是今天的總結（可能先用「填入」按鈕填過），這次沒有重複寫入。',
+      autoFillLinks_(date)
     );
   }
 }
@@ -371,7 +400,8 @@ function notifyAutoFillDone_(date, result, text) {
 function testAutoFillNotify() {
   var channel = sendAutoFillNotice_(
     '【工作進度】測試通知',
-    '收到這則訊息，代表自動填入的通知設定正確。'
+    '收到這則訊息，代表自動填入的通知設定正確。',
+    autoFillLinks_('')
   );
   Logger.log(channel === 'line' ? '已用 LINE 送出' : 'LINE 沒有送出，已改寄信到 ' + OWNER_EMAIL);
 }

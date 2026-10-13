@@ -73,11 +73,17 @@ const run = (date = new Date(2099, 0, 5, 16, 20)) =>
 /** 自己那一格（1/5 是 E 欄、1/6 是 F 欄） */
 const myCell = (col = 5) => target.getSheetByName(SHEET_NAME)!.getRange(5, col).getValues()[0]![0];
 
-/** 推出去的 LINE 通知：第一行是標題，空一行後是內容 */
+const APP_URL = 'https://swzx00.github.io/Progress/';
+/** 通知最後附的連結：對方試算表、工作進度正式站（開到那一天） */
+const linksOf = (date: string) =>
+  `對方試算表：${TARGET_URL}\n工作進度：${APP_URL}?date=${date.replaceAll('/', '-')}`;
+
+/** 推出去的 LINE 通知：第一行是標題，空一行後是內容，最後一段是連結 */
 const notices = () =>
   backend.linePushes.map(({ text }) => {
     const [title = '', ...rest] = text.split('\n\n');
-    return { title, body: rest.join('\n\n') };
+    const links = rest.pop() ?? '';
+    return { title, body: rest.join('\n\n'), links };
   });
 
 beforeEach(() => {
@@ -224,6 +230,7 @@ describe('自動執行（觸發器）', () => {
         {
           title: '【工作進度】2099/01/05 已自動填入',
           body: '已填進對方試算表的「2099/1」分頁。\n\n填入的內容：\n1.release_source T12346\n- 新增 oplog.js',
+          links: linksOf('2099/01/05'),
         },
       ]);
       expect(backend.mails).toEqual([]);
@@ -246,6 +253,7 @@ describe('自動執行（觸發器）', () => {
       expect(backend.linePushes[0]!.to).toBe(LINE_PROPS.LINE_USER_ID);
       expect(backend.linePushes[0]!.token).toBe(LINE_PROPS.LINE_CHANNEL_ACCESS_TOKEN);
       expect(notices()[0]!.title).toContain('已經有內容');
+      expect(notices()[0]!.links).toBe(linksOf('2099/01/05'));
       expect(notices()[0]!.body).toContain('手動寫的');
       expect(notices()[0]!.body).toContain('1.官網');
     });
@@ -282,6 +290,7 @@ describe('自動執行（觸發器）', () => {
       create({ 工作日期: '2099/01/07', 專案名稱: '官網' });
       expect(run(new Date(2099, 0, 7, 16))).toEqual({ status: 'error' });
       expect(notices().at(-1)!.title).toContain('找不到 2099/01/07 這一欄');
+      expect(notices().at(-1)!.links).toBe(linksOf('2099/01/07'));
 
       create({ 工作日期: '2099/02/02', 專案名稱: '官網' });
       run(new Date(2099, 1, 2, 16));
@@ -456,14 +465,18 @@ describe('findAutoFillSheet_：比對分頁名稱的年、月', () => {
 });
 
 describe('通知：LINE 為主、Email 備援', () => {
-  const notify = (title: string, body: string) =>
-    (backend.global.sendAutoFillNotice_ as (title: string, body: string) => string)(title, body);
+  const notify = (title: string, body: string, links = '連結') =>
+    (backend.global.sendAutoFillNotice_ as (title: string, body: string, links: string) => string)(
+      title,
+      body,
+      links,
+    );
 
   it('有設定 LINE：推給 LINE_USER_ID（帶 token），不寄信', () => {
     setup();
     expect(notify('標題', '內容')).toBe('line');
     expect(backend.linePushes).toEqual([
-      { token: 'line-token', to: 'U0123456789abcdef', text: '標題\n\n內容' },
+      { token: 'line-token', to: 'U0123456789abcdef', text: '標題\n\n內容\n\n連結' },
     ]);
     expect(backend.mails).toEqual([]);
   });
@@ -479,19 +492,35 @@ describe('通知：LINE 為主、Email 備援', () => {
     expect(backend.mails).toHaveLength(1);
     expect(backend.mails[0]!.to).toBe(OWNER_EMAIL);
     expect(backend.mails[0]!.subject).toBe('標題');
-    expect(backend.mails[0]!.body).toContain('內容');
+    expect(backend.mails[0]!.body).toContain('內容\n\n連結');
     expect(backend.mails[0]!.body).toContain(reason);
     // token 是密鑰，不能出現在信裡或執行記錄
     expect(backend.mails[0]!.body).not.toContain('line-token');
     expect(backend.logs.join('\n')).not.toContain('line-token');
   });
 
-  it('超過 5000 字：截斷，最後註明省略', () => {
+  it('超過 5000 字：只截內容並註明省略，標題與連結保留；信不截斷', () => {
     setup();
-    notify('標題', '字'.repeat(6000));
+    notify('標題', '字'.repeat(6000), linksOf('2099/01/05'));
     const { text } = backend.linePushes[0]!;
     expect(text).toHaveLength(5000);
-    expect(text.endsWith('…（內容太長，後面省略）')).toBe(true);
+    expect(text.startsWith('標題\n\n字')).toBe(true);
+    expect(text.endsWith(`…（內容太長，後面省略）\n\n${linksOf('2099/01/05')}`)).toBe(true);
+
+    setup({ lineResponse: 401 });
+    notify('標題', '字'.repeat(6000), linksOf('2099/01/05'));
+    expect(backend.mails[0]!.body).toContain('字'.repeat(6000));
+    expect(backend.mails[0]!.body).toContain(linksOf('2099/01/05'));
+  });
+
+  it('連結：有設定網址才附對方試算表；沒有日期時正式站不帶 date', () => {
+    setup();
+    const links = backend.global.autoFillLinks_ as (date: string) => string;
+    expect(links('2099/01/05')).toBe(`工作進度：${APP_URL}?date=2099-01-05`);
+    buildTarget();
+    expect(enable().error).toBeUndefined();
+    expect(links('2099/01/05')).toBe(linksOf('2099/01/05'));
+    expect(links('')).toBe(`對方試算表：${TARGET_URL}\n工作進度：${APP_URL}`);
   });
 
   it('觸發器的例外情況在沒有 LINE 時一樣寄信', () => {
@@ -502,12 +531,14 @@ describe('通知：LINE 為主、Email 備援', () => {
     expect(run().status).toBe('insufficient');
     expect(backend.mails[0]!.subject).toContain('工時合計未滿 8 小時');
     expect(backend.mails[0]!.body).toContain('改用 Email 通知');
+    expect(backend.mails[0]!.body).toContain(linksOf('2099/01/05'));
   });
 
   it('testAutoFillNotify：送出測試訊息，執行記錄寫出用了哪個管道', () => {
     setup();
     (backend.global.testAutoFillNotify as () => void)();
     expect(backend.linePushes[0]!.text).toContain('【工作進度】測試通知');
+    expect(backend.linePushes[0]!.text.endsWith(`工作進度：${APP_URL}`)).toBe(true);
     expect(backend.logs.at(-1)).toBe('已用 LINE 送出');
 
     setup({ lineResponse: 401 });
