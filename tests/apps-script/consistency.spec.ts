@@ -4,6 +4,15 @@ import schema from '../../shared/validation-schema.json';
 
 import { THEME_MODES } from '@/composables/useTheme';
 import { STATUS_OPTIONS } from '@/types/work-item';
+import { makeItem } from '@/testing/fixtures';
+import {
+  AUTO_FILL_NAME_MAX,
+  AUTO_FILL_TEXT_MAX,
+  AUTO_FILL_URL_PATTERN,
+  validateAutoFillSetting,
+  type AutoFillSetting,
+} from '@/utils/auto-fill';
+import { buildDaySummary } from '@/utils/day-summary';
 import { RECENT_DAYS } from '@/utils/recent-history';
 import { EXPORT_MAX_DAYS } from '@/utils/export-excel';
 import {
@@ -15,7 +24,9 @@ import {
 } from '@/utils/search-work-items';
 import {
   WORK_HOURS_DAILY_STANDARD,
+  hoursToRange,
   validateWorkHoursSetting,
+  workHoursTotal,
   type WorkHoursSetting,
 } from '@/utils/work-hours';
 import {
@@ -270,5 +281,91 @@ describe('搜尋比對：matchesSearch ↔ matchesSearch_', () => {
       const back = gs.matchesSearch_(item, gs.normalizeSearch_(query.keyword), query.field);
       expect(back).toBe(matchesSearch(item, query));
     });
+  });
+});
+
+describe('本日總結（自動填入用）：前端 buildDaySummary ↔ Code.gs buildDaySummary_', () => {
+  const items = [
+    makeItem({
+      id: 'a',
+      項次: 3,
+      專案Repo: ['web', 'api'],
+      工作目標: '#7829 調整',
+      處理內容: '第一行\n\n- 已有破折號\n  縮排 ',
+    }),
+    makeItem({ id: 'b', 項次: 1, 專案名稱: '官網改版', 工作目標: 'T12346 埋 JS', 處理內容: '' }),
+    makeItem({ id: 'c', 項次: 2, 專案名稱: '  ', 工作目標: '只剩目標' }),
+    makeItem({ id: 'd', 項次: 4, 專案名稱: '會議討論', 處理內容: '不列' }),
+    makeItem({ id: 'e', 項次: 5, 專案Repo: ['web'], 工作目標: 'T123456 位數太多' }),
+    makeItem({ id: 'f', 項次: 6, 狀態: '休假', 工作目標: '特休', 今日工時: 2 }),
+  ];
+
+  it.each([[items], [items.slice(3, 4)], [[]]])('%#', (list) => {
+    expect(gs.buildDaySummary_(list)).toBe(buildDaySummary(list));
+  });
+});
+
+describe('請假開始時間：Code.gs leaveStartTime_ ↔ 前端 hoursToRange(每日工時 − 請假, 請假).start', () => {
+  const settings: WorkHoursSetting[] = [
+    { start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    { start: '08:30', end: '17:30', breakStart: '12:30', breakEnd: '13:30' },
+    { start: '10:00', end: '18:00' },
+  ];
+  const leaves = [0.25, 1, 2, 3, 3.5, 4, 5, 6, 7.75];
+
+  settings.forEach((setting) => {
+    it.each(leaves)(`${setting.start}～${setting.end} 請 %s 小時`, (leave) => {
+      const total = workHoursTotal(setting)!;
+      expect(gs.leaveStartTime_(leave, setting)).toBe(
+        hoursToRange(total - leave, leave, setting)!.start,
+      );
+    });
+  });
+
+  it('整天請假、沒有設定回 null', () => {
+    expect(gs.leaveStartTime_(8, settings[0])).toBeNull();
+    expect(gs.leaveStartTime_(2, null)).toBeNull();
+  });
+});
+
+describe('自動填入設定：前端 validateAutoFillSetting ↔ AutoFill.gs validateAutoFill_', () => {
+  it('常數', () => {
+    expect(gs.AUTO_FILL_NAME_MAX).toBe(AUTO_FILL_NAME_MAX);
+    expect(gs.AUTO_FILL_TEXT_MAX).toBe(AUTO_FILL_TEXT_MAX);
+    // RegExp 經過 loadCodeGs 的 JSON 轉換會變成空物件，直接在 vm 裡取 source 比對
+    expect(gs.autoFillUrlPatternSource()).toBe(AUTO_FILL_URL_PATTERN.source);
+  });
+
+  const URL = 'https://docs.google.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw';
+  const urls = [
+    '',
+    '  ',
+    URL,
+    `${URL}/edit?gid=383459105#gid=383459105`,
+    `  ${URL}/edit  `,
+    `${URL}?usp=sharing`,
+    `${URL}#gid=0`,
+    'https://docs.google.com/spreadsheets/d/short/edit',
+    'http://docs.google.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    'https://docs.google.com/document/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    'https://example.com/spreadsheets/d/1OXOGgXZrDmkPFTVwjhiQgP-o_JH2uSIc9Xxq7aPQxZw',
+    `${URL}x!`,
+    'not a url',
+  ];
+  const names = [
+    '',
+    '  ',
+    '林家丞',
+    ' 林家丞 ',
+    '名'.repeat(20),
+    '名'.repeat(21),
+    ` ${'名'.repeat(20)} `,
+  ];
+  const cases: AutoFillSetting[] = [true, false].flatMap((enabled) =>
+    urls.flatMap((url) => names.map((name) => ({ enabled, url, name }))),
+  );
+
+  it.each(cases)('%j', (setting) => {
+    expect(gs.validateAutoFill_(setting)).toBe(validateAutoFillSetting(setting));
   });
 });

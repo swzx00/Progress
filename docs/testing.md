@@ -39,19 +39,19 @@
 
 ## 前後端一致性測試
 
-`Code.gs` 有幾套規則是從前端手動同步過去的。`tests/apps-script/consistency.spec.ts` 用 `node:vm` 載入 `Code.gs`（頂層只有 `var` 與 `function`，不會呼叫 Apps Script 服務），比對：
+`Code.gs` 有幾套規則是從前端手動同步過去的。`tests/apps-script/consistency.spec.ts` 用 `node:vm` 載入 `Code.gs` 與 `AutoFill.gs`（頂層只有 `var` 與 `function`，不會呼叫 Apps Script 服務），比對：
 
-- 常數：`VALIDATION_RULES` ↔ `shared/validation-schema.json`、`LEAVE_RULES`、`STATUS_OPTIONS`、每日工時上限、工時設定標準、近期紀錄天數、匯出天數上限、搜尋欄位與上限
-- 函式（同一組案例跑兩邊，結果要相同）：`validateItem_` ↔ `validateWorkItem`／`validateLeave`、`dailyHoursError_` ↔ `dailyHoursMessage`、`validateWorkHours_` ↔ `validateWorkHoursSetting`、`matchesSearch_` ↔ `matchesSearch`
+- 常數：`VALIDATION_RULES` ↔ `shared/validation-schema.json`、`LEAVE_RULES`、`STATUS_OPTIONS`、每日工時上限、工時設定標準、近期紀錄天數、匯出天數上限、搜尋欄位與上限、自動填入的姓名與填入字數上限、網址格式（`AUTO_FILL_URL_PATTERN` 的 source；RegExp 經過載入器的 JSON 轉換會變成空物件，用 `autoFillUrlPatternSource()` 直接在 vm 裡取）
+- 函式（同一組案例跑兩邊，結果要相同）：`validateItem_` ↔ `validateWorkItem`／`validateLeave`、`dailyHoursError_` ↔ `dailyHoursMessage`、`validateWorkHours_` ↔ `validateWorkHoursSetting`、`matchesSearch_` ↔ `matchesSearch`、`buildDaySummary_` ↔ `buildDaySummary`、`leaveStartTime_` ↔ `hoursToRange(每日工時 − 請假, 請假).start`、`validateAutoFill_` ↔ `validateAutoFillSetting`（啟用／停用 × 各種網址 × 各種姓名的組合）
 
 改 `Code.gs` 或前端任一邊，這裡失敗就代表另一邊忘了改。
 
 ## 後端共同規格（MSW ↔ Code.gs）
 
-`tests/backend/contract.ts` 的 `describeBackendContract` 是一組後端規格：每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步、匯出範圍與搜尋的參數檢查。錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。同一組案例跑兩次：
+`tests/backend/contract.ts` 的 `describeBackendContract` 是一組後端規格：每日項次、改到別天重新編號、`batchCreate` 整批退回與覆蓋、`reorder` 檢查、請假固定值、選項清單同步、匯出範圍與搜尋的參數檢查、自動填入的設定讀寫與驗證、「填入」的驗證（啟用時要開對方試算表的部分 MSW 沒有，只在 `auto-fill.spec.ts` 測）。錯誤訊息比對的原始碼包含 `Code.gs` 與 `AutoFill.gs`。錯誤訊息要跟 `Code.gs` 一樣（固定文字的訊息檢查 `Code.gs` 原始碼裡有沒有這句，組出來的訊息直接呼叫 `Code.gs` 的函式比對）。同一組案例跑兩次：
 
 - `tests/msw/handlers.spec.ts`：用 `msw/node` 對 MSW handlers 發請求（`npm run dev` 預設打的假後端）
-- `tests/apps-script/backend.spec.ts`：`Code.gs` 的 `doGet`／`doPost` 接假的試算表
+- `tests/apps-script/backend.spec.ts`：`Code.gs` 的 `doGet`／`doPost` 接假的試算表（`extraFiles` 一起載入 `AutoFill.gs`）
 
 兩邊行為不一樣，就會有一邊失敗。MSW 只模擬工時相關的欄位驗證，其他欄位驗證在一致性測試比對。
 
@@ -60,6 +60,8 @@
 `tests/apps-script/fake-spreadsheet.ts` 只實作 `Code.gs` 用到的 `SpreadsheetApp` API，行為盡量貼近真的 Sheet：寫入時自動轉型（純數字字串 → 數字、`TRUE` → 布林、`YYYY/MM/DD` → 日期、`HH:mm` → 時間，儲存格是純文字格式 `@` 就維持字串）、`getRange` 超出分頁列數會丟錯（新分頁預設 1000 列）、`insertRowsAfter` 補的列沿用上一列的格式、排序時空白排最後、`getDataRange` 在空白分頁回傳 A1。`load-code-gs-backend.ts` 用 `node:vm` 執行 `Code.gs`，其他服務（指令碼屬性、UUID、日期格式化、tokeninfo 登入驗證）也換成假的；idToken `'token'` 是擁有者本人，JSON 字串的 idToken 直接當成 tokeninfo 的回應。試算表裡的日期是 vm 那邊的 `Date`，測試裡判斷日期要用 `Object.prototype.toString`，不能用 `instanceof`。
 
 `tests/apps-script/sheet.spec.ts` 測共同規格看不到的 Sheet 細節：自動建分頁與表頭、儲存格型別、文字欄位不被轉型、每次寫入後排序、超過 1000 列自動補列、手動編輯過的分頁照樣讀得到、已刪除紀錄分頁、選項清單的數字值與連續、`compactOptionsSheet`（`Migrations.gs`，`beforeEach` 用 `extraFiles` 一起載入）、工時設定、登入驗證、近期紀錄、搜尋與匯出範圍、寫入加鎖（`lockCalls`；`lockAvailable: false` 模擬拿不到鎖）。假環境的指令碼時區刻意設成跟試算表不同，`Utilities.formatDate` 收到試算表以外的時區就丟錯，確保日期一律用試算表時區讀。
+
+`tests/apps-script/auto-fill.spec.ts` 測自動填入（[auto-fill.md](auto-fill.md)）：`AutoFill.gs` 用 `extraFiles` 跟 `Code.gs` 一起載入；對方試算表用 `backend.newSpreadsheet()` 建、放進 `backend.books`，月份分頁照真的版面排（第 2 列日期、B 欄姓名）。測設定的讀寫與驗證（不從 `doGet` 回傳）、填入文字（含請假時間）、觸發器的每個分支（沒啟用、假日、沒紀錄、工時未滿 8 小時、找不到分頁／日期／姓名、格子已有不同內容不覆蓋、一樣的內容不動、寫入）、「填入」按鈕、`installAutoFillTrigger`。假環境另外提供：`MailApp`（寄過的信在 `mails`）、辦公日曆（`holidays` 選項，年份 → 資料或 HTTP 狀態碼，沒列到的年份 404）、`ScriptApp.newTrigger`（建立、刪除的觸發器在 `triggers`，`existingTriggers` 選項放既有的觸發器）。
 
 `tests/apps-script/legacy-import.spec.ts` 測一次性匯入 `LegacyImport.gs`：`loadCodeGsBackend({}, { extraFiles: ['LegacyImport.gs'] })` 跟 `Code.gs` 一起載入（同一個 Apps Script 專案共用全域），兩份舊表用 `backend.newSpreadsheet()` 建、放進 `backend.books`（`openById` 用 ID 找）。測分頁名稱與期限的日期解析、Repo 拆行、狀態對應、請假判斷、略過的分頁、項次補號、選項清單排序、預覽不動資料，以及正式匯入後用 `doGet` 讀回來。
 
@@ -73,7 +75,7 @@
 
 ## 瀏覽器測試（Playwright）
 
-happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的行為用 Playwright 在真的 Chromium 裡測。`playwright.config.ts` 自己起 `vite`（port 5174，打 MSW 假後端，不吃本機 `.env`），每個測試跑三種寬度：`mobile`（Pixel 7）、`tablet`（820px）、`desktop`（1280px），對應 CLAUDE.md 的 RWD 斷點。
+happy-dom 沒有真的排版，量不到高度與寬度，所以版面相關的行為用 Playwright 在真的 Chromium 裡測。`playwright.config.ts` 自己起 `vite`（port 5320，跟開發用的 5310 分開，打 MSW 假後端，不吃本機 `.env`），每個測試跑三種寬度：`mobile`（Pixel 7）、`tablet`（820px）、`desktop`（1280px），對應 CLAUDE.md 的 RWD 斷點。
 
 - `rwd.e2e.ts`：沒有橫向捲軸、手機卡片／平板合併欄／桌面完整欄位、逾期紅線（顏色跟 `tokens.scss` 比對）、國定假日的徽章與空狀態
 - `theme.e2e.ts`：切深色後 `data-theme`、底色、文字色階對調，重新整理後維持；唯讀模式

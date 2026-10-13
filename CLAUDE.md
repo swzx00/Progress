@@ -28,6 +28,7 @@
 | 檔案 | 內容 |
 |---|---|
 | [docs/sheet-schema.md](docs/sheet-schema.md) | Google Sheet 各分頁與欄位的完整說明、請假固定值、已刪除紀錄分頁、自動排序、選項清單分頁（含工時設定欄）、日期儲存格格式 |
+| [docs/auto-fill.md](docs/auto-fill.md) | 自動填入：本日總結每個工作日填進別人的試算表（設定、對方試算表結構、觸發器判斷順序、手動填入、部署） |
 | [docs/api.md](docs/api.md) | Apps Script `doGet`／`doPost` 各 type／action 的參數、回應與驗證、前端登入、本機 CORS proxy |
 | [docs/dev-tooling.md](docs/dev-tooling.md) | ESLint／Prettier／Stylelint、VS Code 設定、建置拆檔、npm audit、Node／npm 版本 |
 | [docs/testing.md](docs/testing.md) | Vitest 測試：指令、測試檔位置、慣例、前後端一致性測試（`Code.gs` ↔ 前端） |
@@ -49,7 +50,7 @@
 - **項次**每天從 1 開始，新增時由後端決定（最大項次＋1）
 - **請假**：同一分頁，狀態＝`休假`，固定欄位由後端覆蓋（`leave.fixed`），不寫回選項清單，`休假` 不在 `STATUS_OPTIONS` 裡
 - **刪除**：整列搬到「已刪除紀錄」分頁封存（多一欄刪除時間）
-- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」欄
+- **選項清單**分頁：交辦單位／交辦人員／專案名稱／專案Repo 的可選值（每欄連續、值當文字比對），另有「工時設定」「樣式設定」「自動填入設定」欄
 - 每日工時合計（含請假）不可超過 24 小時，前後端都擋；超過 8 小時只在畫面標紅
 - 資料模式是日誌式：同一專案每天新增一列，不覆寫舊資料
 
@@ -58,7 +59,7 @@
 完整說明見 [docs/api.md](docs/api.md)。
 
 - `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定＋樣式設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
-- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`
+- `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`／`getAutoFillSetting`／`saveAutoFillSetting`／`autoFillNow`（自動填入，實作在 `AutoFill.gs`，另有每個工作日 16 點的時間觸發器 `runAutoFill`，見 [docs/auto-fill.md](docs/auto-fill.md)）
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性。部署步驟在 `Code.gs` 開頭註解
@@ -77,10 +78,12 @@
   | 欄位驗證 | `shared/validation-schema.json`（唯一事實來源，前端直接 import）↔ `Code.gs` 的 `VALIDATION_RULES`、`LEAVE_RULES`、`DAILY_HOURS_MAX`、`WORK_HOURS_DAILY_STANDARD` |
   | 狀態選項 | `src/types/work-item.ts` 的 `STATUS_OPTIONS`（要 `as const`，不放 JSON）↔ `Code.gs` 的 `STATUS_OPTIONS` |
   | 每日項次規則 | `Code.gs` 的 `getNextDailyIndex_` ↔ `useWorkItems.ts` 的 `fetchDaySummary` ↔ MSW |
+  | 本日總結文字 | `src/utils/day-summary.ts` 的 `buildDaySummary` ↔ `AutoFill.gs` 的 `buildDaySummary_`（含 `EXCLUDED_PROJECTS`、`TASK_CODE_PATTERN`） |
   | 工時超過訊息 | 前端 `dailyHoursMessage` ↔ `Code.gs` 的 `dailyHoursError_` ↔ MSW |
   | 搜尋比對 | `src/utils/search-work-items.ts` 的 `matchesSearch` ↔ `Code.gs` 的 `matchesSearch_` |
   | 選項清單的值 | `src/validation/work-item.ts` 的 `validateOptionValue` ↔ `Code.gs` 的 `validateOptionValue_` |
   | 工時設定驗證 | `src/utils/work-hours.ts` 的 `validateWorkHoursSetting` ↔ `Code.gs` 的 `validateWorkHours_` |
+  | 自動填入設定驗證 | `src/utils/auto-fill.ts` 的 `validateAutoFillSetting`／`AUTO_FILL_*` ↔ `AutoFill.gs` 的 `validateAutoFill_`／`AUTO_FILL_*` ↔ MSW |
   | 樣式設定的值 | `src/composables/useTheme.ts` 的 `THEME_MODES` ↔ `Code.gs` 的 `THEME_MODE_VALUES` ↔ MSW |
   | 近期紀錄 | 前端 `RECENT_DAYS`／`filterRecentItems` ↔ `Code.gs` 的 `getRecentItems_` |
   | MSW 假後端 | `src/mocks/handlers.ts` 整體跟 `Code.gs` 同規則 |
@@ -119,7 +122,7 @@ src/
     OptionsDropdownState.vue # 可搜尋下拉選單（交辦單位、交辦人員、專案名稱、專案 Repo）放在 NSelect empty slot 的狀態畫面：載入中（AppLoading＋「選項載入中」）／載入失敗（「選項清單載入失敗」＋「重新載入」）
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
     CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
-    DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋複製按鈕
+    DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋填入／複製按鈕；下方自動填入設定（啟用、試算表網址、姓名，存在後端，沒啟用時欄位與「填入」disabled）
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載
     WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間
     BackToTop.vue         # 返回最上：右下角固定的圖示按鈕，捲過頁首標題列才出現，點了捲回最頂端
@@ -132,6 +135,7 @@ src/
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
     useTheme.ts            # 深色模式：自動（依日出日落，只有登入才能用；登出時維持當下的顏色）／淺色／深色，套用 <html data-theme>；擁有者的設定存在 Sheet 跨裝置同步（HomeView 登入後讀、切換時寫回）
     useScrollLock.ts      # 有遮罩的畫面（表單 Drawer、Modal／對話框）開著時鎖住頁面捲動、隱藏捲軸（模組層級計數，可疊多層），在元件 setup 呼叫
+    useAutoFill.ts        # 自動填入的 API（getAutoFillSetting／saveAutoFillSetting／autoFillNow，都是要登入的 doPost）與設定快取（模組層級）
     useToday.ts            # 響應式的「今天」（模組層級），午夜計時器與分頁切回來時更新、按「回到今天」時重新對一次，頁面開著跨過午夜會跟著換
   directives/
     auto-resize.ts         # v-auto-resize：textarea 高度隨內容自動調整（表單的工作目標、處理內容／請假備註）
@@ -139,6 +143,7 @@ src/
     copy-work-item.ts      # buildCopyPayload：複製規則（單項複製、複製本日共用）
     day-summary.ts         # buildDaySummary／extractTaskCode：本日總結的文字規則
     export-excel.ts        # 匯出 Excel 的規則：範圍（yearPeriod／quarterPeriod／monthPeriod／rangePeriod）、檔名、分頁分組、欄位、樣式（buildExportWorkbook，動態載入 ExcelJS）
+    auto-fill.ts           # 自動填入設定：型別、驗證（validateAutoFillSetting，AutoFill.gs 手動同步）、有沒有修改（isSameAutoFillSetting）
     work-hours.ts          # 工時設定：時段與小時互換（rangeToHours／hoursToRange／roundToQuarter）、設定驗證（validateWorkHoursSetting，Code.gs 手動同步）
     search-work-items.ts   # 搜尋欄：比對規則（matchesSearch，Code.gs 手動同步）、推薦選擇（buildSuggestions）
     month-view.ts          # 月份檢視：monthRange／shiftMonth／isSameMonth／formatMonthDayLabel／sortByDateAndIndex
@@ -157,6 +162,7 @@ shared/
   validation-schema.json   # 前後端共用的驗證規則來源（唯一事實來源）
 apps-script/                # Apps Script 原始碼版控（clasp 尚未設定，目前手動貼到編輯器）
   Code.gs
+  AutoFill.gs               # 自動填入（本日總結 → 別人的試算表）：跟 Code.gs 同一個專案、共用全域，觸發器 runAutoFill、installAutoFillTrigger
   Migrations.gs             # 一次性資料整理（mergeMonthSheets 舊版月份分頁合併、compactOptionsSheet 選項清單整理），要用時才貼進 Apps Script 專案
   LegacyImport.gs           # 一次性匯入舊版「工作進度-2026H1／H2」試算表，用法見檔案開頭註解，匯入完可從 Apps Script 專案刪掉
   build/schema.gs           # （規劃中，尚未實作）由 shared/validation-schema.json 產生
@@ -259,7 +265,7 @@ apps-script/                # Apps Script 原始碼版控（clasp 尚未設定�
 **回滾**：前端在 `main` 上 `git revert` 有問題的合併再 push，自動重新部署；後端在 Apps Script「管理部署作業」切回舊版本（網址不變）。不要 force push `main`。
 
 **上線前的測試方式**（不做測試站，使用者決定，2026-10-10）：
-- 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5173` 這個來源，這樣才能在本機測登入流程
+- 日常開發用本地 `vite dev` / `vite preview`，Google OAuth Client ID 需額外授權 `http://localhost:5310` 這個來源，這樣才能在本機測登入流程。開發伺服器固定用 5310（`vite.config.ts` 的 `server.port`＋`strictPort`，被佔用時直接報錯、不會自動換埠號；使用者決定），e2e 用 5320
 - 上線前在 release 分支本機驗證：`npm run lint`、`npm run test:run`、`npm run build`；用 `npx vite build --base=/Progress/` 搭配 `npx vite preview` 確認 GitHub Pages 子路徑下的資源路徑（Windows 的 Git Bash 要加 `MSYS_NO_PATHCONV=1`，不然 `/Progress/` 會被轉成本機路徑）；真後端實測用 `VITE_ENABLE_MSW=false` 的 `npm run dev`（經 `appsScriptDevProxyPlugin`）
 - 正式網域（HTTPS）上的 Google 登入、從 GitHub Pages 呼叫 Apps Script 是否被 CORS 擋，本機測不到，上線後在正式站確認；有問題就在 `main` 上 revert，幾分鐘內回到上一版
 - **不做測試站的原因**：原本規劃把 release／dev 部署到 `/Progress/developer/`，但放在正式站底下的路徑只隔開了網址——同一個網域，瀏覽器儲存的資料共用（例如深色模式設定存在 localStorage）；同一個 `gh-pages` 分支，正式站部署要設 `keep_files` 才不會刪掉測試站，設錯就可能互相覆蓋；同一個 Apps Script 和 Sheet，在測試站操作等於改正式資料。目前實際使用者只有一人、revert 很快，成本大於好處。之後真的需要測試站時，另開一個 repo（例如 `Progress-staging`）的 GitHub Pages，搭配另一份 Apps Script 和測試用 Sheet，不要放在 `/Progress/` 底下

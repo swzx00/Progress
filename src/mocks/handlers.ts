@@ -14,6 +14,11 @@ import {
   type SearchField,
 } from '@/utils/search-work-items';
 import { THEME_MODES, type ThemeMode } from '@/composables/useTheme';
+import {
+  AUTO_FILL_TEXT_MAX,
+  validateAutoFillSetting,
+  type AutoFillSetting,
+} from '@/utils/auto-fill';
 import { validateWorkHoursSetting, type WorkHoursSetting } from '@/utils/work-hours';
 import { dailyHoursMessage, validateOptionValue } from '@/validation/work-item';
 
@@ -148,6 +153,11 @@ let workHours: WorkHoursSetting | null = null;
 // 樣式設定（Code.gs 存在「選項清單」分頁的「樣式設定」欄），預設未設定；可用的值同 Code.gs 的 THEME_MODE_VALUES
 let themeMode: ThemeMode | null = null;
 
+// 自動填入設定（AutoFill.gs 存在「選項清單」分頁的「自動填入設定」欄），預設停用。
+// MSW 沒有對方的試算表：「填入」寫進 autoFilledCells（日期 → 內容），用來模擬已經填過、格子已經有內容的情況
+let autoFill: AutoFillSetting = { enabled: false, url: '', name: '' };
+const autoFilledCells = new Map<string, string>();
+
 // 請假列的固定欄位一律由後端覆蓋（跟 Code.gs 的 applyLeaveFixedValues_ 同一套規則）
 const applyLeaveFixedValues = <T extends Partial<WorkItem>>(item: T): T =>
   isLeaveItem(item as WorkItem)
@@ -241,6 +251,24 @@ interface SaveWorkHoursPayload {
   workHours: WorkHoursSetting | null;
 }
 
+interface GetAutoFillSettingPayload {
+  action: 'getAutoFillSetting';
+  idToken: string;
+}
+
+interface SaveAutoFillSettingPayload {
+  action: 'saveAutoFillSetting';
+  idToken: string;
+  autoFill: unknown;
+}
+
+interface AutoFillNowPayload {
+  action: 'autoFillNow';
+  idToken: string;
+  date: string;
+  text: unknown;
+}
+
 type DoPostPayload =
   | CreatePayload
   | BatchCreatePayload
@@ -251,7 +279,10 @@ type DoPostPayload =
   | RenameOptionPayload
   | DeleteOptionPayload
   | SaveWorkHoursPayload
-  | SaveThemeModePayload;
+  | SaveThemeModePayload
+  | GetAutoFillSettingPayload
+  | SaveAutoFillSettingPayload
+  | AutoFillNowPayload;
 
 // 匯出 Excel（type=range）一次最多可讀的天數，跟 Code.gs 的 RANGE_MAX_DAYS 一致
 const RANGE_MAX_DAYS = 366;
@@ -502,6 +533,48 @@ export const handlers = [
       }
       themeMode = body.themeMode as ThemeMode;
       return HttpResponse.json({ themeMode });
+    }
+
+    // 自動填入（AutoFill.gs）：設定只能登入後讀（不放進 doGet）；驗證規則同 validateAutoFill_，
+    // 啟用時真後端會先開對方的試算表找姓名，MSW 沒有對方的試算表，略過這一步
+    if (body.action === 'getAutoFillSetting') return HttpResponse.json({ autoFill });
+
+    if (body.action === 'saveAutoFillSetting') {
+      const value = body.autoFill as Partial<AutoFillSetting> | null;
+      if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean') {
+        return HttpResponse.json({ error: '自動填入設定格式不正確' });
+      }
+      const next: AutoFillSetting = {
+        enabled: value.enabled,
+        url: String(value.url ?? '').trim(),
+        name: String(value.name ?? '').trim(),
+      };
+      const autoFillError = validateAutoFillSetting(next);
+      if (autoFillError) return HttpResponse.json({ error: autoFillError });
+      autoFill = next;
+      return HttpResponse.json({ autoFill });
+    }
+
+    // 同 AutoFill.gs 的 handleAutoFillNow_：格子是空的才寫、一樣的內容不動、不同的內容不覆蓋
+    if (body.action === 'autoFillNow') {
+      if (Number.isNaN(apiDateToUtc(body.date))) {
+        return HttpResponse.json({ error: '日期格式不正確' });
+      }
+      const text = String(body.text ?? '').trim();
+      if (!text) return HttpResponse.json({ error: '沒有可以填入的內容' });
+      if (text.length > AUTO_FILL_TEXT_MAX) {
+        return HttpResponse.json({ error: `填入內容不可超過 ${AUTO_FILL_TEXT_MAX} 個字` });
+      }
+      if (!autoFill.enabled) return HttpResponse.json({ error: '自動填入沒有啟用' });
+      const existing = autoFilledCells.get(body.date);
+      if (existing === text) return HttpResponse.json({ status: 'unchanged' });
+      if (existing !== undefined) {
+        return HttpResponse.json({
+          error: '對方試算表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
+        });
+      }
+      autoFilledCells.set(body.date, text);
+      return HttpResponse.json({ status: 'written' });
     }
 
     // 跟 Code.gs 的 handleSaveWorkHours_ 同一套規則：驗證通過才存，回應帶回最新的工時設定

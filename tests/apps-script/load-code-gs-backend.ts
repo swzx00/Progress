@@ -61,6 +61,10 @@ export interface CodeGsBackend {
   logs: string[];
   /** LockService 的拿鎖（'lock'）、放鎖（'release'）紀錄 */
   lockCalls: string[];
+  /** MailApp.sendEmail 寄過的信 */
+  mails: { to: string; subject: string; body: string }[];
+  /** ScriptApp.newTrigger 建立的觸發器設定、deleteTrigger 刪掉的觸發器 */
+  triggers: { created: Record<string, unknown>[]; deleted: string[] };
 }
 
 export interface LoadOptions {
@@ -68,11 +72,18 @@ export interface LoadOptions {
   extraFiles?: string[];
   /** false：LockService 拿不到鎖（模擬其他寫入一直沒結束） */
   lockAvailable?: boolean;
+  /**
+   * 台灣辦公日曆（UrlFetchApp 抓 cdn.jsdelivr.net 的 {年}.json）：年份 → 那一年的資料，
+   * 數字代表回應的 HTTP 狀態碼（例如 503），沒列到的年份回 404
+   */
+  holidays?: Record<string, { date: string; isHoliday: boolean }[] | number>;
+  /** 已經存在的觸發器（ScriptApp.getProjectTriggers）的函式名稱 */
+  existingTriggers?: string[];
 }
 
 export const loadCodeGsBackend = (
   properties: Record<string, string> = {},
-  { extraFiles = [], lockAvailable = true }: LoadOptions = {},
+  { extraFiles = [], lockAvailable = true, holidays = {}, existingTriggers = [] }: LoadOptions = {},
 ): CodeGsBackend => {
   const props: Record<string, string> = {
     SHEET_ID: 'sheet-id',
@@ -87,6 +98,11 @@ export const loadCodeGsBackend = (
   const books = new Map<string, FakeSpreadsheet>();
   const logs: string[] = [];
   const lockCalls: string[] = [];
+  const mails: CodeGsBackend['mails'] = [];
+  const triggers: CodeGsBackend['triggers'] = { created: [], deleted: [] };
+  const projectTriggers = existingTriggers.map((handler) => ({
+    getHandlerFunction: () => handler,
+  }));
 
   Object.assign(context, {
     SpreadsheetApp: {
@@ -117,6 +133,14 @@ export const loadCodeGsBackend = (
     },
     UrlFetchApp: {
       fetch: (url: string) => {
+        const holiday = /\/TaiwanCalendar\/data\/(\d{4})\.json$/.exec(url);
+        if (holiday) {
+          const data = holidays[holiday[1]!] ?? 404;
+          return {
+            getResponseCode: () => (typeof data === 'number' ? data : 200),
+            getContentText: () => (typeof data === 'number' ? '' : JSON.stringify(data)),
+          };
+        }
         const idToken = decodeURIComponent(new URL(url).searchParams.get('id_token') ?? '');
         const payload = tokenPayload(idToken);
         return {
@@ -134,7 +158,30 @@ export const loadCodeGsBackend = (
         },
       }),
     },
-    ScriptApp: { getProjectTriggers: () => [], deleteTrigger: () => undefined },
+    MailApp: {
+      sendEmail: (to: string, subject: string, body: string) =>
+        void mails.push({ to, subject, body }),
+    },
+    ScriptApp: {
+      getProjectTriggers: () => [...projectTriggers],
+      deleteTrigger: (trigger: { getHandlerFunction: () => string }) => {
+        triggers.deleted.push(trigger.getHandlerFunction());
+        projectTriggers.splice(projectTriggers.indexOf(trigger), 1);
+      },
+      // 鏈式建立觸發器：每個設定方法把參數記下來，create() 時存進 triggers.created
+      newTrigger: (handler: string) => {
+        const config: Record<string, unknown> = { handler };
+        const builder: Record<string, (...args: unknown[]) => unknown> = {};
+        ['timeBased', 'everyDays', 'atHour', 'inTimezone', 'nearMinute'].forEach((method) => {
+          builder[method] = (...args: unknown[]) => {
+            config[method] = args.length > 0 ? args[0] : true;
+            return builder;
+          };
+        });
+        builder.create = () => void triggers.created.push(config);
+        return builder;
+      },
+    },
     Logger: { log: (message: unknown) => void logs.push(String(message)) },
   });
   runInContext(SOURCE, context, { filename: 'Code.gs' });
@@ -152,6 +199,8 @@ export const loadCodeGsBackend = (
     VmDate,
     logs,
     lockCalls,
+    mails,
+    triggers,
     doGet: (params) =>
       parse((global.doGet as (e: unknown) => { content: string })({ parameter: params })),
     doPost: (body) =>

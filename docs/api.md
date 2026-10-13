@@ -17,7 +17,7 @@
 - **重新整理、重開分頁時自動登入**（`tryAutoLogin`，`HomeView` 掛載時呼叫）：只有 `localStorage` 有 `progress:auto-login` 標記（值 `'1'`，登入成功時寫入，**不是憑證**）才嘗試，沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
 - **背景續期**（`refreshLogin`）：拿到 token 後排計時器，到期前 5 分鐘自動續期；分頁切回來（`visibilitychange`）時 token 快過期也續期（電腦睡眠喚醒後計時器可能沒觸發）。同時有多個續期只呼叫一次 `prompt()`；`isNotDisplayed`／`isSkippedMoment`／`isDismissedMoment` 或 15 秒沒回應都算失敗；GIS 腳本還沒載入直接算失敗，不卡畫面
 - **開表單、對話框前**（`ensureFreshLogin`，非同步）：還沒過期直接通過；過期了（看 JWT 的 `exp`，提早 1 分鐘；本機時鐘不準時用 `iat` 算出時間差校正）先續期，拿到新 token 就照常開，拿不到才回到唯讀並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。調整順序是先在畫面套用新順序再檢查，續期失敗才還原
-- **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
+- **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定、本日總結的自動填入設定與「填入」都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
 - **兩種登出**：使用者按「登出」（`signOut`）清掉 token、拿掉 `progress:auto-login` 標記並 `disableAutoSelect()`，之後要自己點登入；登入失效（續期失敗、`UNAUTHORIZED`，`clearLogin`）只清掉 token，保留自動登入，下次重新整理還能自動登入回來
 - **限制**（Google、瀏覽器的規定）：瀏覽器要登入著 Google 而且之前在這個網站同意過登入；FedCM 兩次自動登入至少隔 10 分鐘（10 分鐘內連續重新整理兩次，第二次要點登入）；無痕模式、關閉第三方登入或 FedCM 的瀏覽器自動登入會失敗，維持唯讀畫面、右上角照常有登入按鈕
 - e2e 的假 GIS（`e2e/fixtures.ts`）：`prompt()` 有 `window.__e2eIdToken` 就交給 `initialize` 的 callback，模擬自動登入
@@ -33,6 +33,7 @@
   - `reorder`：payload 帶 `date` 與那天所有未刪除紀錄（含請假）依新順序排列的 `ids`（`handleReorder_`）。`ids` 必須跟 Sheet 上那天未刪除的紀錄完全一致（不能多、不能少、不能重複、不能混到已刪除或別天的），不一致代表資料已被別處改過，回「紀錄已變更，請重新整理後再排序」、不動 Sheet；通過後項次依順序改成 1、2、3…，已刪除的紀錄不動
   - `addOption`／`renameOption`／`deleteOption`：直接管理「選項清單」分頁本身（不透過新增/編輯工作紀錄的副作用），給前端「管理選項清單」Modal 用，細節見 [dialogs.md](ui/dialogs.md) 的「選項清單管理」。新增與重新命名的值套用工作紀錄同一欄的字數上限與禁用字元（`validateOptionValue_`，前端 `validateOptionValue` 手動同步）
   - `saveWorkHours`：payload 帶 `workHours`（`{ start, end, breakStart?, breakEnd? }`，`null` 代表清除），寫入「選項清單」分頁的「工時設定」欄（`handleSaveWorkHours_`）。後端也驗證（`validateWorkHours_`，規則與訊息跟前端 `validateWorkHoursSetting` 手動同步）：格式 `HH:mm`、上班 < 午休開始 < 午休結束 < 下班、每日工時剛好 `WORK_HOURS_DAILY_STANDARD`（8）小時，不合格回 `{ error }`；回應帶回最新的 `{ workHours }`
+  - `getAutoFillSetting`／`saveAutoFillSetting`／`autoFillNow`（2026-10-13）：自動填入（本日總結 → 別人的試算表）。`getAutoFillSetting` 回 `{ autoFill: { enabled, url, name } }`（沒設定是停用、空白）；`saveAutoFillSetting` 帶 `autoFill`，驗證（`validateAutoFill_`）後寫入「選項清單」分頁的「自動填入設定」欄，啟用時先確認打得開對方試算表、找得到姓名，回應帶回 `{ autoFill }`；`autoFillNow` 帶 `date`（`YYYY/MM/DD`）與 `text`，把文字填進對方試算表那天的格子，回 `{ status: 'written' | 'unchanged' }`，格子已經有不同的內容不覆蓋、回 `{ error }`。設定**不放進公開的 `doGet type=options`**（網址是別人的試算表）。實作在 `apps-script/AutoFill.gs`（`Code.gs` 只負責轉過去），另有時間觸發器 `runAutoFill`（每個工作日 16 點那一小時內），規則見 [auto-fill.md](auto-fill.md)
   - `saveThemeMode`（2026-10-12）：payload 帶 `themeMode`（`auto`／`light`／`dark`），寫入「選項清單」分頁的「樣式設定」欄第 2 列（`handleSaveThemeMode_`，純文字格式），讓不同裝置的樣式設定同步。值不在 `THEME_MODE_VALUES` 裡回 `{ error: '樣式設定只能是 auto、light 或 dark' }`；回應帶回 `{ themeMode }`。`doGet type=options` 的回應也多帶 `themeMode`（沒設定或值不合法是 `null`，`getThemeMode_`）。可用的值跟前端 `useTheme.ts` 的 `THEME_MODES` 手動同步（`tests/apps-script/consistency.spec.ts` 比對）
 - 後端必須重複驗證前端已做過的規則（`Code.gs` 的 `validateItem_`，規則同 `shared/validation-schema.json`：必填、字數上限、今日工時 0–24／0.25、完成度 0–100／0.25、狀態在固定選項內、日期格式與年份（2/30、4/31、平年 2/29 這類不存在的日期算格式不正確，前端 `validateDate` 同一套規則）、Repo 不可含逗號等），因為 API 網址公開，理論上可被繞過前端直接呼叫
 

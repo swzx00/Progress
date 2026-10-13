@@ -62,6 +62,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue(), isRealAppsScriptUrl ? appsScriptDevProxyPlugin(appsScriptUrl) : null],
+    // 開發固定用 5310（使用者決定）：Google 登入的「已授權的 JavaScript 來源」要協定、網域、埠號完全一樣，
+    // 不支援萬用字元，所以每個專案固定一個埠號、在 Google Cloud 登記一次。strictPort：被佔用時直接報錯，
+    // 不要自動換成別的埠號（換了就登入不了）。e2e 用 5320（playwright.config.ts），不需要登記
+    server: {
+      port: 5310,
+      strictPort: true,
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

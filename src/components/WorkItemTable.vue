@@ -871,7 +871,7 @@ onBeforeUnmount(() => {
     @media (min-width: 768px) {
       display: grid;
       grid-template-columns:
-        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 2fr) minmax(62px, 2fr)
         120px 58px;
       gap: 2px 8px;
       padding: 8px 32px;
@@ -883,7 +883,7 @@ onBeforeUnmount(() => {
 
     @media (min-width: 1024px) {
       grid-template-columns:
-        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+        var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 2fr) minmax(62px, 3fr)
         62px 48px 77px 58px;
       gap: 8px;
     }
@@ -891,13 +891,13 @@ onBeforeUnmount(() => {
     .work-item-table--editable & {
       @media (min-width: 768px) {
         grid-template-columns:
-          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 2fr) minmax(62px, 2fr)
           120px 58px 100px;
       }
 
       @media (min-width: 1024px) {
         grid-template-columns:
-          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 1fr) minmax(62px, 1fr)
+          var(--index-col) 99px minmax(103px, 1fr) minmax(62px, 2fr) minmax(62px, 3fr)
           62px 48px 77px 58px 208px;
       }
     }
@@ -1449,7 +1449,7 @@ onBeforeUnmount(() => {
     border-radius: 999px;
 
     @media (min-width: 768px) {
-      max-width: 103px;
+      max-width: 100%;
       font-size: 10px;
     }
 
