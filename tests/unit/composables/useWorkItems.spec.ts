@@ -381,3 +381,149 @@ describe('fetchDaySummary（表單的預計項次與工時合計）', () => {
     await expect(fetchDaySummary('2026-10-09')).rejects.toThrow('讀取失敗');
   });
 });
+
+describe('快取與預先讀取（只用在畫面顯示）', () => {
+  const day = (target: string) => ({ items: [apiItem({ id: target, 工作目標: target })] });
+  const targets = (items: WorkItem[]) => items.map((item) => item.工作目標);
+
+  it('切回看過的日期：先顯示快取（不顯示載入中），背景再讀一次，有變動才更新', async () => {
+    const { useWorkItems } = await load();
+    const work = useWorkItems();
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    respond(day('B'));
+    await work.fetchByDate('2026-10-10');
+
+    let resolve: (value: unknown) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const pending = work.fetchByDate('2026-10-09');
+    expect(targets(work.items.value)).toEqual(['A']);
+    expect(work.loading.value).toBe(false);
+    resolve({ ok: true, status: 200, json: async () => day('A2') });
+    await pending;
+    expect(targets(work.items.value)).toEqual(['A2']);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('背景讀到一樣的內容：不換 items（畫面不重畫）', async () => {
+    const { useWorkItems } = await load();
+    const work = useWorkItems();
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    const before = work.items.value;
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    expect(work.items.value).toBe(before);
+  });
+
+  it('背景讀取失敗：維持快取的內容，不顯示錯誤', async () => {
+    const { useWorkItems } = await load();
+    const work = useWorkItems();
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    respond({ error: '暫時失敗' });
+    await work.fetchByDate('2026-10-09');
+    expect(targets(work.items.value)).toEqual(['A']);
+    expect(work.error.value).toBeNull();
+  });
+
+  it('預先讀過的日期：切過去不顯示載入中；還在讀的話共用同一個請求', async () => {
+    const { useWorkItems, prefetchByDate } = await load();
+    const work = useWorkItems();
+    respond(day('A'));
+    prefetchByDate('2026-10-09');
+    prefetchByDate('2026-10-09');
+    const pending = work.fetchByDate('2026-10-09');
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(targets(work.items.value)).toEqual(['A']);
+
+    respond(day('B'));
+    prefetchByDate('2026-10-10');
+    // 等預先讀取的回應處理完（存進快取）
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    respond(day('B'));
+    const next = work.fetchByDate('2026-10-10');
+    expect(work.loading.value).toBe(false);
+    expect(targets(work.items.value)).toEqual(['B']);
+    await next;
+  });
+
+  it('預先讀取已經有快取就不再讀；失敗不往外丟', async () => {
+    const { useWorkItems, prefetchByDate, prefetchRange } = await load();
+    respond(day('A'));
+    await useWorkItems().fetchByDate('2026-10-09');
+    prefetchByDate('2026-10-09');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockRejectedValueOnce(new Error('離線'));
+    prefetchRange('2026-11-01', '2026-11-30');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(getParams(1)).toEqual({ type: 'range', from: '2026/11/01', to: '2026/11/30' });
+  });
+
+  it.each([
+    [
+      'create',
+      (w: Awaited<ReturnType<typeof load>>) => w.useWorkItems().createItem('token', makeInput()),
+    ],
+    ['delete', (w: Awaited<ReturnType<typeof load>>) => w.useWorkItems().deleteItem('token', 'x')],
+    [
+      'reorder',
+      (w: Awaited<ReturnType<typeof load>>) =>
+        w.useWorkItems().reorderItems('token', '2026-10-09', []),
+    ],
+  ])('寫入（%s）後清空快取：再讀那天會顯示載入中、讀新資料', async (_label, write) => {
+    const module = await load();
+    const work = module.useWorkItems();
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    respond({});
+    await write(module);
+    let resolve: (value: unknown) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const pending = work.fetchByDate('2026-10-09');
+    expect(work.loading.value).toBe(true);
+    resolve({ ok: true, status: 200, json: async () => day('A2') });
+    await pending;
+    expect(targets(work.items.value)).toEqual(['A2']);
+  });
+
+  it('寫入失敗也清空快取（不確定後端寫了多少）', async () => {
+    const { useWorkItems, prefetchByDate } = await load();
+    const work = useWorkItems();
+    respond(day('A'));
+    await work.fetchByDate('2026-10-09');
+    respond({ error: '失敗' });
+    await expect(work.deleteItem('token', 'x')).rejects.toThrow('失敗');
+    respond(day('A2'));
+    prefetchByDate('2026-10-09');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  });
+
+  it('寫入前就發出、寫入後才回來的預先讀取：不寫回快取（那是寫入前的資料）', async () => {
+    const { useWorkItems, prefetchByDate } = await load();
+    const work = useWorkItems();
+    let resolve: (value: unknown) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    prefetchByDate('2026-10-09');
+    respond({});
+    await work.createItem('token', makeInput());
+    resolve({ ok: true, status: 200, json: async () => day('舊的') });
+    await Promise.resolve();
+    respond(day('新的'));
+    const pending = work.fetchByDate('2026-10-09');
+    expect(work.loading.value).toBe(true);
+    await pending;
+    expect(targets(work.items.value)).toEqual(['新的']);
+  });
+
+  it('表單的 fetchDaySummary 不吃快取（工時上限要用最新的資料）', async () => {
+    const { useWorkItems, fetchDaySummary } = await load();
+    respond(day('A'));
+    await useWorkItems().fetchByDate('2026-10-09');
+    respond({ items: [] });
+    expect((await fetchDaySummary('2026-10-09')).itemCount).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

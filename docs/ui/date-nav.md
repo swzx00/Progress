@@ -37,6 +37,15 @@
     - 這是目前唯一一處對 `NDatePicker`／`NInput` 用 `:deep()` 的地方，套件升級如果改了這幾個內部 class 名稱，這段「今天」標色會失效，但不影響日期選擇功能本身
 
 
+## 切換日期的速度：前端快取與預先讀取
+
+使用者決定，2026-10-14（Apps Script 讀一次要 2～3 秒）。後端另外有 `doGet` 的讀取快取，見 [api.md](../api.md)。
+
+- **快取**（`useWorkItems.ts` 的 `itemsCache`，模組層級、只放記憶體，重新整理就清掉，最多 `ITEMS_CACHE_MAX`（60）筆，超過丟最舊的）：鍵是單日 `date:YYYY-MM-DD`、月份 `range:from:to`。`fetchByDate`／`fetchRange` 有快取時**先顯示快取、不顯示載入中**，背景再讀一次，內容不同才換 `items`（一樣就不換，畫面不重畫）；背景讀取失敗維持快取、不顯示錯誤。沒有快取照舊：載入中 → 顯示，失敗顯示錯誤
+- **預先讀取**（`HomeView` 的 `prefetchNeighbors`）：目前的畫面讀完後才開始（不跟目前畫面搶），單日讀前後一天與前後一個工作日（`findNextWorkday`，對應 DateNav 的 ◀ ▶ ⏮ ⏭），月份檢視讀前後一個月。已經有快取或正在讀就略過；同一個 key 正在讀時，正式讀取共用同一個請求（`inflight`），不會重複打 API；預先讀取失敗不處理
+- **寫入後清空**：`useWorkItems` 的寫入（新增、編輯、刪除、複製本日、調整順序）不論成功失敗都清空整份快取（`clearItemsCache`）；寫入前發出、寫入後才回來的請求不寫回快取（`cacheGeneration`），不會顯示寫入前的資料
+- **不吃快取**：表單的 `fetchDaySummary`（工時上限、預計項次要用最新資料）、搜尋、匯出 Excel 一律直接讀後端
+
 ## 台灣國定假日顯示
 
 - **資料來源**：[`ruyut/TaiwanCalendar`](https://github.com/ruyut/TaiwanCalendar)，整理自政府資料開放平台「中華民國政府行政機關辦公日曆表」，透過 jsdelivr CDN 發布 JSON（`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/{year}.json`），已實測回應帶 `access-control-allow-origin: *`，前端可直接 `fetch`，不會撞 CORS。通常每年 6 月會釋出下一年度資料

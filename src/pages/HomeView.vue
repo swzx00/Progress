@@ -25,14 +25,16 @@ import { useToday } from '@/composables/useToday';
 import {
   ApiError,
   fetchDaySummary,
+  prefetchByDate,
+  prefetchRange,
   searchItems,
   useWorkItems,
   type SearchResult,
 } from '@/composables/useWorkItems';
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
-import { isValidDateString, todayString } from '@/utils/date';
-import { monthRange } from '@/utils/month-view';
+import { addDays, isValidDateString, todayString } from '@/utils/date';
+import { monthRange, shiftMonth } from '@/utils/month-view';
 import {
   SEARCH_FIELD_LABELS,
   SEARCH_FIELDS,
@@ -119,7 +121,7 @@ const {
   deleteItem,
   reorderItems,
 } = useWorkItems();
-const { getDayOffLabel } = useTaiwanHolidays();
+const { getDayOffLabel, findNextWorkday } = useTaiwanHolidays();
 const dayOffLabel = computed(() => getDayOffLabel(selectedDate.value));
 const today = useToday();
 const isViewingToday = computed(() => selectedDate.value === today.value);
@@ -131,9 +133,30 @@ const fetchCurrent = (): Promise<void> => {
   return fetchRange(from, to);
 };
 
+/**
+ * 目前的畫面讀完後，背景先讀接下來最可能切過去的（使用者決定，2026-10-14）：單日讀前後一天與前後一個工作日
+ * （DateNav 的 ◀ ▶ ⏮ ⏭），月份檢視讀前後一個月。讀到的放進 useWorkItems 的快取，切過去時直接顯示
+ */
+const prefetchNeighbors = async (): Promise<void> => {
+  const date = selectedDate.value;
+  if (isMonthView.value) {
+    [-1, 1].forEach((months) => {
+      const { from, to } = monthRange(shiftMonth(date, months));
+      prefetchRange(from, to);
+    });
+    return;
+  }
+  prefetchByDate(addDays(date, -1));
+  prefetchByDate(addDays(date, 1));
+  const workdays = await Promise.all([findNextWorkday(date, -1), findNextWorkday(date, 1)]);
+  // 等工作日算完這段期間已經切到別天，就不用再讀了
+  if (date !== selectedDate.value || isMonthView.value) return;
+  workdays.forEach(prefetchByDate);
+};
+
 watch(
   () => (isMonthView.value ? `month:${selectedDate.value.slice(0, 7)}` : selectedDate.value),
-  fetchCurrent,
+  () => fetchCurrent().then(prefetchNeighbors),
   { immediate: true },
 );
 

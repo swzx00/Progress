@@ -40,6 +40,9 @@ const mocks = vi.hoisted(() => ({
   reorderItems: vi.fn(),
   fetchDaySummary: vi.fn(),
   searchItems: vi.fn(),
+  prefetchByDate: vi.fn(),
+  prefetchRange: vi.fn(),
+  findNextWorkday: vi.fn(),
 }));
 
 vi.mock('@/composables/useGoogleAuth', async () => {
@@ -72,6 +75,8 @@ vi.mock('@/composables/useWorkItems', async (importOriginal) => {
     ApiError: actual.ApiError,
     fetchDaySummary: mocks.fetchDaySummary,
     searchItems: mocks.searchItems,
+    prefetchByDate: mocks.prefetchByDate,
+    prefetchRange: mocks.prefetchRange,
     useWorkItems: () => ({
       items: mocks.items,
       loading: mocks.loading,
@@ -105,7 +110,10 @@ vi.mock('@/composables/useToast', () => ({
 }));
 
 vi.mock('@/composables/useTaiwanHolidays', () => ({
-  useTaiwanHolidays: () => ({ getDayOffLabel: () => null }),
+  useTaiwanHolidays: () => ({
+    getDayOffLabel: () => null,
+    findNextWorkday: mocks.findNextWorkday,
+  }),
 }));
 
 vi.mock('@/composables/useTheme', async () => {
@@ -213,6 +221,45 @@ beforeEach(() => {
   mocks.savedThemeMode.value = null;
   mocks.fetchOptions.mockResolvedValue(undefined);
   mocks.saveThemeMode.mockResolvedValue(undefined);
+  // 前後一個工作日：測試裡假設前後各跳過一個週末
+  mocks.findNextWorkday.mockImplementation((_date: string, direction: 1 | -1) =>
+    Promise.resolve(direction === 1 ? '2026-10-12' : '2026-10-08'),
+  );
+});
+
+describe('預先讀取（快取在 useWorkItems）', () => {
+  it('單日：讀完那天後，背景讀前後一天與前後一個工作日', async () => {
+    await mountView('/?date=2026-10-09');
+    await flushPromises();
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-10-09');
+    expect(mocks.prefetchByDate.mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-08',
+      '2026-10-10',
+      '2026-10-08',
+      '2026-10-12',
+    ]);
+    expect(mocks.prefetchRange).not.toHaveBeenCalled();
+  });
+
+  it('月份檢視：背景讀前後一個月', async () => {
+    await mountView('/?view=month&date=2026-10-09');
+    await flushPromises();
+    expect(mocks.prefetchRange.mock.calls).toEqual([
+      ['2026-09-01', '2026-09-30'],
+      ['2026-11-01', '2026-11-30'],
+    ]);
+    expect(mocks.prefetchByDate).not.toHaveBeenCalled();
+  });
+
+  it('讀取還沒完成前不預先讀（不跟目前畫面搶）', async () => {
+    let resolve: () => void = () => undefined;
+    mocks.fetchByDate.mockReturnValueOnce(new Promise<void>((r) => (resolve = r)));
+    await mountView('/?date=2026-10-09');
+    expect(mocks.prefetchByDate).not.toHaveBeenCalled();
+    resolve();
+    await flushPromises();
+    expect(mocks.prefetchByDate).toHaveBeenCalled();
+  });
 });
 
 describe('樣式設定跨裝置同步', () => {

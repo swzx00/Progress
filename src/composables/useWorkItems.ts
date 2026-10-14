@@ -181,6 +181,75 @@ export const fetchDaySummary = async (date: string, excludeId?: string): Promise
   };
 };
 
+/**
+ * 讀過的單日／月份資料快取（模組層級、只放記憶體，重新整理就清掉；使用者決定，2026-10-14：讀一次要 2～3 秒）。
+ * 切回看過的日期先顯示快取、背景再讀一次，有變動才更新畫面；HomeView 另外預先讀前後一天／前後一個工作日／前後一個月。
+ * 任何寫入（新增、編輯、刪除、複製本日、調整順序）都清空整份快取，避免顯示寫入前的資料。
+ * 只用在畫面顯示：表單的 fetchDaySummary（工時上限、預計項次）、搜尋、匯出一律直接讀後端，不吃快取
+ */
+const ITEMS_CACHE_MAX = 60;
+const itemsCache = new Map<string, WorkItem[]>();
+const inflight = new Map<string, Promise<WorkItem[]>>();
+/** 每次清空快取就加一：清空前發出、清空後才回來的請求不能寫回快取（那是寫入前的資料） */
+let cacheGeneration = 0;
+
+const dateCacheKey = (date: string): string => `date:${date}`;
+const rangeCacheKey = (from: string, to: string): string => `range:${from}:${to}`;
+
+/** 存進快取（超過上限丟掉最舊的一筆；Map 依加入順序，重新存的移到最後） */
+const rememberItems = (key: string, value: WorkItem[]): void => {
+  itemsCache.delete(key);
+  itemsCache.set(key, value);
+  if (itemsCache.size > ITEMS_CACHE_MAX) itemsCache.delete(itemsCache.keys().next().value!);
+};
+
+/** 讀後端並更新快取；同一個 key 還在讀就共用同一個請求（預先讀取跟正式讀取不會重複打 API） */
+const requestCached = (key: string, request: () => Promise<WorkItem[]>): Promise<WorkItem[]> => {
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const generation = cacheGeneration;
+  const promise = request()
+    .then((result) => {
+      if (generation === cacheGeneration) rememberItems(key, result);
+      return result;
+    })
+    .finally(() => {
+      if (inflight.get(key) === promise) inflight.delete(key);
+    });
+  inflight.set(key, promise);
+  return promise;
+};
+
+/** 清空快取（寫入後呼叫） */
+export const clearItemsCache = (): void => {
+  cacheGeneration += 1;
+  itemsCache.clear();
+  inflight.clear();
+};
+
+/** 背景預先讀某一天（已經有快取或正在讀就略過，失敗不處理：真的切過去時會再讀一次） */
+export const prefetchByDate = (date: string): void => {
+  const key = dateCacheKey(date);
+  if (itemsCache.has(key) || inflight.has(key)) return;
+  requestCached(key, () => requestItemsByDate(date)).catch(() => undefined);
+};
+
+/** 背景預先讀 from～to（月份檢視的前後一個月） */
+export const prefetchRange = (from: string, to: string): void => {
+  const key = rangeCacheKey(from, to);
+  if (itemsCache.has(key) || inflight.has(key)) return;
+  requestCached(key, () => fetchByRange(from, to)).catch(() => undefined);
+};
+
+/** 寫入：不論成功失敗都清空快取（失敗時不確定後端寫了多少，保守起見） */
+const postWrite = async (idToken: string, payload: object): Promise<void> => {
+  try {
+    await postAction(idToken, payload);
+  } finally {
+    clearItemsCache();
+  }
+};
+
 export function useWorkItems() {
   const items = ref<WorkItem[]>([]);
   const loading = ref(false);
@@ -188,16 +257,26 @@ export function useWorkItems() {
   /** 連續切換日期（或日／月檢視）時只採用最後一次的結果，避免晚回來的舊資料蓋掉目前的畫面 */
   let latestFetch = 0;
 
-  const load = async (request: () => Promise<WorkItem[]>): Promise<void> => {
+  /**
+   * 有快取：先顯示快取（不顯示載入中），背景再讀一次，內容不同才更新；背景讀取失敗就維持快取的內容。
+   * 沒有快取：照原本顯示載入中、讀完顯示，失敗顯示錯誤
+   */
+  const load = async (key: string, request: () => Promise<WorkItem[]>): Promise<void> => {
     const seq = ++latestFetch;
-    loading.value = true;
+    const cached = itemsCache.get(key);
     error.value = null;
+    if (cached) {
+      items.value = cached;
+      loading.value = false;
+    } else {
+      loading.value = true;
+    }
     try {
-      const result = await request();
+      const result = await requestCached(key, request);
       if (seq !== latestFetch) return;
-      items.value = result;
+      if (!cached || JSON.stringify(result) !== JSON.stringify(cached)) items.value = result;
     } catch (e) {
-      if (seq !== latestFetch) return;
+      if (seq !== latestFetch || cached) return;
       error.value = e instanceof Error ? e.message : '讀取資料時發生未知錯誤';
       items.value = [];
     } finally {
@@ -205,14 +284,15 @@ export function useWorkItems() {
     }
   };
 
-  const fetchByDate = (date: string): Promise<void> => load(() => requestItemsByDate(date));
+  const fetchByDate = (date: string): Promise<void> =>
+    load(dateCacheKey(date), () => requestItemsByDate(date));
 
   /** 月份檢視：讀 from～to（YYYY-MM-DD，含頭尾）的紀錄放進 items，跟 fetchByDate 共用「只採用最後一次」 */
   const fetchRange = (from: string, to: string): Promise<void> =>
-    load(() => fetchByRange(from, to));
+    load(rangeCacheKey(from, to), () => fetchByRange(from, to));
 
   const createItem = (idToken: string, item: CreateInput): Promise<void> =>
-    postAction(idToken, { action: 'create', item: toApiItem(item) });
+    postWrite(idToken, { action: 'create', item: toApiItem(item) });
 
   /**
    * 一次新增多筆（「複製本日」用）：後端全部驗證通過才寫入，任何一筆不合格或當天工時合計
@@ -224,23 +304,23 @@ export function useWorkItems() {
     items: CreateInput[],
     replace = false,
   ): Promise<void> =>
-    postAction(idToken, { action: 'batchCreate', items: items.map(toApiItem), replace });
+    postWrite(idToken, { action: 'batchCreate', items: items.map(toApiItem), replace });
 
   /**
    * 後端用 id 找到那一列；item.工作日期 可以改到別天（含別的月份），後端會在新的那天重新編項次。
    */
   const updateItem = (idToken: string, id: string, item: UpdateInput): Promise<void> =>
-    postAction(idToken, { action: 'update', id, item: toApiItem(item) });
+    postWrite(idToken, { action: 'update', id, item: toApiItem(item) });
 
   const deleteItem = (idToken: string, id: string): Promise<void> =>
-    postAction(idToken, { action: 'delete', id });
+    postWrite(idToken, { action: 'delete', id });
 
   /**
    * 調整某一天的項次順序：ids 是那天所有未刪除紀錄（含請假）依新順序排列的 id，
    * 後端依順序把項次改成 1、2、3…；跟 Sheet 上的紀錄對不上時整批退回
    */
   const reorderItems = (idToken: string, date: string, ids: string[]): Promise<void> =>
-    postAction(idToken, { action: 'reorder', date: toApiDate(date), ids });
+    postWrite(idToken, { action: 'reorder', date: toApiDate(date), ids });
 
   return {
     items,
