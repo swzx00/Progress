@@ -8,6 +8,8 @@
  * 第 3 步第一次執行會跳出 Google 授權畫面，屬於正常流程。
  * 自動填入（本日總結 → 別人的試算表）在 AutoFill.gs，跟這個檔案放在同一個專案，部署步驟見那份檔案開頭。
  * 一次性的資料整理函式（舊版月份分頁合併、選項清單整理）放在 Migrations.gs，需要時才貼進專案執行。
+ * doGet 有讀取快取（READ_CACHE_SECONDS）：直接在 Sheet 上改資料、執行過 Migrations.gs／LegacyImport.gs 後，
+ * 想馬上在網站看到就在編輯器執行 clearReadCache()。
  */
 
 // ===== 常數 =====
@@ -964,8 +966,107 @@ function handleSearch_(q, field) {
   return jsonOutput_({ items: matched.slice(0, SEARCH_MAX_RESULTS), total: matched.length });
 }
 
+// ===== 讀取快取（CacheService） =====
+
+// doGet 的回應快取起來，同樣的請求不用再讀 Sheet（使用者決定，2026-10-14，讀一次 Sheet 要 2～3 秒）。
+// 任何會改資料的 doPost 都換一個新的快取版本（舊的鍵名就再也不會被讀到），用網站操作不會看到舊資料；
+// 直接在 Google Sheet 上手動改（或執行 Migrations.gs、LegacyImport.gs）快取不知道，最多 READ_CACHE_SECONDS
+// 秒後才會看到，急的話在編輯器執行 clearReadCache()
+var READ_CACHE_SECONDS = 600;
+var READ_CACHE_VERSION_KEY = 'read-version';
+// 快取版本本身保留最久（CacheService 上限 6 小時），被清掉也沒關係：會換一個新版本，等於清空快取
+var READ_CACHE_VERSION_SECONDS = 21600;
+// CacheService 單一值上限 100KB、鍵名上限 250 字，超過就不快取（照常讀 Sheet）
+var READ_CACHE_MAX_BYTES = 100000;
+var READ_CACHE_MAX_KEY_LENGTH = 240;
+// 只讀不寫的 doPost action：不用換快取版本
+var READ_ONLY_ACTIONS = ['getAutoFillSetting'];
+
+function getReadCacheVersion_(cache) {
+  var version = cache.get(READ_CACHE_VERSION_KEY);
+  if (!version) {
+    version = Utilities.getUuid();
+    cache.put(READ_CACHE_VERSION_KEY, version, READ_CACHE_VERSION_SECONDS);
+  }
+  return version;
+}
+
+// 讓所有讀取快取失效：換一個新版本
+function bumpReadCacheVersion_() {
+  try {
+    CacheService.getScriptCache().put(READ_CACHE_VERSION_KEY, Utilities.getUuid(), READ_CACHE_VERSION_SECONDS);
+  } catch (err) {
+    Logger.log('清除讀取快取失敗：' + err);
+  }
+}
+
+// 鍵名：版本＋會影響回應的參數；太長（例如很長的搜尋關鍵字）回 null 不快取
+function readCacheKey_(version, params) {
+  var key =
+    'read:' +
+    version +
+    ':' +
+    JSON.stringify([params.type || '', params.date || '', params.from || '', params.to || '', params.q || '', params.field || '']);
+  return key.length > READ_CACHE_MAX_KEY_LENGTH ? null : key;
+}
+
+// UTF-8 位元組數（中文 3 bytes），判斷有沒有超過 CacheService 單一值的上限
+function utf8Length_(text) {
+  var bytes = 0;
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+/**
+ * 在編輯器手動執行：清空讀取快取。直接在 Google Sheet 上改了資料、或執行過 Migrations.gs／LegacyImport.gs，
+ * 想馬上在網站上看到時用（不執行的話最多 READ_CACHE_SECONDS 秒後也會自己更新）
+ */
+function clearReadCache() {
+  bumpReadCacheVersion_();
+  Logger.log('已清除讀取快取');
+}
+
+/**
+ * 公開讀取（不用登入）。先查快取，沒有才讀 Sheet（readGet_），成功的回應存進快取；錯誤不快取。
+ * 快取服務本身出錯時照常讀 Sheet，不影響讀取
+ */
 function doGet(e) {
   var params = (e && e.parameter) || {};
+  var cache = null;
+  var key = null;
+  try {
+    cache = CacheService.getScriptCache();
+    key = readCacheKey_(getReadCacheVersion_(cache), params);
+    var cached = key ? cache.get(key) : null;
+    if (cached) return ContentService.createTextOutput(cached).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    cache = null;
+  }
+
+  var output = readGet_(params);
+  if (cache && key) {
+    try {
+      var content = output.getContent();
+      if (content.indexOf('{"error":') !== 0 && utf8Length_(content) <= READ_CACHE_MAX_BYTES) {
+        cache.put(key, content, READ_CACHE_SECONDS);
+      }
+    } catch (err) {
+      // 存不進快取就算了，回應照常
+    }
+  }
+  return output;
+}
+
+// doGet 實際讀 Sheet 的部分（沒有快取）
+function readGet_(params) {
   try {
     if (params.type === 'options') {
       return jsonOutput_({
@@ -1025,6 +1126,8 @@ function doPost(e) {
     try {
       return handleAction_(body);
     } finally {
+      // 寫完（還拿著鎖）才換快取版本：寫入途中進來的讀取存的是舊版本的鍵，之後不會再被讀到
+      if (READ_ONLY_ACTIONS.indexOf(body.action) === -1) bumpReadCacheVersion_();
       lock.releaseLock();
     }
   } catch (err) {
