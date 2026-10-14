@@ -61,6 +61,7 @@
 - `doGet`（公開，不需登入）：`date=YYYY/MM/DD`（單日）、`type=options`（選項清單＋近期紀錄＋工時設定＋樣式設定）、`type=range&from&to`（匯出、月份檢視用，最多 366 天）、`type=search&q[&field]`（最多 200 筆）
 - `doPost`（要 Google ID Token，email 必須是擁有者）：`create`／`update`／`delete`／`batchCreate`（可帶 `replace`）／`reorder`／`addOption`／`renameOption`／`deleteOption`／`saveWorkHours`／`saveThemeMode`／`getAutoFillSetting`／`saveAutoFillSetting`／`autoFillNow`（自動填入，實作在 `AutoFill.gs`，另有每個工作日 16 點的時間觸發器 `runAutoFill`，見 [docs/auto-fill.md](docs/auto-fill.md)）
 - 後端一定重複驗證前端的規則（`validateItem_`），API 網址是公開的
+- `doGet` 有讀取快取（`CacheService`，600 秒），`doPost` 寫入後換快取版本；**直接改 Sheet 要執行 `clearReadCache()` 才會馬上生效**，見 [docs/api.md](docs/api.md)
 - `doPost` 驗證登入後先拿 `LockService` 指令碼鎖，寫入一律排隊執行（列號會被同時進來的請求打亂）；日期儲存格一律用試算表時區讀（`getSheetTimeZone_`），不用 `Session.getScriptTimeZone()`
 - Apps Script Web App 網址、OAuth Client ID 可公開；Sheet ID 與 `GOOGLE_CLIENT_ID` 放在指令碼屬性；自動填入通知的 LINE token（`LINE_CHANNEL_ACCESS_TOKEN`，**是密鑰**）與 `LINE_USER_ID` 也只放指令碼屬性，不進程式碼、Sheet 或前端。部署步驟在 `Code.gs` 開頭註解
 
@@ -130,7 +131,7 @@ src/
     DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
     useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、到期前背景續期（refreshLogin）、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
-    useWorkItems.ts        # 讀寫 API 呼叫、狀態管理
+    useWorkItems.ts        # 讀寫 API 呼叫、狀態管理；單日／月份讀過的資料快取在記憶體（先顯示快取、背景再讀），寫入後清空，HomeView 預先讀前後一天／工作日／月（見 docs/ui/date-nav.md）
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
     useTheme.ts            # 深色模式：自動（依日出日落，只有登入才能用；登出時維持當下的顏色）／淺色／深色，套用 <html data-theme>；擁有者的設定存在 Sheet 跨裝置同步（HomeView 登入後讀、切換時寫回）

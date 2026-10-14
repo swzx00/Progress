@@ -63,6 +63,8 @@ export interface CodeGsBackend {
   lockCalls: string[];
   /** 打到 LINE push API 的請求（含失敗的） */
   linePushes: { token: string; to: string; text: string }[];
+  /** CacheService.getScriptCache() 的內容（鍵 → 值與存活秒數），不模擬過期，要測過期就直接刪 */
+  cache: Map<string, { value: string; seconds: number }>;
   /** MailApp.sendEmail 寄過的信 */
   mails: { to: string; subject: string; body: string }[];
   /** ScriptApp.newTrigger 建立的觸發器設定、deleteTrigger 刪掉的觸發器 */
@@ -83,6 +85,8 @@ export interface LoadOptions {
   existingTriggers?: string[];
   /** LINE push API 的回應：HTTP 狀態碼（預設 200），'throw' 模擬連線失敗 */
   lineResponse?: number | 'throw';
+  /** false：CacheService 一呼叫就丟錯（模擬快取服務異常） */
+  cacheAvailable?: boolean;
 }
 
 export const loadCodeGsBackend = (
@@ -93,6 +97,7 @@ export const loadCodeGsBackend = (
     holidays = {},
     existingTriggers = [],
     lineResponse = 200,
+    cacheAvailable = true,
   }: LoadOptions = {},
 ): CodeGsBackend => {
   const props: Record<string, string> = {
@@ -110,6 +115,7 @@ export const loadCodeGsBackend = (
   const lockCalls: string[] = [];
   const mails: CodeGsBackend['mails'] = [];
   const linePushes: CodeGsBackend['linePushes'] = [];
+  const cache: CodeGsBackend['cache'] = new Map();
   const triggers: CodeGsBackend['triggers'] = { created: [], deleted: [] };
   const projectTriggers = existingTriggers.map((handler) => ({
     getHandlerFunction: () => handler,
@@ -181,10 +187,25 @@ export const loadCodeGsBackend = (
       MimeType: { JSON: 'application/json' },
       createTextOutput: (text: string) => ({
         content: text,
+        getContent() {
+          return this.content;
+        },
         setMimeType() {
           return this;
         },
       }),
+    },
+    CacheService: {
+      getScriptCache: () => {
+        if (!cacheAvailable) throw new Error('Service unavailable: Cache');
+        return {
+          get: (key: string) => cache.get(key)?.value ?? null,
+          put: (key: string, value: string, seconds: number) => {
+            if (value.length > 100000) throw new Error('Argument too large: value');
+            cache.set(key, { value, seconds });
+          },
+        };
+      },
     },
     MailApp: {
       sendEmail: (to: string, subject: string, body: string) =>
@@ -229,6 +250,7 @@ export const loadCodeGsBackend = (
     lockCalls,
     mails,
     linePushes,
+    cache,
     triggers,
     doGet: (params) =>
       parse((global.doGet as (e: unknown) => { content: string })({ parameter: params })),
