@@ -124,3 +124,28 @@ test('返回最上：捲過頁首才出現，點了回到最頂端並消失', as
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expect(button).toBeHidden();
 });
+
+test('捲到最底：最後一列在「返回最上」上方，不會被蓋住', async ({ page }) => {
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 330 });
+  await openHome(page);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const button = page.getByRole('button', { name: '返回最上' });
+  await expect(button).toBeVisible();
+  const last = (await dataRows(page).last().boundingBox())!;
+  const top = (await button.boundingBox())!.y;
+  expect(last.y + last.height).toBeLessThanOrEqual(top);
+});
+
+test('沒有紀錄：空狀態下面不留白（平板、桌面撐到畫面底部），頁面不用捲動', async ({ page }) => {
+  await page.goto('/?date=2026-10-08');
+  const empty = page.locator('.work-item-table__empty');
+  await expect(empty).toHaveText('這天沒有紀錄');
+  const scrollable = await page.evaluate(
+    () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  );
+  expect(scrollable).toBeLessThanOrEqual(0);
+  if (page.viewportSize()!.width >= 768) {
+    const box = (await empty.boundingBox())!;
+    expect(box.y + box.height).toBeCloseTo(page.viewportSize()!.height, 0);
+  }
+});
