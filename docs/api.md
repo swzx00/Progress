@@ -7,6 +7,10 @@
 - 額外支援 `type=options` 讀取「選項清單」分頁，回應 `{ options, recentItems, workHours }`：`recentItems` 是近 30 天的近期紀錄（`getRecentItems_`），給表單的下拉推薦與預填用，見 [work-item-form.md](ui/work-item-form.md) 的「表單的推薦與預填」；`workHours` 是工時設定（`getWorkHours_`，`{ start, end, breakStart?, breakEnd? }`，沒設定或設定不合法時 `null`），見 [work-hours.md](ui/work-hours.md)
 - 額外支援 `type=range&from=YYYY/MM/DD&to=YYYY/MM/DD`（`handleRange_`），讀出 from～to（含頭尾）的未刪除紀錄（含請假），回應 `{ items }`，給前端「匯出 Excel」用。沿用 `readRowsByDate_`，傳入範圍判斷函式（`YYYY/MM/DD` 補零固定長度，字串可直接比大小），一樣只先讀工作日期一欄。檢查日期格式（含 2/30 這類不存在的日期）、from ≤ to、跨度上限 366 天（`RANGE_MAX_DAYS`），不合格回 `{ error }`。公開讀取、不需登入，同上
 - 額外支援 `type=search&q=關鍵字[&field=欄位]`（`handleSearch_`），讀整張工作紀錄分頁找出符合的未刪除紀錄（含請假），給前端搜尋欄用，回應 `{ items, total }`：照「工作日期新的在前、同一天照項次」排序，最多回傳 `SEARCH_MAX_RESULTS`（200）筆，`total` 是全部符合的筆數。比對規則（`matchesSearch_`）跟前端 `src/utils/search-work-items.ts` 的 `matchesSearch` 手動同步，見 [search.md](ui/search.md)。關鍵字不可空白、上限 `SEARCH_KEYWORD_MAX`（100）字，`field` 只接受 `SEARCH_FIELDS`，不合格回 `{ error }`。公開讀取、不需登入
+- **讀取快取**（使用者決定，2026-10-14，讀一次 Sheet 要 2～3 秒）：`doGet` 先查 `CacheService.getScriptCache()`，鍵名是「快取版本＋`type`／`date`／`from`／`to`／`q`／`field`」（`readCacheKey_`），有就直接回傳、不讀 Sheet；沒有才讀（`readGet_`），成功的回應存 `READ_CACHE_SECONDS`（600 秒）。錯誤的回應、超過 100KB（UTF-8）的回應、鍵名超過 240 字的請求不快取；快取服務本身出錯時照常讀 Sheet
+  - 失效：`doPost` 驗證登入、拿到鎖、執行完動作後（還拿著鎖）換一個新的快取版本（`bumpReadCacheVersion_`，存在快取的 `read-version`），舊版本的鍵就不會再被讀到，用網站寫入後馬上讀得到新資料；只讀的 action（`READ_ONLY_ACTIONS`，目前是 `getAutoFillSetting`）與沒登入的請求不換。寫入失敗也換（保守）
+  - **直接在 Google Sheet 上改資料**（或執行 `Migrations.gs`、`LegacyImport.gs`）快取不知道，最多 600 秒後才會在網站上看到；要馬上看到就在 Apps Script 編輯器執行 `clearReadCache()`
+  - 前端另外有自己的快取與預先讀取，見 [date-nav.md](ui/date-nav.md)
 - 開放給所有人呼叫（不需登入），供公開檢視頁使用；11 個業務欄位公開檢視頁全部顯示，沒有欄位白名單問題（機敏疑慮是「帳密/token 不能出現在 repo」層級，不是欄位層級——這點已用 Google 登入驗證解決）
 
 **前端登入實作**：`useGoogleAuth.ts` 串接 Google Identity Services（GIS）——動態載入 GIS 腳本、`google.accounts.id.renderButton` 顯示官方登入按鈕。前端額外維護一份**允許清單陣列**（目前只有 `swzx00@gmail.com`，之後要加人直接改陣列），`isAuthorized` = 有登入 && email 在清單裡；未登入或不在清單裡都只能看唯讀畫面，管理功能（新增/編輯/刪除）整個不會渲染出來。這是前端體驗層的把關，**不能取代後端驗證**——後端還是要照下面 `doPost` 的規則再驗一次，因為前端程式碼是公開的，理論上可以被繞過。
