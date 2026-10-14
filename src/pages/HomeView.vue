@@ -1034,13 +1034,7 @@ const onWorkHoursUnauthorized = (): void => {
   height: 100%;
   min-height: 100dvh;
 
-  // 底部留白：「返回最上」固定在右下角（BackToTop：距底 16px＋按鈕 44px＋間距 16px，平板桌面距底 32px），
-  // 捲到最底時最後一列的操作按鈕才不會被它蓋住
-  padding-bottom: 76px;
-
-  @media (min-width: 768px) {
-    padding-bottom: 108px;
-  }
+  // 「返回最上」的底部留白在 WorkItemTable（--has-rows，只有資料列時才留）
 
   &__header {
     display: flex;

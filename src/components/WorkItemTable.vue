@@ -260,6 +260,7 @@ onBeforeUnmount(() => {
       'work-item-table--holiday': dayOffLabel,
       'work-item-table--search': searchMode,
       'work-item-table--month': monthMode,
+      'work-item-table--has-rows': rowCount > 0,
     }"
     role="table"
   >
@@ -710,10 +711,21 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 0 16px;
 
+  // 有資料列時底部留白：「返回最上」固定在右下角（BackToTop：距底 16px＋按鈕 44px＋間距 16px，平板桌面距底 32px），
+  // 捲到最底時最後一列的操作按鈕才不會被它蓋住。沒有資料列（空狀態）不留：頁面不用捲動、按鈕不會出現，
+  // 留了反而在撐滿畫面的空狀態下面多一條空白（今天的藍底特別明顯）
+  &--has-rows {
+    padding-bottom: 76px;
+  }
+
   @media (min-width: 768px) {
     flex: 1 1 auto;
     gap: 0;
     padding: 0;
+
+    &--has-rows {
+      padding-bottom: 108px;
+    }
   }
 
   // 資料列的容器（拖曳排序的範圍）；表頭在它外面，所以資料列的 nth-child 從 1 開始算
