@@ -570,7 +570,7 @@ export const handlers = [
       if (existing === text) return HttpResponse.json({ status: 'unchanged' });
       if (existing !== undefined) {
         return HttpResponse.json({
-          error: '對方試算表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
+          error: '工程部日報表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
         });
       }
       autoFilledCells.set(body.date, text);
