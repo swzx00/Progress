@@ -87,7 +87,7 @@ describe('MSW 假後端：自動填入', () => {
     expect(await fillNow(' 內容 ')).toEqual({ status: 'written' });
     expect(await fillNow('內容')).toEqual({ status: 'unchanged' });
     expect((await fillNow('別的內容')).error).toBe(
-      '對方試算表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
+      '工程部日報表的格子已經有內容，為了不覆蓋別人的紀錄，這次沒有寫入',
     );
     expect(await fillNow('別天的內容', '2026/10/14')).toEqual({ status: 'written' });
   });
