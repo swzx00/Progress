@@ -40,7 +40,7 @@ const props = withDefaults(
   defineProps<{
     item?: WorkItem | null;
     saving?: boolean;
-    /** 新增時「工作日期」的預設值：使用者在 DateNav 選到的那天 */
+    /** 新增時「工作日期」的預設值：新增、請假是 DateNav 選到的那天，複製是今天（HomeView 決定） */
     defaultDate?: string;
     /** 新增請假（從「請假」按鈕開啟）；編輯時看 item 本身是不是請假紀錄，不看這個 */
     leave?: boolean;
@@ -284,7 +284,7 @@ const resetForm = (item: WorkItem | null | undefined): void => {
 };
 
 /**
- * 複製：用來源紀錄預填，工作日期維持 DateNav 選到的那天（resetForm 已設定）。
+ * 複製：用來源紀錄預填，工作日期維持 defaultDate（HomeView 傳今天，resetForm 已設定）。
  * 哪些欄位帶入、哪些清空，規則在 utils/copy-work-item.ts 的 buildCopyPayload（跟「複製本日」共用）；
  * 這裡只把該模式表單上看得到的欄位填進去，請假的固定值一樣送出時才補。
  * 快照取預填後的狀態，打開後沒改就關閉不會跳未儲存確認
