@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CopyDayDialog from '@/components/CopyDayDialog.vue';
 
 /**
- * 「複製本日」選目標日期：預設下一個工作日（使用者先選了就不覆蓋）、送出的日期、busy／錯誤狀態。
+ * 「複製本日」選目標日期：預設今天、來源是今天時預設下一個工作日（使用者先選了就不覆蓋）、
+ * 送出的日期、busy／錯誤狀態。
  * 下一個工作日的算法在 useTaiwanHolidays 的測試，這裡換成假的
  */
 const mocks = vi.hoisted(() => ({ findNextWorkday: vi.fn() }));
@@ -20,7 +21,9 @@ beforeEach(() => {
 });
 
 const mountDialog = async (props: Record<string, unknown> = {}): Promise<VueWrapper> => {
-  const wrapper = mount(CopyDayDialog, { props: { sourceDate: '2026-10-08', count: 3, ...props } });
+  const wrapper = mount(CopyDayDialog, {
+    props: { sourceDate: '2026-10-08', today: '2026-10-16', count: 3, ...props },
+  });
   await flushPromises();
   return wrapper;
 };
@@ -30,17 +33,26 @@ const button = (wrapper: VueWrapper, text: string) =>
   wrapper.findAll('button').find((b) => b.text() === text)!;
 
 describe('目標日期', () => {
-  it('預設來源日期的下一個工作日，訊息顯示來源日期與筆數', async () => {
+  it('來源不是今天：預設今天，訊息顯示來源日期與筆數', async () => {
     const wrapper = await mountDialog();
-    expect(mocks.findNextWorkday).toHaveBeenCalledWith('2026-10-08', 1);
-    expect(dateInput(wrapper).element.value).toBe('2026-10-12');
+    expect(mocks.findNextWorkday).not.toHaveBeenCalled();
+    expect(dateInput(wrapper).element.value).toBe('2026-10-16');
     expect(wrapper.text()).toContain('把 2026/10/08 的 3 筆紀錄（含請假）');
+  });
+
+  it('來源是今天：預設今天之後的下一個工作日', async () => {
+    mocks.findNextWorkday.mockResolvedValue('2026-10-19');
+    const wrapper = await mountDialog({ sourceDate: '2026-10-16' });
+    expect(mocks.findNextWorkday).toHaveBeenCalledWith('2026-10-16', 1);
+    expect(dateInput(wrapper).element.value).toBe('2026-10-19');
   });
 
   it('查假日還沒回來前使用者先選了日期：不覆蓋', async () => {
     let resolve!: (date: string) => void;
     mocks.findNextWorkday.mockReturnValue(new Promise((r) => (resolve = r)));
-    const wrapper = mount(CopyDayDialog, { props: { sourceDate: '2026-10-08', count: 3 } });
+    const wrapper = mount(CopyDayDialog, {
+      props: { sourceDate: '2026-10-16', today: '2026-10-16', count: 3 },
+    });
     await dateInput(wrapper).setValue('2026-10-20');
     resolve('2026-10-12');
     await flushPromises();
