@@ -130,7 +130,7 @@ src/
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
     DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
-    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、到期前背景續期（refreshLogin）、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、需要時才續期（refreshLogin，不在背景續期）、分頁之間用 BroadcastChannel 共用 token、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理；單日／月份讀過的資料快取在記憶體（先顯示快取、背景再讀），寫入後清空，HomeView 預先讀前後一天／工作日／月（見 docs/ui/date-nav.md）
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
