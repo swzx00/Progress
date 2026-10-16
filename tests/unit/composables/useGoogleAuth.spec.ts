@@ -53,7 +53,7 @@ class FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   private readonly peers = bus;
 
-  constructor(readonly name: string) {
+  constructor() {
     this.peers.add(this);
   }
 
