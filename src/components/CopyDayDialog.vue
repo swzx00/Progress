@@ -15,6 +15,8 @@ const props = withDefaults(
   defineProps<{
     /** 來源日期（YYYY-MM-DD） */
     sourceDate: string;
+    /** 今天（YYYY-MM-DD），算預設目標日用 */
+    today: string;
     /** 來源日期要複製的紀錄筆數 */
     count: number;
     busy?: boolean;
@@ -37,10 +39,12 @@ const targetDate = ref('');
 const dateRange = dateInputRange('工作日期');
 const displaySourceDate = computed(() => props.sourceDate.replaceAll('-', '/'));
 
-// 預設下一個工作日（跳過週末與國定假日，補班日算工作日）；使用者先選了日期就不覆蓋
+// 預設今天（使用者決定）；來源就是今天時改成今天之後的下一個工作日（跳過週末與國定假日，補班日算工作日）。
+// 使用者先選了日期就不覆蓋
 onMounted(async () => {
-  const nextWorkday = await findNextWorkday(props.sourceDate, 1);
-  if (!targetDate.value) targetDate.value = nextWorkday;
+  const defaultDate =
+    props.sourceDate === props.today ? await findNextWorkday(props.today, 1) : props.today;
+  if (!targetDate.value) targetDate.value = defaultDate;
 });
 
 const requestCancel = (): void => {

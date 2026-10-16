@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Google 登入：ID Token 解析出 email、允許清單決定要不要顯示管理功能、token 只放記憶體（不存 storage）、
- * 重新整理時自動登入、到期前在背景續期、續期失敗的處理、寫入被退回時續期重送、登入按鈕、兩種登出。
- * 登入狀態是模組層級的，每個案例 resetModules 後重新 import；Google 登入腳本（GIS）換成假的，
- * 由測試呼叫 initialize 收到的 callback 模擬 Google 給 token。
+ * 重新整理時自動登入、需要時才續期（不在背景續期）、續期失敗的處理、寫入被退回時續期重送、
+ * 分頁之間共用 token、登入按鈕、兩種登出。
+ * 登入狀態是模組層級的，每個案例 resetModules 後重新 import；再 load() 一次就是另開一個分頁。
+ * Google 登入腳本（GIS）換成假的，由測試呼叫 initialize 收到的 callback 模擬 Google 給 token。
  * 前端判斷只是體驗層，真正把關在 Code.gs 的 verifyIdToken_（tests/apps-script 測）
  */
 type GoogleAuth = ReturnType<(typeof import('@/composables/useGoogleAuth'))['useGoogleAuth']>;
@@ -42,6 +43,30 @@ const gis = {
   prompt: vi.fn<(listener?: PromptListener) => void>(),
 };
 
+/**
+ * 假的 BroadcastChannel：同一個 bus 上的其他實例收得到（不含自己），跟瀏覽器一樣非同步送達。
+ * 每個案例換新的 bus，前面案例載入的模組（舊分頁）收不到也送不過來
+ */
+let bus: Set<FakeChannel>;
+
+class FakeChannel {
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  private readonly peers = bus;
+
+  constructor() {
+    this.peers.add(this);
+  }
+
+  postMessage(data: unknown): void {
+    for (const peer of this.peers) {
+      if (peer !== this) queueMicrotask(() => peer.onmessage?.({ data: structuredClone(data) }));
+    }
+  }
+}
+
+/** 等分頁之間的訊息送達、處理完 */
+const flushMessages = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 let auth: GoogleAuth;
 let apiError: (typeof import('@/composables/useWorkItems'))['ApiError'];
 
@@ -61,6 +86,15 @@ const giveCredential = async (credential: string): Promise<void> => {
   config.callback({ credential });
 };
 
+/** 某個分頁第一次初始化 GIS 後，模擬 Google 給那個分頁 token（initialize 最後一次收到的 callback） */
+const giveCredentialTo = async (tab: GoogleAuth, credential: string): Promise<void> => {
+  await tab.renderSignInButton(document.createElement('div'));
+  const config = gis.initialize.mock.calls.at(-1)![0] as {
+    callback: (r: { credential: string }) => void;
+  };
+  config.callback({ credential });
+};
+
 /** 最近一次 prompt() 傳進來的通知 listener */
 const lastPromptListener = (): PromptListener => gis.prompt.mock.calls.at(-1)![0]!;
 
@@ -70,12 +104,15 @@ beforeEach(async () => {
   localStorage.clear();
   vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'client-id');
   window.google = { accounts: { id: gis } };
+  bus = new Set();
+  vi.stubGlobal('BroadcastChannel', FakeChannel);
   auth = await load();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   delete window.google;
   vi.restoreAllMocks();
 });
@@ -183,21 +220,15 @@ describe('重新整理時自動登入（tryAutoLogin）', () => {
   });
 });
 
-describe('背景續期（refreshLogin）', () => {
-  it('到期前 5 分鐘自動在背景續期，拿到新 token 就換上', async () => {
+describe('續期（refreshLogin）', () => {
+  it('不在背景續期：token 過期、分頁切回來都不呼叫 prompt（避免沒操作時跳出帳號選擇）', async () => {
     vi.useFakeTimers();
     await giveCredential(ownerToken(3600));
-    await vi.advanceTimersByTimeAsync(54 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(1000);
     expect(gis.prompt).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
-    expect(gis.prompt).toHaveBeenCalledTimes(1);
-
-    const next = ownerToken(3600, { jti: 'next' });
-    const config = gis.initialize.mock.calls[0]![0] as {
-      callback: (r: { credential: string }) => void;
-    };
-    config.callback({ credential: next });
-    expect(auth.idToken.value).toBe(next);
+    expect(auth.isLoggedIn.value).toBe(true);
   });
 
   it('同時有好幾個續期：只呼叫一次 prompt，一起拿到結果', async () => {
@@ -221,13 +252,91 @@ describe('背景續期（refreshLogin）', () => {
     delete window.google;
     expect(await auth.refreshLogin()).toBe(false);
   });
+});
 
-  it('分頁切回來時 token 快過期：先續期（電腦睡眠喚醒後計時器可能沒觸發）', async () => {
-    await giveCredential(ownerToken(3600));
-    vi.spyOn(Date, 'now').mockReturnValue((nowSec() + 58 * 60) * 1000);
-    document.dispatchEvent(new Event('visibilitychange'));
-    // 每個案例都重新載入模組，前面案例的模組也掛了監聽器，所以只檢查有觸發續期
-    await vi.waitFor(() => expect(gis.prompt).toHaveBeenCalled());
+describe('分頁之間共用 token', () => {
+  it('另一個分頁已經登入：新分頁自動登入直接拿它的 token，不呼叫 prompt', async () => {
+    const token = ownerToken();
+    await giveCredential(token);
+    const tab = await load();
+    expect(await tab.tryAutoLogin()).toBe(true);
+    expect(tab.idToken.value).toBe(token);
+    expect(tab.isAuthorized.value).toBe(true);
+    expect(gis.prompt).not.toHaveBeenCalled();
+  });
+
+  it('一個分頁拿到新 token：其他分頁跟著換上', async () => {
+    await giveCredential(ownerToken(1800));
+    const tab = await load();
+    const next = ownerToken(3600, { jti: 'next' });
+    await giveCredentialTo(tab, next);
+    await flushMessages();
+    expect(auth.idToken.value).toBe(next);
+  });
+
+  it('收到比手上早到期的 token：不換（舊的不蓋新的）', async () => {
+    const newer = ownerToken(3600);
+    await giveCredential(newer);
+    const tab = await load();
+    await giveCredentialTo(tab, ownerToken(1800, { jti: 'older' }));
+    await flushMessages();
+    expect(auth.idToken.value).toBe(newer);
+  });
+
+  it('開表單前 token 過期：先跟其他分頁要，拿到就不呼叫 prompt', async () => {
+    const fresh = ownerToken(3600);
+    await giveCredential(fresh);
+    const tab = await load();
+    // 快過期的 token 傳過來，原本的分頁不收
+    await giveCredentialTo(tab, ownerToken(30, { jti: 'stale' }));
+    await flushMessages();
+    expect(auth.idToken.value).toBe(fresh);
+
+    expect(await tab.ensureFreshLogin()).toBe(true);
+    expect(tab.idToken.value).toBe(fresh);
+    expect(gis.prompt).not.toHaveBeenCalled();
+  });
+
+  it('其他分頁的 token 也過期了：不收，照常呼叫 prompt', async () => {
+    await giveCredential(ownerToken(30));
+    const tab = await load();
+    localStorage.setItem(HINT_KEY, '1');
+    const pending = tab.tryAutoLogin();
+    await vi.waitFor(() => expect(gis.prompt).toHaveBeenCalledTimes(1));
+    lastPromptListener()({ isSkippedMoment: () => true });
+    expect(await pending).toBe(false);
+    expect(tab.isLoggedIn.value).toBe(false);
+  });
+
+  it('使用者在一個分頁按登出：其他分頁也一起登出', async () => {
+    await giveCredential(ownerToken());
+    const tab = await load();
+    expect(await tab.tryAutoLogin()).toBe(true);
+    tab.signOut();
+    await flushMessages();
+    expect(auth.isLoggedIn.value).toBe(false);
+    expect(localStorage.getItem(HINT_KEY)).toBeNull();
+  });
+
+  it('一個分頁登入失效（clearLogin）：只影響自己，其他分頁維持登入', async () => {
+    await giveCredential(ownerToken());
+    const tab = await load();
+    expect(await tab.tryAutoLogin()).toBe(true);
+    tab.clearLogin();
+    await flushMessages();
+    expect(auth.isLoggedIn.value).toBe(true);
+  });
+
+  it('瀏覽器不支援 BroadcastChannel：照常自己呼叫 prompt', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined);
+    const tab = await load();
+    localStorage.setItem(HINT_KEY, '1');
+    const pending = tab.tryAutoLogin();
+    await vi.waitFor(() => expect(gis.prompt).toHaveBeenCalledTimes(1));
+    (
+      gis.initialize.mock.calls.at(-1)![0] as { callback: (r: { credential: string }) => void }
+    ).callback({ credential: ownerToken() });
+    expect(await pending).toBe(true);
   });
 });
 
@@ -339,14 +448,6 @@ describe('登出', () => {
     expect(auth.isLoggedIn.value).toBe(false);
     expect(localStorage.getItem(HINT_KEY)).toBe('1');
     expect(gis.disableAutoSelect).not.toHaveBeenCalled();
-  });
-
-  it('登出後不再背景續期', async () => {
-    vi.useFakeTimers();
-    await giveCredential(ownerToken(3600));
-    auth.signOut();
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-    expect(gis.prompt).not.toHaveBeenCalled();
   });
 });
 

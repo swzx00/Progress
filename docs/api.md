@@ -19,7 +19,9 @@
 - **ID Token 只放記憶體**，不存 `localStorage`／`sessionStorage`（存在瀏覽器儲存空間有被網頁程式讀走的風險，而且 `swzx00.github.io` 底下的其他網站共用同一份）。載入時會清掉舊版存在 `sessionStorage` 的 `google_id_token`／`google_id_token_skew`
 - **長期記住登入交給 Google**：GIS 用 `auto_select: true`（Chrome 走 FedCM，`use_fedcm_for_prompt: true`）初始化，需要 token 時呼叫 `google.accounts.id.prompt()`，Google 看自己在 `accounts.google.com` 的 HttpOnly Cookie 確認是本人就直接給新 token，不用點
 - **重新整理、重開分頁時自動登入**（`tryAutoLogin`，`HomeView` 掛載時呼叫）：只有 `localStorage` 有 `progress:auto-login` 標記（值 `'1'`，登入成功時寫入，**不是憑證**）才嘗試，沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
-- **背景續期**（`refreshLogin`）：拿到 token 後排計時器，到期前 5 分鐘自動續期；分頁切回來（`visibilitychange`）時 token 快過期也續期（電腦睡眠喚醒後計時器可能沒觸發）。同時有多個續期只呼叫一次 `prompt()`；`isNotDisplayed`／`isSkippedMoment`／`isDismissedMoment` 或 15 秒沒回應都算失敗；GIS 腳本還沒載入直接算失敗，不卡畫面
+- **需要時才續期，不在背景續期**（`refreshLogin`，2026-10-16 改）：只在重新整理（`tryAutoLogin`）、開表單前 token 過期（`ensureFreshLogin`）、寫入被退回（`withLoginRetry`）時續期，不排計時器、不在分頁切回來時續期。原因：Google 不能自動登入時（10 分鐘冷卻等）`prompt()` 會在右上角跳出帳號選擇，背景續期會讓它在沒操作時莫名跳出來。token 過期後畫面維持管理模式，下一次操作時才續期。同時有多個續期只呼叫一次 `prompt()`；`isNotDisplayed`／`isSkippedMoment`／`isDismissedMoment` 或 15 秒沒回應都算失敗；GIS 腳本還沒載入直接算失敗，不卡畫面
+- **分頁之間共用 token**（`BroadcastChannel('progress:auth')`，只在記憶體傳，不進 storage）：一個分頁拿到新 token 就傳給其他分頁（比手上的晚到期才換、過期的不收，時鐘差跟著傳）；續期時先送 `request` 跟其他分頁要，300ms 內拿到就不呼叫 `prompt()`，避免每個分頁各自 `prompt()` 撞到 10 分鐘冷卻。使用者按登出（`signout`）其他分頁一起登出；登入失效（`clearLogin`）只影響自己。不支援 `BroadcastChannel` 的瀏覽器維持每個分頁自己續期
+- **token 的保護範圍是 origin，不是路徑**：瀏覽器的安全邊界是 `https://swzx00.github.io`，`swzx00.github.io/<其他 repo>` 的頁面跟 `/Progress` 是同一個網站，理論上都拿得到 token（同 origin 可以用 iframe 讀對方的變數、可以收 `BroadcastChannel`，也能拿同一個 Client ID 直接跟 Google 要 token），只放記憶體也擋不住。目前靠的是這個 origin 底下的頁面都來自使用者自己的 repo；真的要隔離只能讓 Progress 換一個 origin（自訂網域），並把 OAuth Client ID 的授權來源改成只留新網域
 - **開表單、對話框前**（`ensureFreshLogin`，非同步）：還沒過期直接通過；過期了（看 JWT 的 `exp`，提早 1 分鐘；本機時鐘不準時用 `iat` 算出時間差校正）先續期，拿到新 token 就照常開，拿不到才回到唯讀並提示「登入已過期，請重新登入」。沒有 `exp` 或解不開時交給後端判斷。調整順序是先在畫面套用新順序再檢查，續期失敗才還原
 - **寫入被後端以 `UNAUTHORIZED` 退回**（`withLoginRetry`，新增、編輯、刪除、複製本日、調整順序、選項清單、工時設定、本日總結的自動填入設定與「填入」都包）：先續期，拿到新 token 就重送一次；後端是先驗證登入才寫入，被退回的請求一定還沒寫進去，重送不會重複寫入。續期失敗才照原本的方式關閉畫面、回到唯讀
 - **兩種登出**：使用者按「登出」（`signOut`）清掉 token、拿掉 `progress:auto-login` 標記並 `disableAutoSelect()`，之後要自己點登入；登入失效（續期失敗、`UNAUTHORIZED`，`clearLogin`）只清掉 token，保留自動登入，下次重新整理還能自動登入回來
@@ -52,7 +54,7 @@
 
 **可公開的識別碼**：Apps Script Web App 網址、Google OAuth Client ID 都可以放心寫在前端程式碼裡公開，這是 Google 官方設計上允許的，真正把關的是後端的登入驗證，不是網址保密。Google Sheet ID 存在 Apps Script 的指令碼屬性 `SHEET_ID`（`PropertiesService`，`getSheetId_`），不寫死在程式碼裡；同一處另有 `GOOGLE_CLIENT_ID`（前端 `.env` 那組，驗證 ID Token 的 `aud` 用），以及自動填入通知用的 `LINE_CHANNEL_ACCESS_TOKEN`、`LINE_USER_ID`（token 是密鑰，見 [auto-fill.md](auto-fill.md) 的「通知」）。部署步驟寫在 `Code.gs` 開頭的註解。
 
-- Google 登入狀態由 Google 保管（自動登入），token 只放記憶體、到期前自動續期，不用每次操作重新登入
+- Google 登入狀態由 Google 保管（自動登入），token 只放記憶體、需要時才續期（分頁之間共用），不用每次操作重新登入
 
 **共用驗證 schema 同步方式**：`shared/validation-schema.json` 是唯一事實來源，前端 `src/validation/work-item.ts` 直接 import。**目前 `Code.gs` 的 `VALIDATION_RULES` 是手動同步的**——原本規劃的 build script（`npm run build:gs`，把 JSON 轉成 Apps Script 可讀的 `schema.gs`）還沒實作，`apps-script/` 也還沒設定 clasp（目前是手動把 `Code.gs` 貼到 Apps Script 編輯器部署）。改 JSON 時 `Code.gs` 要一起改。
 

@@ -43,7 +43,11 @@ declare global {
  * Cookie 保管，這邊只拿一小時就失效的 token。
  *
  * localStorage 只記一個「這個瀏覽器登入過、沒按登出」的標記（AUTO_LOGIN_HINT_KEY，值只有 '1'，不是憑證），
- * 有這個標記才在載入時嘗試自動登入；沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示
+ * 有這個標記才在載入時嘗試自動登入；沒有的話（路過看唯讀畫面的人、按過登出）不跳 Google 的登入提示。
+ *
+ * 同一個瀏覽器開好幾個分頁時，用 BroadcastChannel 在分頁之間傳 token（一樣只在記憶體）：一個分頁拿到新 token
+ * 就傳給其他分頁，續期時先跟其他分頁要，要不到才呼叫 prompt()。Google 自動登入兩次至少隔 10 分鐘，
+ * 每個分頁各自 prompt() 很容易撞到，撞到時右上角會跳出帳號選擇
  */
 const AUTO_LOGIN_HINT_KEY = 'progress:auto-login';
 /** 舊版存在 sessionStorage 的 token 與時鐘差，載入時清掉 */
@@ -87,10 +91,10 @@ const decodeJwtPayload = (token: string): Record<string, unknown> => {
 
 /** 提早一點視為過期，避免剛好在送出途中過期 */
 const EXPIRY_MARGIN_MS = 60 * 1000;
-/** 到期前多久在背景自動續期 */
-const REFRESH_BEFORE_MS = 5 * 60 * 1000;
-/** 背景續期等多久沒拿到新 token 就算失敗（Google 沒回應、被瀏覽器擋下） */
+/** 續期等多久沒拿到新 token 就算失敗（Google 沒回應、被瀏覽器擋下） */
 const REFRESH_TIMEOUT_MS = 15 * 1000;
+/** 續期時先跟其他分頁要 token，等多久沒回應才呼叫 prompt() */
+const PEER_WAIT_MS = 300;
 
 /**
  * 本機時鐘跟 Google 的時間差（毫秒，Google 減本機）。拿到 token 時用 iat（核發時間）算，
@@ -160,21 +164,6 @@ const loadGisScript = (): Promise<void> => {
   return scriptLoadPromise;
 };
 
-/** 背景續期：到期前 REFRESH_BEFORE_MS 觸發 */
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-
-const scheduleRefresh = (token: string): void => {
-  clearTimeout(refreshTimer);
-  const remaining = msUntilExpiry(token);
-  if (!Number.isFinite(remaining)) return;
-  refreshTimer = setTimeout(
-    () => {
-      void refreshLogin();
-    },
-    Math.max(0, remaining - REFRESH_BEFORE_MS),
-  );
-};
-
 /** 等待中的續期：拿到新 token（handleCredential）時一起 resolve(true) */
 let pendingRefresh: { promise: Promise<boolean>; resolve: (ok: boolean) => void } | null = null;
 
@@ -183,15 +172,52 @@ const settleRefresh = (ok: boolean): void => {
   pendingRefresh = null;
 };
 
+/** 分頁之間傳的訊息：request 跟其他分頁要 token、token 送出 token（附時鐘差）、signout 使用者按了登出 */
+type AuthMessage =
+  { type: 'request' } | { type: 'token'; token: string; skewMs: number } | { type: 'signout' };
+
+/** 不支援 BroadcastChannel 的瀏覽器就不共用，每個分頁自己續期 */
+const channel =
+  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('progress:auth');
+
+const postToPeers = (message: AuthMessage): void => {
+  channel?.postMessage(message);
+};
+
 const handleCredential = (response: GoogleCredentialResponse): void => {
   idToken.value = response.credential;
   clockSkewMs = measureClockSkew(response.credential);
   writeHint(true);
-  scheduleRefresh(response.credential);
+  settleRefresh(true);
+  postToPeers({ type: 'token', token: response.credential, skewMs: clockSkewMs });
+};
+
+/**
+ * 收到其他分頁的 token：比手上的晚到期才換上（舊的不蓋新的），已經過期的不收。
+ * 時鐘差用對方算好的（同一台電腦），不能用 iat 重算：token 可能是對方幾十分鐘前拿到的
+ */
+const adoptPeerToken = (token: string, skewMs: number): void => {
+  const exp = expiresAt(token);
+  if (exp === null || exp - (Date.now() + skewMs) <= EXPIRY_MARGIN_MS) return;
+  const currentExp = idToken.value ? expiresAt(idToken.value) : null;
+  if (currentExp !== null && exp <= currentExp) return;
+  idToken.value = token;
+  clockSkewMs = skewMs;
+  writeHint(true);
   settleRefresh(true);
 };
 
 let initialized = false;
+
+/** 跟其他分頁要 token：拿到（adoptPeerToken 結束了續期）或等了 PEER_WAIT_MS 就繼續 */
+const askPeers = (settled: Promise<boolean>): Promise<void> => {
+  if (!channel) return Promise.resolve();
+  postToPeers({ type: 'request' });
+  return Promise.race([
+    settled.then(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, PEER_WAIT_MS)),
+  ]);
+};
 
 const ensureInitialized = async (): Promise<void> => {
   await loadGisScript();
@@ -209,7 +235,9 @@ const ensureInitialized = async (): Promise<void> => {
 };
 
 /**
- * 在背景跟 Google 換一張新的 token（google.accounts.id.prompt，auto_select）。回傳是否拿到。
+ * 換一張新的 token，回傳是否拿到。先跟其他分頁要，要不到才跟 Google 要（google.accounts.id.prompt，auto_select）。
+ * 只在真的需要時呼叫（重新整理、開表單前 token 過期、寫入被退回），不在背景定時續期：Google 不能自動登入時
+ * （例如 10 分鐘冷卻）prompt() 會在右上角跳出帳號選擇，背景續期會讓它在沒操作時莫名跳出來。
  * 同時有多個呼叫只發一次；Google 登入腳本還沒載入就直接回傳 false（不在這裡等腳本，避免卡住畫面）；
  * 被略過、被關掉、或 REFRESH_TIMEOUT_MS 內沒回應都算失敗。失敗時不會登出，交給呼叫端決定
  */
@@ -226,8 +254,11 @@ const refreshLogin = (): Promise<boolean> => {
   const timeout = setTimeout(() => settleRefresh(false), REFRESH_TIMEOUT_MS);
   void promise.then(() => clearTimeout(timeout));
 
-  void ensureInitialized()
-    .then(() => {
+  void askPeers(promise)
+    .then(async () => {
+      // 其他分頁給了 token，續期已經結束
+      if (pendingRefresh?.promise !== promise) return;
+      await ensureInitialized();
       gis.prompt?.((notification) => {
         if (
           notification.isNotDisplayed?.() ||
@@ -244,8 +275,8 @@ const refreshLogin = (): Promise<boolean> => {
 
 /**
  * 重新整理、重開分頁時自動登入：只有這個瀏覽器登入過、沒按登出（有 AUTO_LOGIN_HINT_KEY）才嘗試，
- * 這時才載入 Google 登入腳本並呼叫 prompt()。拿不到（被 10 分鐘冷卻擋下、無痕模式、沒登入 Google）
- * 就維持唯讀畫面，右上角照常有登入按鈕，不顯示錯誤
+ * 這時才載入 Google 登入腳本，先跟其他分頁要 token，要不到才呼叫 prompt()。
+ * 拿不到（被 10 分鐘冷卻擋下、無痕模式、沒登入 Google）就維持唯讀畫面，右上角照常有登入按鈕，不顯示錯誤
  */
 const tryAutoLogin = async (): Promise<boolean> => {
   if (idToken.value || !readHint()) return false;
@@ -278,16 +309,16 @@ const renderSignInButton = async (el: HTMLElement, dark = false): Promise<void> 
  * 下次重新整理還能自動登入回來（不是使用者自己要登出）
  */
 const clearLogin = (): void => {
-  clearTimeout(refreshTimer);
   settleRefresh(false);
   idToken.value = null;
 };
 
-/** 使用者按「登出」：清掉 token，關掉自動登入（之後要自己點登入才會再登入） */
+/** 使用者按「登出」：清掉 token，關掉自動登入（之後要自己點登入才會再登入），其他分頁也一起登出 */
 const signOut = (): void => {
   clearLogin();
   writeHint(false);
   window.google?.accounts.id.disableAutoSelect();
+  postToPeers({ type: 'signout' });
 };
 
 /**
@@ -318,12 +349,19 @@ const withLoginRetry = async <T>(token: string, run: (token: string) => Promise<
   }
 };
 
-// 分頁切回來時檢查一次：電腦睡眠喚醒後計時器可能還沒觸發，token 快過期就先續期
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !idToken.value) return;
-    if (msUntilExpiry(idToken.value) <= REFRESH_BEFORE_MS) void refreshLogin();
-  });
+if (channel) {
+  channel.onmessage = ({ data }: MessageEvent<AuthMessage>) => {
+    if (data.type === 'request') {
+      // 手上的還沒過期才給，讓對方不用呼叫 prompt()
+      if (idToken.value && !isTokenExpired(idToken.value)) {
+        postToPeers({ type: 'token', token: idToken.value, skewMs: clockSkewMs });
+      }
+    } else if (data.type === 'token') {
+      adoptPeerToken(data.token, data.skewMs);
+    } else {
+      clearLogin();
+    }
+  };
 }
 
 export function useGoogleAuth() {

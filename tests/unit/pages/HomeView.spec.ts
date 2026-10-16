@@ -516,6 +516,73 @@ describe('存檔（新增／編輯）', () => {
   });
 });
 
+describe('單項複製', () => {
+  const form = (wrapper: VueWrapper) => wrapper.findComponent({ name: 'WorkItemForm' });
+  const copyPayload = (date: string) => ({ ...savePayload(), 工作日期: date });
+
+  it('表單的工作日期預設今天（不是 DateNav 選到的那天）；新增維持選到的那天', async () => {
+    const wrapper = await mountView('/?date=2026-09-01');
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    expect(form(wrapper).props('copySource')).toEqual(mocks.items.value[0]);
+    expect(form(wrapper).props('defaultDate')).toBe(today);
+
+    await emitFrom(wrapper, 'WorkItemForm', 'cancel');
+    await wrapper.get('button[aria-label="新增"]').trigger('click');
+    await flushPromises();
+    expect(form(wrapper).props('defaultDate')).toBe('2026-09-01');
+  });
+
+  it('存到目前畫面以外的日期：切到那天', async () => {
+    mocks.createItem.mockResolvedValue(undefined);
+    const wrapper = await mountView('/?date=2026-09-01');
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    await emitFrom(wrapper, 'WorkItemForm', 'save', copyPayload(today));
+
+    expect(mocks.createItem).toHaveBeenCalledWith('token', copyPayload(today));
+    expect(mocks.fetchByDate).toHaveBeenLastCalledWith(today);
+    expect(router.currentRoute.value.query).toEqual({ date: today });
+    expect(exists(wrapper, 'WorkItemForm')).toBe(false);
+  });
+
+  it('存到目前這天：留在原地重讀', async () => {
+    mocks.createItem.mockResolvedValue(undefined);
+    const wrapper = await mountView('/?date=2026-09-01');
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    mocks.fetchByDate.mockClear();
+    await emitFrom(wrapper, 'WorkItemForm', 'save', copyPayload('2026-09-01'));
+
+    expect(mocks.fetchByDate).toHaveBeenCalledWith('2026-09-01');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-09-01' });
+  });
+
+  it('月份檢視：維持月份檢視，切到那天所在的月份；同一個月就重讀這個月', async () => {
+    mocks.createItem.mockResolvedValue(undefined);
+    const wrapper = await mountView('/?date=2026-09-15&view=month');
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    await emitFrom(wrapper, 'WorkItemForm', 'save', copyPayload('2026-10-02'));
+    expect(mocks.fetchRange).toHaveBeenLastCalledWith('2026-10-01', '2026-10-31');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-10-02', view: 'month' });
+
+    mocks.fetchRange.mockClear();
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    await emitFrom(wrapper, 'WorkItemForm', 'save', copyPayload('2026-10-20'));
+    expect(mocks.fetchRange).toHaveBeenCalledWith('2026-10-01', '2026-10-31');
+    expect(router.currentRoute.value.query).toEqual({ date: '2026-10-20', view: 'month' });
+  });
+
+  it('搜尋中：留在搜尋結果並重新搜尋，結束搜尋時回到那天', async () => {
+    mocks.createItem.mockResolvedValue(undefined);
+    mocks.searchItems.mockResolvedValue({ items: dayItems(), total: 2 });
+    const wrapper = await mountView('/?date=2026-09-01');
+    await emitFrom(wrapper, 'WorkItemSearch', 'search', { keyword: '官網' });
+    await emitFrom(wrapper, 'WorkItemTable', 'copy', mocks.items.value[0]);
+    await emitFrom(wrapper, 'WorkItemForm', 'save', copyPayload(today));
+
+    expect(mocks.searchItems).toHaveBeenCalledTimes(2);
+    expect(router.currentRoute.value.query).toEqual({ date: today, q: '官網' });
+  });
+});
+
 describe('刪除', () => {
   const openDelete = async (wrapper: VueWrapper): Promise<void> => {
     await emitFrom(wrapper, 'WorkItemTable', 'delete', mocks.items.value[0]);

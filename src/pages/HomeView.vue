@@ -34,7 +34,7 @@ import {
 import type { WorkItem } from '@/types/work-item';
 import { buildCopyPayload } from '@/utils/copy-work-item';
 import { addDays, isValidDateString, todayString } from '@/utils/date';
-import { monthRange, shiftMonth } from '@/utils/month-view';
+import { isSameMonth, monthRange, shiftMonth } from '@/utils/month-view';
 import {
   SEARCH_FIELD_LABELS,
   SEARCH_FIELDS,
@@ -382,7 +382,7 @@ const formOpen = ref(false);
 const editingItem = ref<WorkItem | null>(null);
 // 新增時開的是請假表單還是工作紀錄表單；編輯時表單自己看紀錄的狀態判斷
 const creatingLeave = ref(false);
-// 複製：用這筆紀錄預填新增表單（存檔走新增，原紀錄不動）
+// 複製：用這筆紀錄預填新增表單（存檔走新增，原紀錄不動），工作日期預設今天
 const copySource = ref<WorkItem | null>(null);
 const saving = ref(false);
 
@@ -449,12 +449,27 @@ const handleSaveError = (message: string, unauthorized: boolean): void => {
   }
 };
 
+/**
+ * 單項複製存到目前畫面以外的日期：切到那天，比照複製本日成功後切到目標日（使用者決定）。
+ * 維持目前的檢視方式：月份檢視切到那天所在的月份（同一個月不會自動重讀，這裡重讀）；
+ * 搜尋中照樣留在搜尋結果、重新搜尋一次，結束搜尋時回到那天
+ */
+const showCopiedDate = async (date: string): Promise<void> => {
+  const sameMonthView = isMonthView.value && isSameMonth(date, selectedDate.value);
+  selectedDate.value = date;
+  await Promise.all([
+    sameMonthView ? fetchCurrent() : Promise.resolve(),
+    searchQuery.value ? runSearch(searchQuery.value) : Promise.resolve(),
+  ]);
+};
+
 const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): Promise<void> => {
   if (!idToken.value) {
     handleSaveError('尚未登入，無法儲存', true);
     return;
   }
   saving.value = true;
+  const copying = copySource.value !== null;
   try {
     if (editingItem.value) {
       const id = editingItem.value.id;
@@ -463,7 +478,11 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
       await withLoginRetry(idToken.value, (token) => createItem(token, payload));
     }
     rememberItems([{ ...payload, id: editingItem.value?.id }]);
-    await refreshAfterChange();
+    if (copying && payload.工作日期 !== selectedDate.value) {
+      await showCopiedDate(payload.工作日期);
+    } else {
+      await refreshAfterChange();
+    }
     formOpen.value = false;
   } catch (e) {
     handleSaveError(
@@ -478,6 +497,7 @@ const onSave = async (payload: Omit<WorkItem, 'id' | '項次' | '已刪除'>): P
 /**
  * 複製本日：把目前選到那天的全部紀錄（含請假）依原本項次順序，一次複製到目標日期。
  * 欄位規則跟單項複製共用 buildCopyPayload。
+ * - 目標日預設今天，來源就是今天時預設下一個工作日（CopyDayDialog）
  * - 目標日不能跟來源同一天
  * - 目標日已有紀錄：先跳警示確認，確認後用覆蓋模式（後端先把目標日原本的紀錄，含請假，搬到『已刪除紀錄』分頁再寫入），
  *   工時合計只算這批
@@ -958,7 +978,7 @@ const onWorkHoursUnauthorized = (): void => {
         v-if="formOpen && isAuthorized"
         :item="editingItem"
         :saving="saving"
-        :default-date="selectedDate"
+        :default-date="copySource ? today : selectedDate"
         :leave="creatingLeave"
         :copy-source="copySource"
         @save="onSave"
@@ -970,6 +990,7 @@ const onWorkHoursUnauthorized = (): void => {
       <CopyDayDialog
         v-if="copyDayOpen && isAuthorized"
         :source-date="selectedDate"
+        :today="today"
         :count="items.length"
         :busy="copyingDay"
         :error="copyDayError"

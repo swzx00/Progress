@@ -93,10 +93,16 @@ export const test = base.extend<{ loggedIn: boolean }>({
   },
 });
 
-/** 打開首頁，等今天的紀錄載入完 */
+/**
+ * 打開首頁，等今天的紀錄載入完；登入過的瀏覽器再等自動登入完成
+ * （自動登入會先跟其他分頁要 token，等一下才呼叫 prompt()，可能比紀錄晚出來）
+ */
 export const openHome = async (page: Page): Promise<void> => {
   await page.goto('/');
   await expect(page.locator('.work-item-table__row[data-id]').first()).toBeVisible();
+  if (await page.evaluate(() => localStorage.getItem('progress:auto-login') === '1')) {
+    await expect(page.getByRole('button', { name: '登出' })).toBeVisible();
+  }
 };
 
 export { expect };

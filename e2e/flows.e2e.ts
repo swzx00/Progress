@@ -114,7 +114,7 @@ test('請假：選假別、時數，儲存後是請假列', async ({ page }) => 
   await expect(dailyTotal(page)).toContainText('12hr');
 });
 
-test('複製本日：預設下一個工作日，複製後跳到那天、筆數相同、工時歸零', async ({ page }) => {
+test('複製本日：來源是今天時預設下一個工作日，複製後跳到那天、筆數相同、工時歸零', async ({ page }) => {
   await openHome(page);
   await page.getByRole('button', { name: '複製本日' }).click();
   const dialog = page.locator('.copy-day-dialog__panel');

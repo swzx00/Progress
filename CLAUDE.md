@@ -122,7 +122,7 @@ src/
     ClampText.vue         # 文字刪節：收合時截斷（手機 3 行、平板桌面 2 行），判斷是否真的被截斷，有滑鼠的裝置用 NTooltip 顯示全文；展開狀態由使用端控制
     OptionsDropdownState.vue # 可搜尋下拉選單（交辦單位、交辦人員、專案名稱、專案 Repo）放在 NSelect empty slot 的狀態畫面：載入中（AppLoading＋「選項載入中」）／載入失敗（「選項清單載入失敗」＋「重新載入」）
     AppLoading.vue        # 共用載入中（轉圈＋文字，prop label 預設「載入中…」），只負責內容本身，外層排版由使用端決定；HomeView 讀取資料、WorkItemForm 送出遮罩都用它
-    CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
+    CopyDayDialog.vue     # 「複製本日」選目標日期的對話框（預設今天，來源是今天時預設下一個工作日），只負責畫面，工時檢查與寫入在 HomeView
     DaySummaryModal.vue   # 本日總結：把選到那天的工作紀錄整理成文字放進 Textarea（可修改、不存檔）＋填入／複製按鈕；下方自動填入設定（啟用、試算表網址、姓名，存在後端，沒啟用時欄位與「填入」disabled）
     ExportModal.vue       # 匯出 Excel：選匯出方式（年份／季度／月份／指定天數）與範圍，讀資料、產生 .xlsx 下載
     WorkHoursSettingModal.vue # 工時設定：上班、下班、午休時間
@@ -130,7 +130,7 @@ src/
     AppToast.vue          # Toast（錯誤為主，另有 success 樣式），畫面上方置中，搭配 useToast.ts
     DateNav.vue           # 日／月切換（月份檢視改成 ◀ 上個月／月份選擇器／下個月 ▶／回到本月）；單日：⏮ 上一個工作日 / ◀ 上一天 / 日期選擇器 / 下一天 ▶ / 下一個工作日 ⏭ / 回到今天（今天時改顯示「今天」狀態標示），顯示星期，放假日顯示徽章，日期選擇器今天時用 :deep() 改邊框/文字色，按鈕沒用途時 disabled
   composables/
-    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、到期前背景續期（refreshLogin）、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
+    useGoogleAuth.ts      # 登入狀態、ID Token 管理：token 只放記憶體，重新整理靠 Google 自動登入（tryAutoLogin）、需要時才續期（refreshLogin，不在背景續期）、分頁之間用 BroadcastChannel 共用 token、開表單前 ensureFreshLogin、寫入被退回時 withLoginRetry 續期重送；signOut（使用者登出）／clearLogin（登入失效，保留自動登入）
     useWorkItems.ts        # 讀寫 API 呼叫、狀態管理；單日／月份讀過的資料快取在記憶體（先顯示快取、背景再讀），寫入後清空，HomeView 預先讀前後一天／工作日／月（見 docs/ui/date-nav.md）
     useTaiwanHolidays.ts   # 台灣國定假日查詢
     useToast.ts            # Toast 共用狀態（模組層級），showToast(message, type = 'error')／hideToast()
